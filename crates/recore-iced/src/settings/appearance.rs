@@ -25,6 +25,7 @@ use crate::{
     form::{self, switch},
     pictures::Icon,
     themes::color,
+    widgets::{Hsv, hsv_rgb, rgb_hsv},
 };
 
 /// A theme's tile: at least this wide, this tall, this far apart.
@@ -147,6 +148,9 @@ pub enum Event {
     BackgroundAnimate(bool),
     Font(&'static str),
     Motion(crate::themes::Motion),
+    /// A colour row's picker opened or closed, by its target and its HSV.
+    PickColour(String, Hsv),
+    Hsv(Hsv),
     /// A CSS option while it's being typed, and when it's applied.
     CssDraft(String, String),
     CssApply(String, String),
@@ -381,6 +385,43 @@ impl Settings {
                 let root = cx.client.root().to_path_buf();
                 cx.themes.set_motion(&root, motion);
                 cx.request(Request::Changed(Shown::Theme));
+            }
+            Event::PickColour(id, hsv) => {
+                if self.color_open.as_deref() == Some(id.as_str()) {
+                    self.color_open = None;
+                } else {
+                    self.color_open = Some(id);
+                    self.color_hsv = hsv;
+                }
+            }
+            Event::Hsv(hsv) => {
+                self.color_hsv = hsv;
+                let Some(target) = self.color_open.clone() else {
+                    return;
+                };
+                let value = format!("#{:06x}", hsv_rgb(hsv));
+                if target == "accent" {
+                    if let Some(accent) = palette::parse(&value) {
+                        let root = cx.client.root().to_path_buf();
+                        cx.themes.set_accent(&root, Some(accent));
+                        self.accent = Some(value);
+                        cx.request(Request::Changed(Shown::Theme));
+                    }
+                } else if let Some(name) = target.strip_prefix("css:") {
+                    self.css_text.insert(name.to_owned(), value.clone());
+                    self.css_apply(cx, name, &value);
+                } else if let Some(index) = target
+                    .strip_prefix("theme:")
+                    .and_then(|index| index.parse().ok())
+                {
+                    let changed = self
+                        .editor
+                        .as_mut()
+                        .is_some_and(|editor| editor.edit(index, value));
+                    if changed {
+                        self.show_edited(cx);
+                    }
+                }
             }
             Event::CssDraft(name, value) => {
                 self.css_text.insert(name.clone(), value.clone());
@@ -662,16 +703,23 @@ impl<'a> Page<'a> {
                     theme,
                     "ReCore and ReCore Paper derive every accent shade from this colour. Other themes keep their own.",
                 ),
-                form::colour_row(
-                    theme,
-                    "Accent",
-                    crate::themes::color(
+                {
+                    let accent_colour = crate::themes::color(
                         self.cx.themes.accent.unwrap_or(palette::RECORE_DARK.accent),
-                    ),
-                    accent_text,
-                    accent_wrong,
-                    move |text| theme_message(Event::Accent(text)),
-                ),
+                    );
+                    let accent_hsv = rgb_hsv(crate::theme::rgb(accent_colour));
+                    form::colour_row_with_picker(
+                        theme,
+                        "Accent",
+                        accent_colour,
+                        accent_text,
+                        accent_wrong,
+                        self.s.color_open.as_deref() == Some("accent"),
+                        theme_message(Event::PickColour("accent".into(), accent_hsv)),
+                        move |text| theme_message(Event::Accent(text)),
+                        move |hsv| theme_message(Event::Hsv(hsv)),
+                    )
+                },
                 row![
                     action(theme, "Amber", Kind::Plain, Some(theme_message(Event::Preset("amber")))).small(),
                     action(theme, "Phosphor", Kind::Plain, Some(theme_message(Event::Preset("phosphor")))).small(),
@@ -1110,14 +1158,24 @@ impl<'a> Page<'a> {
         let label = option.label.as_str();
         let name = option.name.clone();
         let control: Element<'a, Message> = match &option.kind {
-            OptionKind::Color { color } => form::colour_row(
-                theme,
-                label,
-                Color::from_rgba8(color.r, color.g, color.b, f32::from(color.a) / 255.0),
-                shown,
-                recore_css::color::parse(shown, self.cx.look.theme.dark).is_none(),
-                move |value| theme_message(Event::CssDraft(name.clone(), value)),
-            ),
+            OptionKind::Color { color } => {
+                let colour =
+                    Color::from_rgba8(color.r, color.g, color.b, f32::from(color.a) / 255.0);
+                let id = format!("css:{name}");
+                let hsv = rgb_hsv(crate::theme::rgb(colour));
+                let field_name = name.clone();
+                form::colour_row_with_picker(
+                    theme,
+                    label,
+                    colour,
+                    shown,
+                    recore_css::color::parse(shown, self.cx.look.theme.dark).is_none(),
+                    self.s.color_open.as_deref() == Some(id.as_str()),
+                    theme_message(Event::PickColour(id, hsv)),
+                    move |value| theme_message(Event::CssDraft(field_name.clone(), value)),
+                    move |hsv| theme_message(Event::Hsv(hsv)),
+                )
+            }
             OptionKind::Percent { value, percent } => slider(
                 label,
                 css_percent(shown)
@@ -1319,6 +1377,7 @@ impl<'a> Page<'a> {
             .description("Drop-down lists and scroll bars draw dark to match.")
             .view(self.cx.look),
         );
+        let color_open = self.s.color_open.clone();
         let colours = iced::widget::responsive(move |size| {
             let columns = if size.width >= TWO_COLUMNS { 2 } else { 1 };
             let per = editor.fields.len().div_ceil(columns);
@@ -1329,13 +1388,18 @@ impl<'a> Page<'a> {
                 {
                     let (name, hex, wrong) = &editor.fields[index];
                     let shown = editor.theme.colour(index).map_or(Color::TRANSPARENT, color);
-                    cells = cells.push(form::colour_row(
+                    let id = format!("theme:{index}");
+                    let hsv = rgb_hsv(crate::theme::rgb(shown));
+                    cells = cells.push(form::colour_row_with_picker(
                         theme,
                         name,
                         shown,
                         hex,
                         *wrong,
+                        color_open.as_deref() == Some(id.as_str()),
+                        theme_message(Event::PickColour(id, hsv)),
                         move |text| theme_message(Event::Colour(index, text)),
+                        move |hsv| theme_message(Event::Hsv(hsv)),
                     ));
                 }
                 line = line.push(container(cells).width(Length::FillPortion(1)));

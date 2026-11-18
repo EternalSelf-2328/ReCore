@@ -24,6 +24,7 @@ use crate::{
     popover::{Popover, Side, Width},
     style::rounded,
     theme::Theme,
+    widgets::{ColourPad, Hsv, rgb_hsv},
 };
 
 /// A page's column: at most this wide, centred in the room there is with at
@@ -810,6 +811,83 @@ pub fn colour_row<'a, M: Clone + 'a>(
     .into()
 }
 
+/// A colour's row with ReCord's picker under its swatch: the swatch opens
+/// a saturation/brightness square and hue strip, so a theme's colour can be
+/// chosen without typing its hex. `open` is the owner's state; `on_open`
+/// toggles it and closes the picker when a click falls outside.
+pub fn colour_row_with_picker<'a, M: Clone + 'a>(
+    theme: &Theme,
+    name: &'a str,
+    colour: Color,
+    hex: &'a str,
+    wrong: bool,
+    open: bool,
+    on_open: M,
+    on_input: impl Fn(String) -> M + 'a,
+    on_hsv: impl Fn(Hsv) -> M + 'a,
+) -> Element<'a, M> {
+    let edge = theme.line;
+    let accent = theme.accent;
+    let square = theme.square;
+    let hsv = rgb_hsv(crate::theme::rgb(colour));
+    let swatch = button(Space::new())
+        .width(28)
+        .height(28)
+        .on_press(on_open.clone())
+        .style(move |_, status| button::Style {
+            background: Some(colour.into()),
+            border: Border {
+                color: if lights(status) { accent } else { edge },
+                width: if open || lights(status) { 2.0 } else { 1.0 },
+                radius: if square { 0.0 } else { 6.0 }.into(),
+            },
+            ..Default::default()
+        });
+    let mut words = column![
+        text(name)
+            .size(14)
+            .color(theme.text)
+            .wrapping(text::Wrapping::None)
+    ];
+    if wrong {
+        words = words.push(text("Not a colour").size(12).color(theme.danger));
+    }
+    let ground = if wrong {
+        Color {
+            a: 0.16,
+            ..theme.danger
+        }
+    } else {
+        theme.sunken
+    };
+    let field = text_input("", hex)
+        .on_input(on_input)
+        .size(14)
+        .padding(8)
+        .width(116)
+        .style(controls::field_style(theme, ground, true));
+    let row = row![
+        swatch,
+        container(words).width(Length::Fill).clip(true),
+        field
+    ]
+    .spacing(10)
+    .align_y(Alignment::Center)
+    .height(46);
+    let (raised, outline) = (theme.raised, theme.edge);
+    let pad = container(ColourPad::new(hsv, on_hsv))
+        .padding(10)
+        .width(COLOUR_CARD)
+        .style(move |_| {
+            let radius = if square { 0.0 } else { 12.0 };
+            crate::style::panel(raised, outline, radius)
+        });
+    Popover::new(row, open.then_some(pad.into()), Side::Below)
+        .width(Width::Own(COLOUR_CARD))
+        .gap(6.0)
+        .outside(on_open)
+        .into()
+}
 /// A card on the sidebar's ground, as My account's and About's: 16 px in,
 /// round corners.
 pub fn card<'a, M: Clone + 'a>(theme: &Theme, body: impl Into<Element<'a, M>>) -> Element<'a, M> {

@@ -177,6 +177,10 @@ pub struct Settings {
     pub editor: Option<Editor>,
     /// ReCore's accent as it is being typed, before it's a colour.
     pub accent: Option<String>,
+    /// The colour picker under a row, by its target (`accent`, `css:NAME`
+    /// or `theme:INDEX`), and its HSV while it is dragged.
+    pub color_open: Option<String>,
+    pub color_hsv: crate::widgets::Hsv,
     /// CSS theme options as they are being typed, before they're applied,
     /// and whether every custom property is listed or only the readable ones.
     pub css_text: BTreeMap<String, String>,
