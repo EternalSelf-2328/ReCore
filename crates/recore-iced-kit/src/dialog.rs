@@ -18,7 +18,7 @@ const ROOM: f32 = 48.0;
 
 impl<'a> crate::look::Look<'a> {
     /// A dialog's title with its close button.
-    pub fn dialog_head<M: Clone + 'a>(
+    pub fn dialog_head<M: Clone + crate::controls::HoverFeedback + 'a>(
         self,
         title: impl text::IntoFragment<'a>,
         close: M,

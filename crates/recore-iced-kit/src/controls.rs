@@ -669,6 +669,15 @@ impl crate::look::Look<'_> {
 /// [`Look::icon_button`](crate::look::Look::icon_button), 28 px across with
 /// an 18 px glyph in the secondary ink until told otherwise.
 #[must_use]
+/// What an icon button sends when the pointer comes onto it. ReCore
+/// implements it for its own message type so every icon button gets the
+/// same interface feedback; other message types keep None.
+pub trait HoverFeedback: Clone {
+    fn hover_feedback() -> Option<Self> {
+        None
+    }
+}
+
 pub struct IconButton<'a, M> {
     look: crate::look::Look<'a>,
     face: Face,
@@ -680,6 +689,7 @@ pub struct IconButton<'a, M> {
     ground: Ground,
     radius: f32,
     below: bool,
+    hover: Option<M>,
 }
 
 enum Face {
@@ -701,7 +711,7 @@ enum Ground {
 
 impl<'a> crate::look::Look<'a> {
     /// An icon button showing `icon`; see [`IconButton`].
-    pub fn icon_button<M: Clone>(
+    pub fn icon_button<M: Clone + HoverFeedback>(
         self,
         icon: Icon,
         label: impl Into<std::borrow::Cow<'a, str>>,
@@ -718,11 +728,12 @@ impl<'a> crate::look::Look<'a> {
             ground: Ground::Clear,
             radius: 6.0,
             below: false,
+            hover: M::hover_feedback(),
         }
     }
 
     /// An icon button showing `face` of its own, `side` across.
-    pub fn face_button<M: Clone>(
+    pub fn face_button<M: Clone + HoverFeedback>(
         self,
         face: crate::widgets::Pic,
         side: f32,
@@ -788,6 +799,7 @@ impl<'a, M: Clone + 'a> From<IconButton<'a, M>> for Element<'a, M> {
             ground,
             radius,
             below,
+            hover,
         } = icon_button;
         let theme = look.theme;
         let enabled = message.is_some();
@@ -840,6 +852,10 @@ impl<'a, M: Clone + 'a> From<IconButton<'a, M>> for Element<'a, M> {
                 let lit = pressed(face_in(theme.danger), lit_style(Some(red), red, radius));
                 crate::widgets::Hover::new(rest, lit).into()
             }
+        };
+        let shown: Element<'a, M> = match hover {
+            Some(hover) => iced::widget::mouse_area(shown).on_enter(hover).into(),
+            None => shown,
         };
         if label.is_empty() {
             return shown;

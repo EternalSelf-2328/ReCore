@@ -7,6 +7,14 @@ use std::borrow::Cow;
 
 use crate::{app::Message, theme::Theme};
 
+impl recore_iced_kit::controls::HoverFeedback for Message {
+    fn hover_feedback() -> Option<Self> {
+        Some(Message::Interface(
+            recore_core::sounds::InterfaceSound::Hover,
+        ))
+    }
+}
+
 /// A form button, as [`recore_iced_kit::controls::action`], with ReCord's
 /// hover sound while it can be pressed.
 pub fn action<'a>(
