@@ -26,6 +26,11 @@
           name = "cargo-xwin-${version}";
           hash = "sha256-FRK4bCTPAPWGov8vEFr9XdqCNoeXeyFdyiWV5x+4WYY=";
         };
+        # Its config-file unit test assumes a normal user's home/config
+        # layout, which the Nix build sandbox does not have. The binary itself
+        # is what the Windows shell needs; skip the package's self-tests.
+        doCheck = false;
+        dontCheck = true;
       });
       windowsWebrtcArchive = pkgs.fetchurl {
         url = "https://github.com/livekit/rust-sdks/releases/download/webrtc-51ef663/webrtc-win-x64-release.zip";
