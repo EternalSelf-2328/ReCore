@@ -4,8 +4,8 @@
 //! the theme it's drawn in.
 
 use iced::{
-    ContentFit, Element, Length, Point,
-    widget::{Space, column, container, image, row, stack, text},
+    Element, Length, Point, Rectangle, Size,
+    widget::{Space, column, container, row, stack, text},
 };
 
 use crate::{
@@ -70,14 +70,20 @@ impl App {
             .width(Length::Fill)
             .height(Length::Fill)
             .into();
-        // A CSS theme's background picture sits under the panels; a theme
-        // that keeps them opaque hides it, as ReCord's panel opacity does.
-        let base: Element<'_, Message> = match &self.themes.background {
+        // A background picture sits under the panels; a GIF, APNG, WebP or
+        // video plays through the window's picture players, its first frame
+        // standing in until the first one falls due. A theme that keeps the
+        // panels opaque hides it, as ReCord's panel opacity does.
+        let base: Element<'_, Message> = match &self.themes.background_picture {
             Some(picture) => {
-                let picture = image(picture.clone())
-                    .content_fit(ContentFit::Cover)
-                    .width(Length::Fill)
-                    .height(Length::Fill);
+                let size = Size::new(self.window.width, self.window.height);
+                let at = Rectangle::with_size(size);
+                let picture: Element<'_, Message> = self
+                    .win
+                    .pictures
+                    .animated(picture, size, at, true)
+                    .still(self.themes.background.clone())
+                    .into();
                 let dim = self.themes.background_dim.clamp(0.0, 1.0);
                 let mut under = stack![picture];
                 if dim > 0.0 {

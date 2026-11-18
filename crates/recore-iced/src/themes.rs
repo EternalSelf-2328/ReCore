@@ -127,9 +127,11 @@ pub struct Themes {
     /// The values the person changed in CSS themes, by theme id and custom
     /// property, kept in `layout.json`.
     pub overrides: BTreeMap<String, BTreeMap<String, String>>,
-    /// The chosen CSS theme's background picture, decoded once, and how far
-    /// it is dimmed.
+    /// The chosen background picture's first frame, and how far it is
+    /// dimmed. A GIF or video plays from `background_picture` through the
+    /// window's animation players.
     pub background: Option<iced::widget::image::Handle>,
+    pub background_picture: Option<std::sync::Arc<recore_core::chat::Picture>>,
     pub background_dim: f32,
 }
 
@@ -157,6 +159,7 @@ impl Themes {
             recore,
             overrides,
             background: None,
+            background_picture: None,
             background_dim: 0.0,
         };
         themes.reload();
@@ -517,7 +520,12 @@ impl Themes {
     /// ReCore can read, and keeps how far it is dimmed.
     fn load_background(&mut self) {
         if matches!(self.chosen_id(), "recore" | "recore-light") {
-            self.background = self.recore.background.as_deref().and_then(load_picture);
+            self.set_background_picture(
+                self.recore
+                    .background
+                    .as_deref()
+                    .and_then(|path| load_picture_file(path)),
+            );
             self.background_dim = self.recore.background_dim;
             return;
         }
@@ -530,19 +538,28 @@ impl Themes {
             let dim = css.look.background_dim.unwrap_or(0.0);
             let background = match &css.look.background {
                 Some(recore_css::Image::Data(bytes)) => {
-                    image::load_from_memory(bytes).ok().map(|picture| {
-                        let picture = picture.to_rgba8();
-                        let (width, height) = picture.dimensions();
-                        iced::widget::image::Handle::from_rgba(width, height, picture.into_raw())
-                    })
+                    recore_core::chat::decode_picture(bytes, BACKGROUND_WIDTH, BACKGROUND_HEIGHT)
                 }
-                Some(recore_css::Image::File(path)) => load_picture(path),
+                Some(recore_css::Image::File(path)) => load_picture_file(path),
                 _ => None,
             };
             (dim, background)
         };
         self.background_dim = dim;
-        self.background = background;
+        self.set_background_picture(background);
+    }
+
+    /// Keeps a decoded background and the handle that shows its first frame
+    /// until an animation's player begins.
+    fn set_background_picture(&mut self, picture: Option<recore_core::chat::Picture>) {
+        self.background = picture.as_ref().map(|picture| {
+            iced::widget::image::Handle::from_rgba(
+                picture.width,
+                picture.height,
+                picture.rgba.to_vec(),
+            )
+        });
+        self.background_picture = picture.map(std::sync::Arc::new);
     }
 
     /// Loads the fonts a theme carries and draws with its family.
@@ -589,13 +606,15 @@ pub fn prepare_fonts(root: &Path) {
     themes.apply_font(themes.chosen_id());
 }
 
-/// Loads a background picture, as the CSS and ReCore options both need.
-fn load_picture(path: &Path) -> Option<iced::widget::image::Handle> {
-    image::open(path).ok().map(|picture| {
-        let picture = picture.to_rgba8();
-        let (width, height) = picture.dimensions();
-        iced::widget::image::Handle::from_rgba(width, height, picture.into_raw())
-    })
+/// How large a background is decoded: large enough for a desktop, small
+/// enough that a GIF's frames and a video's RGBA buffer stay reasonable.
+const BACKGROUND_WIDTH: u32 = 1920;
+const BACKGROUND_HEIGHT: u32 = 1080;
+
+/// Loads a background picture from a file. GIF, APNG, WebP and video files
+/// keep their animation, which the window's picture players step.
+fn load_picture_file(path: &Path) -> Option<recore_core::chat::Picture> {
+    recore_core::chat::decode_picture_at(path, BACKGROUND_WIDTH, BACKGROUND_HEIGHT)
 }
 
 /// The family ReCore's own theme draws with.
@@ -812,6 +831,7 @@ mod tests {
             recore: RecoreOptions::default(),
             overrides: BTreeMap::new(),
             background: None,
+            background_picture: None,
             background_dim: 0.0,
         }
         .shown();
@@ -831,6 +851,7 @@ mod tests {
                 recore: RecoreOptions::default(),
                 overrides: BTreeMap::new(),
                 background: None,
+                background_picture: None,
                 background_dim: 0.0,
             }
         }

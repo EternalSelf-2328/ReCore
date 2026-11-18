@@ -31,6 +31,9 @@ in `layout.json` beside `recore_accent`:
 - `recore_scanlines`, `recore_grain` and `recore_vignette` (percentages);
 - `recore_beam`, `recore_flicker`, `recore_frame` and `recore_avatar_filter`;
 - `recore_background`, `recore_background_dim` and `recore_panel_opacity`;
+  the background may be a still picture, an animated GIF/APNG/WebP, or a
+  video (MP4, WebM, MOV or MKV), which plays through the window's picture
+  players;
 - `recore_font` (`pixel`, `mono` or `system`) and `recore_motion` (`full`,
   `subtle` or `off`).
 
@@ -76,7 +79,8 @@ tile with the CSS badge. A theme carries:
   loaded into the window's font system, and `--font-primary` picks the
   family.
 - Its radius (`--radius-md` or ReCord's `--rl-radius`), a background picture
-  (`--rl-background-image`, `--background-image`) drawn under the panels, and ReCord's CRT options
+  or video (`--rl-background-image`, `--background-image`) drawn under the
+  panels, and ReCord's CRT options
   (`--rl-motion`, `--rl-icons`, `--rl-scanline-opacity`,
   `--rl-grain-opacity`, `--rl-vignette-opacity`, `--rl-flicker-duration`,
   `--rl-beam-opacity`, `--rl-frame-opacity`, `--rl-avatar-filter`,

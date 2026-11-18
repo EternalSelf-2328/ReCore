@@ -1,48 +1,127 @@
 <p align="center">
-  <img src="packaging/icon.svg" width="96" height="96" alt="">
-</p>
-
-<h1 align="center">ReCore</h1>
-
-<p align="center">
-  <b>A native Discord client with ReCord's terminal look, and a reader for Discord CSS themes.</b><br>
-  A fork of <a href="https://github.com/yapfast/yapfast">Yapfast</a>: no browser engine, about 30 MB of RAM idle.
+  <a href="https://leriart.github.io/ReCore/">
+    <img src="docs/readme/hero.svg" alt="ReCore: a native Discord client with the ReCord terminal theme and a CSS theme interpreter" width="100%">
+  </a>
 </p>
 
 <p align="center">
-  <a href="https://leriart.github.io/ReCore/"><img src="https://img.shields.io/badge/site-live-e94221" alt="Site"></a>
-  <a href="https://github.com/leriart/ReCore"><img src="https://img.shields.io/badge/source-leriart%2FReCore-5865F2" alt="Source"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue" alt="License: GPL 3.0 or later"></a>
-  <a href="https://github.com/leriart/ReCord"><img src="https://img.shields.io/badge/theme-ReCord-e94221" alt="ReCord"></a>
+  <a href="https://leriart.github.io/ReCore/"><img src="https://img.shields.io/badge/SITE-LIVE-E94221?style=flat-square&labelColor=050605" alt="Site"></a>
+  <a href="https://github.com/leriart/ReCore/releases"><img src="https://img.shields.io/github/v/release/leriart/ReCore?style=flat-square&color=E94221&labelColor=050605" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/LICENSE-GPL--3.0--OR--LATER-D4B496?style=flat-square&labelColor=050605" alt="License: GPL 3.0 or later"></a>
+  <a href="https://github.com/leriart/ReCord"><img src="https://img.shields.io/badge/THEME-RECORD-4F9A8E?style=flat-square&labelColor=050605" alt="ReCord theme"></a>
+  <a href="https://github.com/yapfast/yapfast"><img src="https://img.shields.io/badge/FORK-YAPFAST-8C7B6C?style=flat-square&labelColor=050605" alt="Fork of Yapfast"></a>
 </p>
 
-ReCore is [Yapfast](https://github.com/yapfast/yapfast) with
-[**ReCord**](https://leriart.github.io/ReCord/) as its own look and a CSS
-theme interpreter. It talks to Discord's API directly and
-draws its own window with [iced](https://iced.rs), so there is no Chromium
-anywhere in it. Servers, DMs, threads, forums, friends, voice, screen sharing,
-GIFs and the rest of Yapfast's features are here; the fork adds:
+<p align="center">
+  <strong>A native Discord client with ReCord's terminal look, and a reader for Discord CSS themes.</strong><br>
+  Rust and <a href="https://iced.rs">iced</a>, no browser engine, about 30 MB of RAM idle.
+</p>
 
-- **ReCore and ReCore Paper**, ReCord's signal-orange terminal palette in dark
+---
+
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <h3>Native by construction</h3>
+      <p>Discord's API, voice and video, drawn in a window made with iced. No Chromium, no WebView and no browser process in the background.</p>
+    </td>
+    <td width="33%" valign="top">
+      <h3>ReCord, built in</h3>
+      <p>Signal orange on charcoal, Pixel Operator, square panels, scanned pictures and the same stepped motion as the theme, running natively.</p>
+    </td>
+    <td width="33%" valign="top">
+      <h3>Themes travel</h3>
+      <p>Vencord, Vesktop, Equicord, BetterDiscord, Legcord and ReCord <code>.theme.css</code> files become native colours, type, shape and effects.</p>
+    </td>
+  </tr>
+</table>
+
+<p align="center">
+  <a href="https://leriart.github.io/ReCore/">
+    <img src="site/preview.png" alt="The ReCord terminal theme: square server rail, pixel type, signal-orange accents and a channel timeline" width="920">
+  </a>
+</p>
+
+<p align="center"><sub>The ReCord terminal language: square rails, pixel type, signal orange and a persistent CRT layer.</sub></p>
+
+## The client
+
+ReCore is [Yapfast](https://github.com/yapfast/yapfast) with the
+[**ReCord**](https://leriart.github.io/ReCord/) theme as its own look and a CSS
+theme interpreter on top. Servers, DMs, threads, forums, friends, voice, screen
+sharing, GIFs and the rest of Yapfast's features are here.
+
+The fork adds:
+
+- **ReCore and ReCore Paper**: ReCord's signal-orange terminal palette in dark
   and paper daylight, with Pixel Operator and Pixel Operator Mono bundled.
-- **An accent picker** that recolours the ReCore themes live.
-- **ReCord's call and message sounds**, as a sound set in Settings → Sounds,
-  the 78 ReCord pixel glyphs that map onto ReCore's icon set, and square
-  framed avatars with square presence glyphs and ReCord's warm, scanlined
-grade.
-- **A CSS theme interpreter** for Vencord, Vesktop, Equicord, BetterDiscord,
-  Legcord and ReCord theme files: colours, accents, fonts, radius, background
-  pictures and ReCord's CRT options. Themes are read from ReCore's folder and
-  from the clients' own theme folders. See [docs/themes.md](docs/themes.md).
+- **The complete ReCord look**: square avatars and rail tiles, the 78 pixel
+  glyphs, warm scanned avatars, scanlines, grain, vignette, corner brackets,
+  the rolling scan beam and flicker.
+- **ReCord motion**: a stepped boot signal, power-on, screen-in, channel
+  flashes, pulsing unread marks, speaking rings and stepped menus and dialogs.
+- **ReCord options in Appearance**: accent presets, motion level, typeface,
+  background picture, background dimming, panel opacity, CRT levels and
+  switches, low power and avatar filtering.
+- **ReCord's call and message sounds** as the `ReCord` sound set in
+  Settings → Sounds.
+- **A CSS theme interpreter** for the common Discord theme sources: colours,
+  accents, fonts, radius, backgrounds and ReCord's `--rl-*` options. See
+  [docs/themes.md](docs/themes.md).
 
-The site is at **https://leriart.github.io/ReCore/**: the landing page, a live
-ReCord theme preview, the CSS interpreter notes, the palette and a builder
-that downloads a ReCord CSS theme with your settings.
+## Backgrounds
 
-Releases are built by `.github/workflows/release.yml` when a `v` tag is pushed;
-the site's Releases section reads GitHub's releases API and shows the assets.
-See [docs/packaging.md](docs/packaging.md) for the tag steps and the signing
-key.
+ReCore uses the same background slot as ReCord. The picture is placed under
+the panels; **Background dim**, **Panel opacity** and the CRT layer sit over
+it.
+
+| Media | Formats | Playback |
+| --- | --- | --- |
+| Still pictures | PNG, JPEG, WebP, BMP | Decoded at up to 1920 × 1080 and drawn under the panels |
+| Animated pictures | GIF, APNG, WebP | Frames are decoded as they fall due; the still is shown until the first frame |
+| Video | MP4, WebM, MOV, MKV | Decoded through the bundled FFmpeg path into a capped background animation |
+
+Choose the file in **Appearance → ReCore window → Choose background**. CSS
+themes can name one through `--rl-background-image` or `--background-image`,
+and the same media types are accepted. The background never takes pointer
+input or audio.
+
+## The theme, natively
+
+<p align="center">
+  <img src="docs/readme/palette.svg" alt="ReCore palette: void, ink, panel, raised, signal, oxide, paper and teal" width="100%">
+</p>
+
+The colours are the site's tokens. They are also the values ReCore writes to
+`layout.json` and uses in the window:
+
+```css
+:root {
+  --recore-void:    #050605;
+  --recore-ink:     #080907;
+  --recore-panel:   #0e100c;
+  --recore-raised:  #131511;
+  --recore-signal:  #e94221;
+  --recore-oxide:   #a8231b;
+  --recore-paper:   #d4b496;
+  --recore-cream:   #f0dec6;
+  --recore-teal:    #14322a;
+  --recore-live:    #79b59a;
+}
+```
+
+ReCord's CSS is included at
+[`themes/ReCord.theme.css`](themes/ReCord.theme.css). Dropping it into the
+themes folder gives the built-in ReCore colours and fonts. Appearance lists
+every option the file exposes: colours become swatches, opacity becomes
+sliders, images get **Choose** and **Clear**, and `full` / `subtle` / `off`
+becomes buttons.
+
+The native window matches the parts a native renderer can own: palette, type,
+shape, pictures, CRT effects and motion. Discord's web-only selectors,
+pseudo-elements and DOM animations stay in the file because there is no DOM
+to animate. [docs/themes.md](docs/themes.md) describes the boundary and the
+interpreter in detail.
 
 ## Build and run
 
@@ -58,61 +137,19 @@ nix develop path:./nix --command cargo run --locked
 Or, on Linux with rustup and the libraries installed:
 
 ```bash
-cargo run --locked -- --preview   # the sample conversations, no account
+cargo run --locked -- --preview   # sample conversations, no account
 cargo run --locked                # link an account by QR code
 ```
 
 `--preview` opens the window on Yapfast's fake Discord server. The real client
 links an account by scanning Discord's QR code, exactly as upstream does.
 
-## Themes
+## Releases
 
-Settings → Appearance lists the built-in themes, your custom ones, and every
-`.theme.css` ReCore can find. **Themes folder** opens ReCore's own folder;
-**Reload CSS** rereads the client folders without restarting. Appearance's
-note says how many files were read and how many failed.
-
-What a CSS theme can carry into a native window:
-
-| Read | Not painted |
-| --- | --- |
-| Discord colour tokens, `var()`, `color-mix()`, `light-dark()`, `@import` | Arbitrary layouts and pseudo-elements |
-| Common region selectors: `[class*="sidebar"]`, `guilds_`, `chat_`, `membersWrap_`, `message_`, `channelTextArea_` | Class hashes with no usable substring, and selectors outside those regions |
-| `.theme-dark` / `.theme-light`, `:root`, `html`, `body`, `#app-mount`, `:is`, `:not`, `:where` | CSS `@keyframes` and DOM animations |
-| Backgrounds, text, radius, font family and size from region rules | Client-specific hacks and scripts |
-| `@font-face` data URIs and local font files, `--font-primary` | |
-| Radius, background picture, ReCord's `--rl-*` colour and CRT options | |
-
-ReCore builds a small native tree for the regions Discord themes skin, gives
-each one the class fragments themes commonly use, and runs the theme's rules
-through a selector matcher with specificity, `!important` and source order.
-That makes region rules such as `[class*="sidebarList_"] { background: … }`
-reach the native sidebar instead of being discarded. It is still not a
-browser: layout, pseudo-elements and arbitrary DOM structure stay out.
-
-That is the honest boundary of a CSS interpreter in a native renderer: the
-palette and the look travel, the web-only rules stay in the file. ReCord's
-own CSS is included at [`themes/ReCord.theme.css`](themes/ReCord.theme.css),
-and dropping it into the themes folder gives the built-in ReCore colours and
-fonts. A CSS theme's background picture is placed under the panels, and
-ReCord's scanlines, grain, vignette and corner frame are drawn natively over
-the window, with the rolling scan beam and flicker; a CSS theme's DOM
-animations are not drawn.
-
-## What comes from Yapfast
-
-Everything Yapfast does, ReCore inherits: Discord and Matrix sign-in, servers,
-channels, DMs, group DMs, threads, forums and polls, reactions, Markdown,
-custom emoji and stickers, profiles and cosmetics, friends, notifications,
-search, pins, server settings, voice and video calls, Go Live, cameras, the
-soundboard, keybinds, the tray, updates and the optional Matrix build. The
-[upstream README](https://github.com/yapfast/yapfast) and
-[upstream docs](https://github.com/yapfast/yapfast/tree/main/docs) describe
-them in detail.
-
-ReCore is a fork, not a rewrite. Bug reports about the Discord protocol, voice
-or the rest of Yapfast's behaviour belong upstream too when they reproduce
-there; ReCore-specific theme problems belong here.
+Releases are built by [`.github/workflows/release.yml`](.github/workflows/release.yml)
+when a `v` tag is pushed. The site's Releases section reads GitHub's releases
+API and shows the assets. See [docs/packaging.md](docs/packaging.md) for the
+tag steps and the signing key.
 
 ## Configure
 
@@ -121,7 +158,7 @@ window's settings are Yapfast's: appearance of profiles, messages, voice,
 keybinds, notifications, advanced and about. `layout.json` keeps the changes
 in the data folder:
 
-- Linux: `~/.local/share/recore` (or `$XDG_DATA_HOME/recore`)
+- Linux: `~/.local/share/recore` or `$XDG_DATA_HOME/recore`
 - Windows: `%APPDATA%\leriart\ReCore`
 - macOS: `~/Library/Application Support/io.github.leriart.ReCore`
 
@@ -161,6 +198,6 @@ visual reference is REPLACED; no game assets are included.
 
 Third-party clients are against Discord's Terms of Service. In practice
 Discord rarely bans people for using one, but if losing your account would be
-a disaster, don't use any third-party client. ReCore keeps to the same limits
+a disaster, do not use any third-party client. ReCore keeps to the same limits
 Discord's own app does and sends no analytics. The login token stays in the
 system's credential store and goes only to Discord.

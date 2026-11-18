@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">ReCore</title>
+  <desc id="desc">ReCore, a native Discord client with the ReCord terminal theme and a CSS theme interpreter.</desc>
+  <defs>
+    <pattern id="grid" width="78" height="78" patternUnits="userSpaceOnUse">
+      <path d="M78 0H0V78" fill="none" stroke="#d4b496" stroke-opacity=".035"/>
+    </pattern>
+    <pattern id="scan" width="4" height="3" patternUnits="userSpaceOnUse">
+      <rect width="4" height="1" fill="#000" fill-opacity=".24"/>
+    </pattern>
+    <linearGradient id="fade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#050605"/>
+      <stop offset=".58" stop-color="#050605"/>
+      <stop offset="1" stop-color="#050605" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="signal" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#e94221"/>
+      <stop offset="1" stop-color="#f06a4a"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="420" fill="#050605"/>
+  <rect width="1200" height="420" fill="url(#grid)"/>
+  <rect width="1200" height="420" fill="url(#scan)" opacity=".42"/>
+
+  <g opacity=".25" fill="#4f9a8e">
+    <rect x="880" y="286" width="26" height="86"/>
+    <rect x="916" y="256" width="40" height="116"/>
+    <rect x="968" y="306" width="22" height="66"/>
+    <rect x="1002" y="272" width="54" height="100"/>
+    <rect x="1068" y="318" width="30" height="54"/>
+    <rect x="1110" y="292" width="44" height="80"/>
+  </g>
+  <g opacity=".16" fill="#e94221">
+    <rect x="916" y="266" width="8" height="6"/>
+    <rect x="980" y="316" width="6" height="5"/>
+    <rect x="1012" y="282" width="7" height="5"/>
+    <rect x="1122" y="302" width="6" height="5"/>
+  </g>
+
+  <g transform="translate(64 44)">
+    <g transform="scale(1.55)" fill="#e94221" shape-rendering="crispEdges">
+      <rect x="4" y="2" width="4" height="20"/>
+      <rect x="8" y="2" width="8" height="4"/>
+      <rect x="16" y="6" width="4" height="4"/>
+      <rect x="8" y="10" width="12" height="4"/>
+      <rect x="12" y="14" width="4" height="4"/>
+      <rect x="16" y="18" width="4" height="4"/>
+    </g>
+    <text x="54" y="25" fill="#f0dec6" font-family="monospace" font-size="15" font-weight="700" letter-spacing="3">RECORE</text>
+  </g>
+
+  <text x="64" y="164" fill="#d4b496" font-family="monospace" font-size="11" letter-spacing="3">DISCORD / NATIVE CLIENT</text>
+  <text x="62" y="252" font-family="monospace" font-size="96" font-weight="700" letter-spacing="2">
+    <tspan fill="#f0dec6">RE</tspan><tspan fill="#e94221">CORE</tspan>
+  </text>
+  <text x="66" y="288" fill="#a58979" font-family="monospace" font-size="16" letter-spacing="1.2">The ReCord terminal, rendered natively.</text>
+  <text x="66" y="312" fill="#8c7b6c" font-family="monospace" font-size="14">No Chromium. No webview. A CSS theme interpreter for Discord themes.</text>
+
+  <g font-family="monospace" font-size="10" letter-spacing="1.5">
+    <rect x="66" y="344" width="142" height="26" fill="none" stroke="#e94221"/>
+    <text x="80" y="361" fill="#e94221">NO CHROMIUM</text>
+    <rect x="218" y="344" width="132" height="26" fill="none" stroke="#4f9a8e"/>
+    <text x="232" y="361" fill="#79b59a">CSS THEMES</text>
+    <rect x="360" y="344" width="154" height="26" fill="none" stroke="#2c241d"/>
+    <text x="374" y="361" fill="#a58979">RECORD PALETTE</text>
+  </g>
+
+  <g transform="translate(700 78)">
+    <rect width="434" height="264" fill="#080907" stroke="#2c241d"/>
+    <rect x="1" y="1" width="432" height="28" fill="#0b0d0a" stroke="#2c241d"/>
+    <text x="14" y="19" fill="#e94221" font-family="monospace" font-size="10" letter-spacing="2">RECORE // BOOT</text>
+    <text x="338" y="19" fill="#4f9a8e" font-family="monospace" font-size="9" letter-spacing="1">EN LINEA</text>
+    <g font-family="monospace" font-size="11" letter-spacing=".7">
+      <text x="16" y="56" fill="#8c7b6c">SYS</text><text x="70" y="56" fill="#a58979">// native iced window</text>
+      <text x="16" y="80" fill="#8c7b6c">NET</text><text x="70" y="80" fill="#79b59a">// discord gateway OK</text>
+      <text x="16" y="104" fill="#8c7b6c">THEME</text><text x="70" y="104" fill="#d4b496">// record / signal orange</text>
+      <text x="16" y="128" fill="#8c7b6c">CRT</text><text x="70" y="128" fill="#a58979">// scanlines 25% / grain 18%</text>
+      <line x1="14" y1="146" x2="420" y2="146" stroke="#2c241d"/>
+      <text x="16" y="172" fill="#e94221">$</text><text x="34" y="172" fill="#f0dec6">mount --theme record</text>
+      <text x="34" y="196" fill="#a58979">SEÑAL ADQUIRIDA // NODE 04</text>
+      <text x="34" y="216" fill="#6f5d4f">PHOENIX-CITY RELAY / 2087</text>
+    </g>
+    <g transform="translate(16 232)">
+      <rect width="74" height="18" fill="#e94221"/>
+      <rect x="82" width="74" height="18" fill="#a8231b"/>
+      <rect x="164" width="74" height="18" fill="#d4b496"/>
+      <rect x="246" width="74" height="18" fill="#14322a"/>
+      <rect x="328" width="74" height="18" fill="#2c241d"/>
+    </g>
+    <g fill="#e94221">
+      <rect x="0" y="0" width="18" height="2"/>
+      <rect x="0" y="0" width="2" height="18"/>
+      <rect x="416" y="246" width="18" height="2"/>
+      <rect x="432" y="230" width="2" height="18"/>
+    </g>
+  </g>
+</svg>

@@ -326,7 +326,12 @@ impl Settings {
             }
             Event::Background => {
                 if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("Image", &["png", "jpg", "jpeg", "gif", "webp", "bmp"])
+                    .add_filter(
+                        "Picture",
+                        &[
+                            "png", "jpg", "jpeg", "gif", "webp", "bmp", "mp4", "webm", "mov", "mkv",
+                        ],
+                    )
                     .pick_file()
                 {
                     let root = cx.client.root().to_path_buf();
@@ -376,7 +381,12 @@ impl Settings {
             Event::CssApply(name, value) => self.css_apply(cx, &name, &value),
             Event::CssImage(name) => {
                 if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("Image", &["png", "jpg", "jpeg", "gif", "webp", "bmp"])
+                    .add_filter(
+                        "Picture",
+                        &[
+                            "png", "jpg", "jpeg", "gif", "webp", "bmp", "mp4", "webm", "mov", "mkv",
+                        ],
+                    )
                     .pick_file()
                 {
                     let value = path.display().to_string();

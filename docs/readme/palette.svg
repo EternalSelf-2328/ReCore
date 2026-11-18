@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="196" viewBox="0 0 1200 196" role="img" aria-labelledby="title desc">
+  <title id="title">ReCore palette</title>
+  <desc id="desc">The ReCord terminal palette used by ReCore: void, ink, panel, raised, signal, oxide, paper and teal.</desc>
+  <defs>
+    <pattern id="scan" width="4" height="3" patternUnits="userSpaceOnUse">
+      <rect width="4" height="1" fill="#000" fill-opacity=".22"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="196" fill="#050605"/>
+  <rect width="1200" height="196" fill="url(#scan)"/>
+  <g font-family="monospace">
+    <text x="38" y="42" fill="#d4b496" font-size="10" letter-spacing="3">RECORE / PALETTE</text>
+    <text x="38" y="66" fill="#6f5d4f" font-size="11" letter-spacing=".8">ReCord's signal-orange terminal colours, used by the client, the site and this README.</text>
+
+    <g transform="translate(38 92)">
+      <g>
+        <rect width="132" height="52" fill="#050605" stroke="#2c241d"/>
+        <rect y="52" width="132" height="24" fill="#0b0d0a"/>
+        <text x="10" y="70" fill="#a58979" font-size="10" letter-spacing="1">VOID</text>
+        <text x="82" y="70" fill="#6f5d4f" font-size="9">050605</text>
+      </g>
+      <g transform="translate(144)">
+        <rect width="132" height="52" fill="#080907" stroke="#2c241d"/>
+        <rect y="52" width="132" height="24" fill="#0b0d0a"/>
+        <text x="10" y="70" fill="#a58979" font-size="10" letter-spacing="1">INK</text>
+        <text x="82" y="70" fill="#6f5d4f" font-size="9">080907</text>
+      </g>
+      <g transform="translate(288)">
+        <rect width="132" height="52" fill="#0e100c" stroke="#2c241d"/>
+        <rect y="52" width="132" height="24" fill="#0b0d0a"/>
+        <text x="10" y="70" fill="#a58979" font-size="10" letter-spacing="1">PANEL</text>
+        <text x="82" y="70" fill="#6f5d4f" font-size="9">0E100C</text>
+      </g>
+      <g transform="translate(432)">
+        <rect width="132" height="52" fill="#131511" stroke="#2c241d"/>
+        <rect y="52" width="132" height="24" fill="#0b0d0a"/>
+        <text x="10" y="70" fill="#a58979" font-size="10" letter-spacing="1">RAISED</text>
+        <text x="82" y="70" fill="#6f5d4f" font-size="9">131511</text>
+      </g>
+      <g transform="translate(576)">
+        <rect width="132" height="52" fill="#e94221"/>
+        <rect y="52" width="132" height="24" fill="#0b0d0a"/>
+        <text x="10" y="70" fill="#f0dec6" font-size="10" letter-spacing="1">SIGNAL</text>
+        <text x="82" y="70" fill="#a58979" font-size="9">E94221</text>
+      </g>
+      <g transform="translate(720)">
+        <rect width="132" height="52" fill="#a8231b"/>
+        <rect y="52" width="132" height="24" fill="#0b0d0a"/>
+        <text x="10" y="70" fill="#f0dec6" font-size="10" letter-spacing="1">OXIDE</text>
+        <text x="82" y="70" fill="#a58979" font-size="9">A8231B</text>
+      </g>
+      <g transform="translate(864)">
+        <rect width="132" height="52" fill="#d4b496"/>
+        <rect y="52" width="132" height="24" fill="#0b0d0a"/>
+        <text x="10" y="70" fill="#f0dec6" font-size="10" letter-spacing="1">PAPER</text>
+        <text x="82" y="70" fill="#a58979" font-size="9">D4B496</text>
+      </g>
+      <g transform="translate(1008)">
+        <rect width="132" height="52" fill="#14322a"/>
+        <rect y="52" width="132" height="24" fill="#0b0d0a"/>
+        <text x="10" y="70" fill="#79b59a" font-size="10" letter-spacing="1">TEAL</text>
+        <text x="82" y="70" fill="#6f5d4f" font-size="9">14322A</text>
+      </g>
+    </g>
+  </g>
+</svg>
