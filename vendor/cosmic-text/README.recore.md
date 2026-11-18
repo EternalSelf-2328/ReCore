@@ -1,11 +1,11 @@
-# Yapfast's cosmic-text
+# ReCore's cosmic-text
 
 This is cosmic-text 0.15.0 from crates.io under its original MIT or
 Apache-2.0 licence (`LICENSE-MIT`, `LICENSE-APACHE`), without its tests,
 benchmarks, sample fonts and screenshots. iced shapes the iced client's text
 with it; the root `Cargo.toml` patches it in through `[patch.crates-io]`.
 
-Changes, marked `Yapfast port` in the source:
+Changes, marked `ReCore port` in the source:
 
 1. `src/font/fallback/mod.rs`, `src/shape.rs`: `Fallback::missing`, a hook
    called with each cluster of a shaped run that the default, script and
@@ -16,7 +16,7 @@ Changes, marked `Yapfast port` in the source:
    already loaded, so a character of the Common script (𝔟, ⓒ, ⠃) that none
    of them has drew as a box, and one that some loaded font happened to have
    took that font, whatever it was. The iced client asks the system for a
-   font per character (`crates/yapfast-iced-kit/src/fonts.rs`).
+   font per character (`crates/recore-iced-kit/src/fonts.rs`).
 2. `src/font/fallback/mod.rs`: the default family, and the script and
    common fallback families, match at the face nearest the text's weight.
    Stock, they matched only a face of exactly that weight, so semibold text

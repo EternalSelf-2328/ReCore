@@ -1,4 +1,4 @@
-# Yapfast's iced_wgpu
+# ReCore's iced_wgpu
 
 This is iced_wgpu 0.14.0 from crates.io under its original MIT licence (as
 the crate's manifest declares; the published crate ships no licence file).
@@ -6,7 +6,7 @@ The iced client draws with it when its GPU setting is on
 (docs/iced-client.md); the root `Cargo.toml` patches it in through
 `[patch.crates-io]`.
 
-Changes, marked `Yapfast port` in the source:
+Changes, marked `ReCore port` in the source:
 
 - `src/shader/image.wgsl`: an image's rounded edge at `0.5 - d`, as the quad
   shader and tiny-skia have it. Stock, `1.0 - d` put the edge half a pixel

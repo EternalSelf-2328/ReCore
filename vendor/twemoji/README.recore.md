@@ -1,11 +1,11 @@
-# Twemoji for Yapfast
+# Twemoji for ReCore
 
 This is `assets/72x72/` from Twemoji, the emoji artwork Discord's client draws,
 as the Discord organisation keeps it: https://github.com/discord/twemoji, at
 commit `187e1b77ee80532eb584bcf62a2266942fa39cf9` (Twemoji v17.0, Unicode 17.0).
 
-Yapfast draws emoji from these pictures instead of the system emoji font, so
-they look as Discord's do. `crates/yapfast-iced/build.rs` makes them one font
+ReCore draws emoji from these pictures instead of the system emoji font, so
+they look as Discord's do. `crates/recore-iced/build.rs` makes them one font
 the program carries, each picture the glyph of the emoji its file name spells:
 the emoji's code points in lower-case hexadecimal, joined by `-`.
 
@@ -33,7 +33,7 @@ the revision `REVISION` names.
 
 Take the new commit's `assets/72x72/`, `LICENSE-GRAPHICS`, `LICENSE` and
 `README.md` over these, and update the commit above. Nothing else here is
-Yapfast's, so there is nothing to reapply.
+ReCore's, so there is nothing to reapply.
 
 A code point these pictures lack stays a system-font glyph, so a new Twemoji
 release adds look rather than fixing anything.

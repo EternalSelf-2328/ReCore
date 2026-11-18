@@ -1,16 +1,16 @@
-# Yapfast's iced_tiny_skia
+# ReCore's iced_tiny_skia
 
 This is iced_tiny_skia 0.14.1 from crates.io under its original MIT licence
 (as the crate's manifest declares; the published crate ships no licence
-file). The iced client (`crates/yapfast-iced`, docs/iced-client.md) draws
+file). The iced client (`crates/recore-iced`, docs/iced-client.md) draws
 with it on the CPU; the root `Cargo.toml` patches it in through
-`[patch.crates-io]`, and `crates/yapfast-iced` pins iced to 0.14.0 so the
+`[patch.crates-io]`, and `crates/recore-iced` pins iced to 0.14.0 so the
 two stay matched.
 
 Stock, it copies and converts every picture on screen, draws pictures,
 glyphs and most quads through tiny-skia's f32 pipeline and a window-sized
 clip mask, and draws a scaled video frame at a core's whole cost. Changes,
-marked `Yapfast port` in the source and numbered there:
+marked `ReCore port` in the source and numbered there:
 
 1. `raster.rs`: an `Rgba` handle's pixels are taken to be premultiplied BGRA
    already, as the client decodes pictures (`chat::set_pixel_buffers`), and
@@ -51,7 +51,7 @@ marked `Yapfast port` in the source and numbered there:
 13. `video.rs` (new), `raster.rs`, `lib.rs`: a hook the app sets once
     (`video::set_hook`) is handed each unrotated picture before the blit,
     with the clip and the target, and may draw it itself. The client's hook
-    (`crates/yapfast-iced/src/video.rs`) copies or scales its video frames
+    (`crates/recore-iced/src/video.rs`) copies or scales its video frames
     with libyuv, which the libwebrtc archive already links in; anything it
     declines draws as before.
 
