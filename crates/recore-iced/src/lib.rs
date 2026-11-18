@@ -33,6 +33,7 @@ mod animated;
 mod app;
 mod arrange;
 mod away;
+mod background;
 mod banners;
 mod bot_select;
 mod browse_channels;
