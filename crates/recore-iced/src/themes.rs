@@ -621,7 +621,7 @@ fn load_picture_file(path: &Path) -> Option<recore_core::chat::Picture> {
 fn recore_family(name: &str) -> Option<&'static str> {
     match name {
         "mono" => Some("Pixel Operator Mono"),
-        "system" => None,
+        "system" | "discord" => None,
         _ => Some("Pixel Operator"),
     }
 }

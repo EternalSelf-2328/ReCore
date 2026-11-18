@@ -250,10 +250,14 @@ impl App {
             InterfaceSound::Boot => Duration::ZERO,
         };
         let now = Instant::now();
-        if gap > Duration::ZERO && now.saturating_duration_since(self.ui_last.get()) < gap {
-            return;
+        // Only the rapid streams are debounced: a click's select must not
+        // swallow the menu-open sound that follows it.
+        if matches!(sound, InterfaceSound::Hover | InterfaceSound::Type) {
+            if now.saturating_duration_since(self.ui_last.get()) < gap {
+                return;
+            }
+            self.ui_last.set(now);
         }
-        self.ui_last.set(now);
         if !self.layout.prefs.interface_sound(sound) {
             return;
         }

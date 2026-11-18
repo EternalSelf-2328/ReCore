@@ -797,6 +797,7 @@ impl<'a> Page<'a> {
                     action(theme, "Pixel", Kind::Plain, Some(theme_message(Event::Font("pixel")))).small(),
                     action(theme, "Pixel mono", Kind::Plain, Some(theme_message(Event::Font("mono")))).small(),
                     action(theme, "System", Kind::Plain, Some(theme_message(Event::Font("system")))).small(),
+                    action(theme, "Default", Kind::Plain, Some(theme_message(Event::Font("discord")))).small(),
                 ]
                 .spacing(8)
                 .into(),
