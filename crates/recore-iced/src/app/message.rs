@@ -92,6 +92,8 @@ pub enum Message {
     /// A frame of the window's stepped motion: the boot signal, badges,
     /// presence and the screen-in.
     MotionTick,
+    /// One of ReCord's interface sounds.
+    Interface(recore_core::sounds::InterfaceSound),
     /// Nothing to do: a click a backdrop takes.
     Nothing,
     /// The header's bell: the open channel's notification choices.

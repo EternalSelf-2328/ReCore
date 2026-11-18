@@ -63,8 +63,10 @@ The fork adds:
 - **ReCord options in Appearance**: accent presets, motion level, typeface,
   background picture, background dimming, panel opacity, CRT levels and
   switches, low power and avatar filtering.
-- **ReCord's call and message sounds** as the `ReCord` sound set in
-  Settings → Sounds.
+- **ReCord's sounds** as the `ReCord` sound set in Settings → Sounds:
+  call and message sounds, plus interface feedback for hover, menus,
+  navigation, typing, send, Escape and the boot signal, with a master
+  interface volume and switches for hover, typing and boot.
 - **A CSS theme interpreter** for the common Discord theme sources: colours,
   accents, fonts, radius, backgrounds and ReCord's `--rl-*` options. See
   [docs/themes.md](docs/themes.md).
@@ -183,7 +185,9 @@ palettes are in `crates/recore-core/src/theme.rs`.
   contributors: GPL-3.0-or-later. The full upstream history is in this
   repository.
 - **ReCord**, the theme this fork is built around, by leriart: theme code
-  Apache-2.0, companion plugin GPL-3.0-or-later. Pixel Operator by Jayvee
+  Apache-2.0, companion plugin GPL-3.0-or-later. The signal-pack WAVs are
+  CC0 1.0, original synthesized audio, with the licence in
+  `crates/recore-core/sounds/record/ui/LICENSE.txt`. Pixel Operator by Jayvee
   Enaguas (HarvettFox96), CC0 1.0; the licence is in
   `crates/recore-iced-kit/fonts/LICENSE-PixelOperator.txt`.
 - Yapfast's bundled palettes and assets keep their own licences, as the

@@ -302,10 +302,29 @@ pub enum Event {
 /// What each of the menu's events does.
 pub fn update(app: &mut App, event: Event) -> Task<Message> {
     match event {
-        Event::Light(index) => menu_light(app, index),
+        Event::Light(index) => {
+            let changed = app
+                .win
+                .menu
+                .as_ref()
+                .is_some_and(|menu| menu.lit != Some(index));
+            let task = menu_light(app, index);
+            if changed {
+                app.interface_sound(recore_core::sounds::InterfaceSound::Hover);
+            }
+            task
+        }
         Event::SubLight(index) => {
+            let changed = app
+                .win
+                .menu
+                .as_ref()
+                .is_some_and(|menu| menu.sub_lit != Some(index));
             if let Some(menu) = &mut app.win.menu {
                 menu.sub_lit = Some(index);
+            }
+            if changed {
+                app.interface_sound(recore_core::sounds::InterfaceSound::Hover);
             }
             Task::none()
         }

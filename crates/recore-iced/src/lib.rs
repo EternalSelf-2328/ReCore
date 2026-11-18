@@ -45,7 +45,7 @@ mod commands;
 mod components;
 mod composer;
 mod control_file;
-use recore_iced_kit::controls;
+mod controls;
 mod conversation;
 mod ctx;
 mod desktop;

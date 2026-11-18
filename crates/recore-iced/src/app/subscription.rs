@@ -51,12 +51,29 @@ impl App {
             }
             _ => None,
         });
+        // ReCord's interface feedback: a click is a select, Escape is a
+        // back. Buttons and menus have their own hover and open sounds.
+        let sounds = iced::event::listen_with(|event, _, _| match event {
+            iced::Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left)) => {
+                Some(Message::Interface(
+                    recore_core::sounds::InterfaceSound::Select,
+                ))
+            }
+            iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                key: keyboard::Key::Named(keyboard::key::Named::Escape),
+                ..
+            }) => Some(Message::Interface(
+                recore_core::sounds::InterfaceSound::Back,
+            )),
+            _ => None,
+        });
         let mut subscriptions = vec![
             keys,
             fonts,
             drops,
             sizes,
             zooms,
+            sounds,
             crate::window_bar::history_keys(),
             Self::shell_subscription(),
         ];

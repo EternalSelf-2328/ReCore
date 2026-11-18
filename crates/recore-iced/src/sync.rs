@@ -256,6 +256,7 @@ impl App {
         }
         if switched {
             self.switched = Some(std::time::Instant::now());
+            self.interface_sound(recore_core::sounds::InterfaceSound::Navigate);
             self.selected = state.selected.clone();
             self.timeline.from_end = 0.0;
             self.timeline.at_end = true;

@@ -285,7 +285,11 @@ pub fn update(app: &mut App, event: Event) -> Task<Message> {
             if !entered {
                 app.sidebar.voice_card_off = false;
             }
+            let changed = entered && app.pointed.side.as_deref() != Some(id.as_str());
             crate::app::point(&mut app.pointed.side, id, entered);
+            if changed {
+                app.interface_sound(recore_core::sounds::InterfaceSound::Hover);
+            }
             // A DM's nameplate and moving decoration come as it's
             // pointed at.
             return app.ask();

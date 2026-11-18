@@ -392,7 +392,11 @@ pub fn update(app: &mut App, event: Event) -> Task<Message> {
             return app.ask();
         }
         Event::Point(id, entered) => {
+            let changed = entered && app.pointed.rail.as_deref() != Some(id.as_str());
             crate::app::point(&mut app.pointed.rail, id, entered);
+            if changed {
+                app.interface_sound(recore_core::sounds::InterfaceSound::Hover);
+            }
             return Task::none();
         }
         Event::Home => app

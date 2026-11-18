@@ -50,6 +50,11 @@ pub enum Pref {
     FlashTaskbar(bool),
     SoundSet(usize),
     SoundVolume(u32, bool),
+    InterfaceSounds(bool),
+    InterfaceVolume(u32, bool),
+    HoverSounds(bool),
+    TypingSounds(bool),
+    BootSound(bool),
     AdjustEach(bool),
     EachSound(usize, u32, bool),
     PlaySound(usize),
@@ -192,6 +197,41 @@ impl Settings {
                     try_sound(cx, Sound::Message);
                 }
             }
+            Pref::InterfaceSounds(on) => {
+                prefs.interface_sounds = Some(on);
+                cx.keep("interface_sounds", on);
+                if on {
+                    try_interface(cx, recore_core::sounds::InterfaceSound::Hover);
+                }
+            }
+            Pref::InterfaceVolume(value, done) => {
+                prefs.interface_volume = Some(value.min(100) as u8);
+                if done {
+                    cx.keep("interface_volume", value.min(100));
+                    try_interface(cx, recore_core::sounds::InterfaceSound::Hover);
+                }
+            }
+            Pref::HoverSounds(on) => {
+                prefs.hover_sounds = Some(on);
+                cx.keep("hover_sounds", on);
+                if on {
+                    try_interface(cx, recore_core::sounds::InterfaceSound::Hover);
+                }
+            }
+            Pref::TypingSounds(on) => {
+                prefs.typing_sounds = Some(on);
+                cx.keep("typing_sounds", on);
+                if on {
+                    try_interface(cx, recore_core::sounds::InterfaceSound::Type);
+                }
+            }
+            Pref::BootSound(on) => {
+                prefs.boot_sound = Some(on);
+                cx.keep("boot_sound", on);
+                if on {
+                    try_interface(cx, recore_core::sounds::InterfaceSound::Boot);
+                }
+            }
             Pref::AdjustEach(on) => {
                 cx.layout.voice.adjust_each_sound = on;
                 cx.keep("adjust_each_sound", on);
@@ -291,6 +331,16 @@ impl Settings {
         }
         cx.touch();
     }
+}
+
+/// One of ReCord's interface sounds, to try a setting, on the call's
+/// speakers.
+fn try_interface(cx: &Cx<'_>, sound: recore_core::sounds::InterfaceSound) {
+    recore_core::sounds::play_interface(
+        sound,
+        cx.layout.prefs.interface_gain(),
+        cx.client.state().voice.speaker.as_deref(),
+    );
 }
 
 /// One of ReCore's sounds, to try a setting, on the call's speakers.

@@ -83,6 +83,10 @@ pub struct App {
     pub reveal: Option<Instant>,
     /// When the open room last changed, for the chat's screen-in.
     pub switched: Option<Instant>,
+    /// When the last interface sound played, and how many layers were open
+    /// when they were last counted.
+    ui_last: std::cell::Cell<Instant>,
+    ui_layers: usize,
     /// What lives only as long as the window, torn down with it.
     pub win: Window,
     /// What's under the pointer, part by part.
@@ -230,6 +234,49 @@ impl App {
         }
     }
 
+    /// Plays one of ReCord's interface sounds, with its short debounce and
+    /// the call speakers' output device.
+    pub fn interface_sound(&self, sound: recore_core::sounds::InterfaceSound) {
+        use recore_core::sounds::InterfaceSound;
+        let gap = match sound {
+            InterfaceSound::Hover => Duration::from_millis(45),
+            InterfaceSound::Select => Duration::from_millis(60),
+            InterfaceSound::Back => Duration::from_millis(80),
+            InterfaceSound::Open | InterfaceSound::Close => Duration::from_millis(80),
+            InterfaceSound::Navigate => Duration::from_millis(60),
+            InterfaceSound::Toggle => Duration::from_millis(60),
+            InterfaceSound::Send => Duration::from_millis(80),
+            InterfaceSound::Type => Duration::from_millis(28),
+            InterfaceSound::Boot => Duration::ZERO,
+        };
+        let now = Instant::now();
+        if gap > Duration::ZERO && now.saturating_duration_since(self.ui_last.get()) < gap {
+            return;
+        }
+        self.ui_last.set(now);
+        if !self.layout.prefs.interface_sound(sound) {
+            return;
+        }
+        let speaker = self.client.state().voice.speaker.clone();
+        recore_core::sounds::play_interface(
+            sound,
+            self.layout.prefs.interface_gain(),
+            speaker.as_deref(),
+        );
+    }
+
+    /// Notes menus and dialogs opening or closing for the interface sounds.
+    pub fn notice_layers(&mut self) {
+        use recore_core::sounds::InterfaceSound;
+        let layers = self.layers().count();
+        if layers > self.ui_layers {
+            self.interface_sound(InterfaceSound::Open);
+        } else if layers < self.ui_layers {
+            self.interface_sound(InterfaceSound::Close);
+        }
+        self.ui_layers = layers;
+    }
+
     pub fn new(client: Client, size: (u32, u32)) -> (Self, Task<Message>) {
         // No test reaches the speakers or the microphone.
         #[cfg(test)]
@@ -272,6 +319,8 @@ impl App {
             boot: (!cfg!(test)).then(Instant::now),
             reveal: None,
             switched: None,
+            ui_last: std::cell::Cell::new(Instant::now() - Duration::from_secs(1)),
+            ui_layers: 0,
             win: Window::new(crate::pictures::Pictures::new(fitter)),
             pointed: Pointed::default(),
             layout,
@@ -362,6 +411,9 @@ impl App {
             Task::none()
         };
         let away = crate::away::watch_away();
+        if !cfg!(test) {
+            app.interface_sound(recore_core::sounds::InterfaceSound::Boot);
+        }
         (app, Task::batch([sync, frames, focus, away, talk]))
     }
 
@@ -489,6 +541,10 @@ impl App {
             }
             Message::EffectsTick => {
                 self.effects_phase = self.effects_phase.wrapping_add(1);
+                Task::none()
+            }
+            Message::Interface(sound) => {
+                self.interface_sound(sound);
                 Task::none()
             }
             Message::MotionTick => {

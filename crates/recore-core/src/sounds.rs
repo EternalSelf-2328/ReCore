@@ -492,6 +492,95 @@ fn wav(bytes: &[u8]) -> Option<Vec<f32>> {
     )
 }
 
+/// ReCord's interface sounds, played by the native window itself rather
+/// than by Discord: hover, menu, navigation and typing feedback.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum InterfaceSound {
+    Hover,
+    Select,
+    Back,
+    Open,
+    Close,
+    Navigate,
+    Toggle,
+    Send,
+    Type,
+    Boot,
+}
+
+impl InterfaceSound {
+    pub const ALL: [Self; 10] = [
+        Self::Hover,
+        Self::Select,
+        Self::Back,
+        Self::Open,
+        Self::Close,
+        Self::Navigate,
+        Self::Toggle,
+        Self::Send,
+        Self::Type,
+        Self::Boot,
+    ];
+}
+
+/// The WAV ReCord's interface plays for `sound`, as mono samples at
+/// [`RATE`]. The files are the CC0 signal pack in `sounds/record/ui`.
+fn interface_samples(sound: InterfaceSound) -> Vec<f32> {
+    const HOVER: &[u8] = include_bytes!("../sounds/record/ui/hover.wav");
+    const SELECT: &[u8] = include_bytes!("../sounds/record/ui/select.wav");
+    const BACK: &[u8] = include_bytes!("../sounds/record/ui/back.wav");
+    const OPEN: &[u8] = include_bytes!("../sounds/record/ui/open.wav");
+    const CLOSE: &[u8] = include_bytes!("../sounds/record/ui/close.wav");
+    const NAVIGATE: &[u8] = include_bytes!("../sounds/record/ui/navigate.wav");
+    const TOGGLE: &[u8] = include_bytes!("../sounds/record/ui/toggle.wav");
+    const SEND: &[u8] = include_bytes!("../sounds/record/ui/send.wav");
+    const TYPE: &[u8] = include_bytes!("../sounds/record/ui/type.wav");
+    const BOOT: &[u8] = include_bytes!("../sounds/record/ui/boot.wav");
+    let bytes = match sound {
+        InterfaceSound::Hover => HOVER,
+        InterfaceSound::Select => SELECT,
+        InterfaceSound::Back => BACK,
+        InterfaceSound::Open => OPEN,
+        InterfaceSound::Close => CLOSE,
+        InterfaceSound::Navigate => NAVIGATE,
+        InterfaceSound::Toggle => TOGGLE,
+        InterfaceSound::Send => SEND,
+        InterfaceSound::Type => TYPE,
+        InterfaceSound::Boot => BOOT,
+    };
+    wav(bytes).unwrap_or_default()
+}
+
+/// Plays one of ReCord's interface sounds once, at `volume` from [`gain`],
+/// on `speaker` or the default output. It is made and played on a thread
+/// of its own so a hover tick never holds the UI.
+pub fn play_interface(sound: InterfaceSound, volume: f32, speaker: Option<&str>) {
+    if volume <= 0.0 {
+        return;
+    }
+    let speaker: Option<Arc<str>> = speaker.map(Into::into);
+    let started = std::thread::Builder::new()
+        .name("recore-interface-sound".into())
+        .spawn(move || {
+            let mono = interface_samples(sound);
+            let mut samples = Vec::with_capacity(mono.len() * 2);
+            for sample in mono {
+                samples.push(sample * volume);
+                samples.push(sample * volume);
+            }
+            if let Err(error) = play_samples(&samples, speaker.as_deref()) {
+                tracing::warn!(
+                    error = format!("{error:#}"),
+                    ?sound,
+                    "could not play an interface sound"
+                );
+            }
+        });
+    if let Err(error) = started {
+        tracing::warn!(%error, "could not start an interface sound");
+    }
+}
+
 /// A volume slider's percentage, up to 200%, as a gain. Loudness is heard on a
 /// log scale, so the square spreads quiet settings along more of the slider.
 /// At 200% the loudest sounds reach full scale.

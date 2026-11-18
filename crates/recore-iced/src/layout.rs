@@ -236,6 +236,13 @@ pub struct Prefs {
     pub update_nightlies: bool,
     pub skipped_update: Option<String>,
     pub announced_update: Option<String>,
+    /// ReCord's interface sounds, and their master volume as a percentage.
+    /// Hover, typing and the boot signal have switches of their own.
+    pub interface_sounds: Option<bool>,
+    pub interface_volume: Option<u8>,
+    pub hover_sounds: Option<bool>,
+    pub typing_sounds: Option<bool>,
+    pub boot_sound: Option<bool>,
 }
 
 /// When GIFs, animated emoji and stickers play, as Messages' choice.
@@ -250,6 +257,28 @@ pub enum Animate {
 }
 
 impl Prefs {
+    /// Whether ReCord's interface sounds play.
+    pub fn interface_sounds(&self) -> bool {
+        self.interface_sounds.unwrap_or(true)
+    }
+
+    /// Whether `sound` is one the person kept on.
+    pub fn interface_sound(&self, sound: recore_core::sounds::InterfaceSound) -> bool {
+        use recore_core::sounds::InterfaceSound;
+        self.interface_sounds()
+            && match sound {
+                InterfaceSound::Hover => self.hover_sounds.unwrap_or(true),
+                InterfaceSound::Type => self.typing_sounds.unwrap_or(true),
+                InterfaceSound::Boot => self.boot_sound.unwrap_or(true),
+                _ => true,
+            }
+    }
+
+    /// The interface volume, 45% unless changed, as a linear gain.
+    pub fn interface_gain(&self) -> f32 {
+        f32::from(self.interface_volume.unwrap_or(45).min(100)) / 100.0
+    }
+
     /// The profile switches, each on unless turned off.
     pub fn cosmetics(&self) -> recore_core::application::Cosmetics {
         let default = recore_core::application::Cosmetics::default();

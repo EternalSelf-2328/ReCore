@@ -109,6 +109,7 @@ pub fn action<'a, M: Clone + 'a>(
         accent: theme.accent,
         small: false,
         icon: None,
+        hover: None,
     }
 }
 
@@ -123,6 +124,8 @@ pub struct Action<'a, M> {
     small: bool,
     /// An icon before its label, drawn in its ink.
     icon: Option<iced::advanced::image::Handle>,
+    /// What it sends when the pointer comes onto it.
+    hover: Option<M>,
 }
 
 /// A button's ground and ink at rest and lit, and its ring.
@@ -159,12 +162,18 @@ impl<M: Clone> Action<'_, M> {
         self.small = true;
         self
     }
+
+    /// What it sends once when the pointer comes onto it.
+    pub fn on_hover(mut self, message: M) -> Self {
+        self.hover = Some(message);
+        self
+    }
 }
 
 impl<'a, M: Clone + 'a> From<Action<'a, M>> for Element<'a, M> {
     fn from(action: Action<'a, M>) -> Self {
         let faces = action.faces;
-        button(
+        let button = button(
             container({
                 let label = text(action.label)
                     .size(if action.small { 14 } else { 15 })
@@ -199,8 +208,12 @@ impl<'a, M: Clone + 'a> From<Action<'a, M>> for Element<'a, M> {
                 },
                 ..Default::default()
             }
-        })
-        .into()
+        });
+        let button: Element<'a, M> = button.into();
+        match action.hover {
+            Some(hover) => iced::widget::mouse_area(button).on_enter(hover).into(),
+            None => button,
+        }
     }
 }
 

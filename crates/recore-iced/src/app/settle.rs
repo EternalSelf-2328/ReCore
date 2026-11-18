@@ -167,6 +167,7 @@ impl App {
             self.keybinds.paused = recording;
             crate::desktop::desktop().pause_keybinds(recording);
         }
+        self.notice_layers();
         Task::batch(tasks)
     }
 

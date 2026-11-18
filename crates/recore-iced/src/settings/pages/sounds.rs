@@ -50,6 +50,7 @@ impl<'a> Page<'a> {
             .position(|set| *set == voice.sound_set)
             .unwrap_or(0);
         let volume = u32::from(voice.sound_volume.unwrap_or(100));
+        let interface = u32::from(self.cx.layout.prefs.interface_volume.unwrap_or(45));
         let mut parts = vec![
             form::title(theme, "Sounds"),
             form::note(
@@ -67,6 +68,42 @@ impl<'a> Page<'a> {
             })
             .on_release(pref(Pref::SoundVolume(volume, true)))
             .view(theme),
+            form::group([
+                form::heading(theme, "INTERFACE SOUNDS"),
+                form::note(
+                    theme,
+                    "ReCord's own feedback: a tick on buttons and menu rows, a select on a click, a back on Escape, open and close for menus and dialogs, navigation for a room change, typing ticks and the boot signal. These play on the speakers chosen for calls.",
+                ),
+                self.flip(
+                    "Interface sounds",
+                    "The master switch for every interface sound.",
+                    self.cx.layout.prefs.interface_sounds(),
+                    Pref::InterfaceSounds,
+                ),
+                slider("Interface volume", interface, 100, |value| {
+                    pref(Pref::InterfaceVolume(value, false))
+                })
+                .on_release(pref(Pref::InterfaceVolume(interface, true)))
+                .view(theme),
+                self.flip(
+                    "Hover ticks",
+                    "A short tick when the pointer comes onto a button, a menu row, a server, a channel or a member.",
+                    self.cx.layout.prefs.hover_sounds.unwrap_or(true),
+                    Pref::HoverSounds,
+                ),
+                self.flip(
+                    "Typing ticks",
+                    "A quiet tick for each character written in a message field.",
+                    self.cx.layout.prefs.typing_sounds.unwrap_or(true),
+                    Pref::TypingSounds,
+                ),
+                self.flip(
+                    "Boot signal",
+                    "The signal that plays with ReCore's boot screen.",
+                    self.cx.layout.prefs.boot_sound.unwrap_or(true),
+                    Pref::BootSound,
+                ),
+            ]),
             self.flip(
                 "Adjust each sound",
                 "Set how loud each one is, as a share of the volume above. 0% turns a sound off.",

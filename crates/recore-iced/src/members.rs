@@ -206,7 +206,11 @@ pub fn update(app: &mut App, event: Event) -> Task<Message> {
             app.ask()
         }
         Event::Point(id, entered) => {
+            let changed = entered && app.pointed.member.as_deref() != Some(id.as_str());
             point(&mut app.pointed.member, id, entered);
+            if changed {
+                app.interface_sound(recore_core::sounds::InterfaceSound::Hover);
+            }
             app.ask()
         }
         Event::Open(id) => open_member(app, &id),

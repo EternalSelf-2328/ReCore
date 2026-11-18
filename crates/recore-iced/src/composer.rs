@@ -364,6 +364,7 @@ fn field_event(app: &mut App, which: Writing, event: field::Event) -> Task<Messa
     }
     match event {
         field::Event::Edited(text, caret) => {
+            app.interface_sound(recore_core::sounds::InterfaceSound::Type);
             edited(app, which, text, caret);
             Task::none()
         }
@@ -372,13 +373,16 @@ fn field_event(app: &mut App, which: Writing, event: field::Event) -> Task<Messa
             crate::suggest::caret_moved(app, which, &text, caret);
             Task::none()
         }
-        field::Event::Send => match which {
-            Writing::Draft => send(app),
-            Writing::Edit => crate::edit::save_edit(app),
-            Writing::Aside => crate::thread::update(app, crate::thread::Event::Send),
-            Writing::NewThread => crate::thread::update(app, crate::thread::Event::Create),
-            Writing::NewPost => crate::forum::update(app, crate::forum::Event::Create),
-        },
+        field::Event::Send => {
+            app.interface_sound(recore_core::sounds::InterfaceSound::Send);
+            match which {
+                Writing::Draft => send(app),
+                Writing::Edit => crate::edit::save_edit(app),
+                Writing::Aside => crate::thread::update(app, crate::thread::Event::Send),
+                Writing::NewThread => crate::thread::update(app, crate::thread::Event::Create),
+                Writing::NewPost => crate::forum::update(app, crate::forum::Event::Create),
+            }
+        }
         field::Event::Step(step) => {
             let count = crate::suggest::suggestion_count(app);
             app.composer.suggest.step(step, count);
