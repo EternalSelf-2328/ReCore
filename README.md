@@ -118,9 +118,9 @@ The colours are the site's tokens. They are also the values ReCore writes to
 ReCord's CSS is included at
 [`themes/ReCord.theme.css`](themes/ReCord.theme.css). Dropping it into the
 themes folder gives the built-in ReCore colours and fonts. Appearance lists
-every option the file exposes: colours become swatches, opacity becomes
-sliders, images get **Choose** and **Clear**, and `full` / `subtle` / `off`
-becomes buttons.
+every option the file exposes: colours become swatches with an HSV picker,
+opacity becomes sliders, images get **Choose** and **Clear**, and
+`full` / `subtle` / `off` becomes buttons.
 
 The native window matches the parts a native renderer can own: palette, type,
 shape, pictures, CRT effects and motion. Discord's web-only selectors,

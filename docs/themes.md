@@ -96,7 +96,7 @@ ReCore colours and its four Pixel Operator faces.
 
 Appearance lists the chosen CSS theme's custom properties as controls:
 
-- a colour becomes a swatch and a hex field;
+- a colour becomes a swatch with an HSV picker and a hex field;
 - an opacity, dimming or surface becomes a slider;
 - `on`/`off`, `true`/`false` and ReCord's flicker/beam durations become a
   switch;
