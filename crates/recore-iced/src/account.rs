@@ -424,10 +424,11 @@ pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
                 .into(),
             None => card.into(),
         };
+    let square = ctx.themes.square_avatars();
     container(
         container(card)
             .clip(true)
-            .style(move |_| rounded(ground, 8)),
+            .style(move |_| rounded(ground, if square { 0.0 } else { 8.0 })),
     )
     .padding(Padding {
         left: INSET,
@@ -448,9 +449,19 @@ fn ring_and_dot<'a>(
 ) -> Element<'a, Message> {
     use iced::widget::{Space, pin, stack};
     let theme = ctx.look.theme;
+    let square = ctx.themes.square_avatars();
     let mut layers = stack![face];
     if account.speaking {
-        let ring = theme.live;
+        let pressed =
+            ctx.themes.motion() == crate::themes::Motion::Full && (ctx.motion / 10) % 2 == 1;
+        let ring = if pressed {
+            iced::Color {
+                a: theme.live.a * 0.72,
+                ..theme.live
+            }
+        } else {
+            theme.live
+        };
         let side = AVATAR + 6.0;
         layers = layers.push(
             pin(container(Space::new())
@@ -460,7 +471,7 @@ fn ring_and_dot<'a>(
                     border: iced::Border {
                         color: ring,
                         width: 2.0,
-                        radius: (side / 2.0).into(),
+                        radius: if square { 0.0 } else { side / 2.0 }.into(),
                     },
                     ..Default::default()
                 }))

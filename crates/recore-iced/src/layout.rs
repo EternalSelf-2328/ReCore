@@ -41,6 +41,25 @@ pub struct Layout {
     pub recore_accent: Option<String>,
     pub recore_effects: Option<bool>,
     pub recore_low_power: Option<bool>,
+    /// ReCore's own CRT levels and toggles, as ReCord's plugin exposes
+    /// them. Percentages are 0..100; the unset value is ReCord's default.
+    pub recore_scanlines: Option<u8>,
+    pub recore_grain: Option<u8>,
+    pub recore_vignette: Option<u8>,
+    pub recore_beam: Option<bool>,
+    pub recore_flicker: Option<bool>,
+    pub recore_frame: Option<bool>,
+    pub recore_avatar_filter: Option<bool>,
+    /// A picture behind the window, how far it is dimmed, and how opaque
+    /// the panels over it are, as percentages.
+    pub recore_background: Option<String>,
+    pub recore_background_dim: Option<u8>,
+    pub recore_panel_opacity: Option<u8>,
+    /// Pixel Operator, Pixel Operator Mono, the system's monospace, or the
+    /// client's default.
+    pub recore_font: Option<String>,
+    /// ReCord's motion level: `full`, `subtle` or `off`.
+    pub recore_motion: Option<String>,
     /// CSS themes' own options, by theme id and custom property.
     pub css_options: BTreeMap<String, BTreeMap<String, String>>,
     pub custom_themes: Vec<Custom>,

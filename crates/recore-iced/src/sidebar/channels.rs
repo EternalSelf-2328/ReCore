@@ -371,20 +371,38 @@ impl<'a> super::View<'a> {
     ) -> Element<'a, Message> {
         let theme = self.cx.look.theme;
         let pointed = self.cx.pointed.side.as_deref() == Some(id.as_str());
+        let flash = if selected && self.cx.themes.motion() == crate::themes::Motion::Full {
+            self.cx
+                .switched
+                .filter(|start| start.elapsed() < std::time::Duration::from_millis(160))
+                .map(|start| {
+                    let t = start.elapsed().as_secs_f32() / 0.160;
+                    1.0 - (t * 3.0).floor() / 3.0
+                })
+                .unwrap_or(0.0)
+        } else {
+            0.0
+        };
         let ground = if selected {
-            theme.active
+            if flash > 0.0 {
+                crate::theme::mix(theme.active, theme.accent, 0.22 * flash)
+            } else {
+                theme.active
+            }
         } else if pointed {
             theme.hover
         } else {
             Color::TRANSPARENT
         };
+        let square = self.cx.themes.square_avatars();
+        let radius = if square { 0.0 } else { ROW_RADIUS };
         let body = container(face)
             .padding([0, 8])
             .height(height)
             .width(Length::Fill)
             .align_y(Alignment::Center)
             .clip(true)
-            .style(move |_| rounded(ground, ROW_RADIUS));
+            .style(move |_| rounded(ground, radius));
         self.row_presses(id, body.into(), message, menu)
     }
 

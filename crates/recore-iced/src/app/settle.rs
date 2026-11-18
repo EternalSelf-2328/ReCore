@@ -31,6 +31,8 @@ impl App {
             build: &self.build,
             video: &self.video,
             scale: self.device_scale(),
+            motion: self.motion_phase,
+            switched: self.switched,
             keybinds: &self.keybinds,
             own_title_bar: self.shell.own_title_bar,
             gpu_notice: self.shell.gpu_notice,

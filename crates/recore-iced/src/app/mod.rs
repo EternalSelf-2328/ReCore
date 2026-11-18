@@ -2,7 +2,10 @@
 //! in `message`, what's open over it in `layers`, what it listens to in
 //! `subscription`, and the layers the view stacks in `view`.
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use iced::{Point, Size, Task, keyboard, widget::operation};
 use recore_core::application::Action;
@@ -28,6 +31,11 @@ mod window;
 pub use window::{Keep, Window};
 
 pub use self::message::{Message, Messages, batches};
+
+/// How long ReCord's boot signal stays over the window, and the screen-in
+/// that follows it.
+pub const BOOT: Duration = Duration::from_millis(1600);
+pub const REVEAL: Duration = Duration::from_millis(280);
 
 /// What's under the pointer in each part of the window that shows it, by
 /// id: set on entering, cleared on leaving ([`point`]).
@@ -67,6 +75,14 @@ pub struct App {
     pub announce_updates: bool,
     /// The CRT beam's or flicker's place in its cycle, in 100 ms ticks.
     pub effects_phase: u32,
+    /// The window's motion clock, in 50 ms ticks: pulsing badges, the
+    /// boot signal's blinking line and the screen-in.
+    pub motion_phase: u32,
+    /// When the boot signal started, and the screen-in after it.
+    pub boot: Option<Instant>,
+    pub reveal: Option<Instant>,
+    /// When the open room last changed, for the chat's screen-in.
+    pub switched: Option<Instant>,
     /// What lives only as long as the window, torn down with it.
     pub win: Window,
     /// What's under the pointer, part by part.
@@ -252,6 +268,10 @@ impl App {
             bar_drag: Default::default(),
             announce_updates: false,
             effects_phase: 0,
+            motion_phase: 0,
+            boot: (!cfg!(test)).then(Instant::now),
+            reveal: None,
+            switched: None,
             win: Window::new(crate::pictures::Pictures::new(fitter)),
             pointed: Pointed::default(),
             layout,
@@ -469,6 +489,24 @@ impl App {
             }
             Message::EffectsTick => {
                 self.effects_phase = self.effects_phase.wrapping_add(1);
+                Task::none()
+            }
+            Message::MotionTick => {
+                self.motion_phase = self.motion_phase.wrapping_add(1);
+                let now = Instant::now();
+                if self
+                    .boot
+                    .is_some_and(|start| now.saturating_duration_since(start) >= BOOT)
+                {
+                    self.boot = None;
+                    self.reveal = Some(now);
+                }
+                if self
+                    .reveal
+                    .is_some_and(|start| now.saturating_duration_since(start) >= REVEAL)
+                {
+                    self.reveal = None;
+                }
                 Task::none()
             }
             Message::Fitted(fitted) => {

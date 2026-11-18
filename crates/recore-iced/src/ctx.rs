@@ -42,6 +42,10 @@ pub struct Ctx<'a> {
     pub scale: f32,
     /// The keybinds' watcher and what it said of where they work.
     pub keybinds: &'a Keybinds,
+    /// The window's motion clock, in 50 ms ticks.
+    pub motion: u32,
+    /// When the open room last changed, for a selected row's flash.
+    pub switched: Option<std::time::Instant>,
     /// ReCore draws the window's title bar itself.
     pub own_title_bar: bool,
     /// The desktop has a tray to close the window to.

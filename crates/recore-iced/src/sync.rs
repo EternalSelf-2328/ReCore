@@ -255,6 +255,7 @@ impl App {
             self.composer.edit.reset("");
         }
         if switched {
+            self.switched = Some(std::time::Instant::now());
             self.selected = state.selected.clone();
             self.timeline.from_end = 0.0;
             self.timeline.at_end = true;

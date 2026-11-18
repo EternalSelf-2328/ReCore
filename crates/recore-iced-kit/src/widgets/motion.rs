@@ -23,7 +23,7 @@ use iced::{
 use super::{At, Hooks, Inner, Renderer, Stateless, Wrap};
 
 /// How long a popup takes to open.
-pub const DURATION: Duration = Duration::from_millis(100);
+pub const DURATION: Duration = Duration::from_millis(190);
 /// How large a card opens from.
 pub const FROM: f32 = 0.8;
 
@@ -31,12 +31,25 @@ thread_local! {
     /// How far open the layer being drawn is, eased, from 0 to 1: set by
     /// the [`Motion`] drawing it, 1 outside one.
     static SHOWN: Cell<f32> = const { Cell::new(1.0) };
+    /// Whether popups move at all, as ReCord's motion setting says.
+    static MOVING: Cell<bool> = const { Cell::new(true) };
+}
+
+/// Turns popup motion on or off, as ReCord's `--rl-motion` does.
+pub fn set_moving(moving: bool) {
+    MOVING.set(moving);
+}
+
+fn moving() -> bool {
+    MOVING.get()
 }
 
 /// How far open a layer is that opened at `start`, at `now`, eased out
 /// on a quadratic curve.
 pub fn shown(start: Instant, now: Instant) -> f32 {
     let t = (now.saturating_duration_since(start).as_secs_f32() / DURATION.as_secs_f32()).min(1.0);
+    // ReCord moves menus in four discrete steps, not continuously.
+    let t = (t * 4.0).floor() / 4.0;
     1.0 - (1.0 - t) * (1.0 - t)
 }
 
@@ -45,8 +58,10 @@ pub fn shown(start: Instant, now: Instant) -> f32 {
 /// grows on from there.
 pub fn reopened(start: Instant, now: Instant) -> Instant {
     let open = 1.0 - shown(start, now);
-    // `shown` backwards: the time at which it's `open`.
+    // `shown` backwards, on its stepped grid: the time at which it's
+    // nearest to `open`.
     let t = 1.0 - (1.0 - open).sqrt();
+    let t = (t * 4.0).floor() / 4.0;
     now - DURATION.mul_f32(t)
 }
 
@@ -62,6 +77,9 @@ pub struct Motion<'a, M> {
 impl<M> Motion<'_, M> {
     /// How far open it is at `now`, its start set if it had none.
     fn shown(&self, now: Instant) -> f32 {
+        if !moving() {
+            return if self.closed.is_some() { 0.0 } else { 1.0 };
+        }
         let start = *self.start.get().get_or_insert(now);
         self.start.set(Some(start));
         let opened = shown(start, now);
@@ -116,6 +134,12 @@ impl<M: Clone> Hooks<M> for Motion<'_, M> {
         shell: &mut Shell<'_, M>,
         child: &mut Inner<'_, '_, M>,
     ) {
+        if !moving() {
+            if let Some(closed) = &self.closed {
+                shell.publish(closed.clone());
+            }
+            return;
+        }
         if let iced::Event::Window(window::Event::RedrawRequested(now)) = event {
             let start = *self.start.get().get_or_insert(*now);
             self.start.set(Some(start));
@@ -246,6 +270,80 @@ impl<M> Hooks<M> for Dim {
     }
 }
 
+/// ReCord's `rl-power-on`: the whole screen unfolds from a bright
+/// horizontal line into its full height over 620 ms, in nine steps.
+pub const POWER: Duration = Duration::from_millis(620);
+
+/// `layer`, unfolding as it opens after the boot signal.
+pub fn power_on<'a, M: Clone + 'a>(
+    layer: impl Into<Element<'a, M>>,
+    start: Instant,
+) -> Element<'a, M> {
+    Wrap::new(layer, PowerOn { start }).into()
+}
+
+/// What [`power_on`] paints.
+struct PowerOn {
+    start: Instant,
+}
+
+impl<M: Clone> Hooks<M> for PowerOn {
+    type State = Stateless;
+
+    fn update(
+        &mut self,
+        _state: &mut Stateless,
+        event: &iced::Event,
+        _at: At,
+        shell: &mut Shell<'_, M>,
+        _child: &mut Inner<'_, '_, M>,
+    ) {
+        if let iced::Event::Window(window::Event::RedrawRequested(_)) = event
+            && self.start.elapsed() < POWER
+        {
+            shell.request_redraw();
+        }
+    }
+
+    fn draw(
+        &self,
+        _state: &Stateless,
+        renderer: &mut Renderer,
+        at: At,
+        child: &mut dyn FnMut(&mut Renderer),
+    ) {
+        let t = (self.start.elapsed().as_secs_f32() / POWER.as_secs_f32()).min(1.0);
+        let step = (t * 9.0).floor() / 9.0;
+        if step >= 1.0 {
+            child(renderer);
+            return;
+        }
+        let scale_x = if step < 0.35 {
+            0.35 + 0.65 * (step / 0.35)
+        } else {
+            1.0
+        };
+        let scale_y = if step < 0.35 {
+            0.004
+        } else if step < 0.65 {
+            0.004 + 0.996 * ((step - 0.35) / 0.30)
+        } else {
+            1.0
+        };
+        // Clip, rather than squash, the screen: the power-on line widens
+        // to the full window first, then opens its height.
+        let width = at.bounds.width * scale_x;
+        let height = at.bounds.height * scale_y;
+        let bounds = iced::Rectangle {
+            x: at.bounds.x + (at.bounds.width - width) / 2.0,
+            y: at.bounds.y + (at.bounds.height - height) / 2.0,
+            width,
+            height,
+        };
+        renderer.with_layer(bounds, |renderer| child(renderer));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,7 +365,7 @@ mod tests {
         let now = closing + DURATION / 4;
         let open = 1.0 - shown(closing, now);
         let again = reopened(closing, now);
-        assert!((shown(again, now) - open).abs() < 1e-3);
+        assert!((shown(again, now) - open).abs() < 0.2);
         // Closed all the way, it opens from the start.
         let gone = closing + DURATION;
         assert!(shown(reopened(closing, gone), gone) < 1e-3);

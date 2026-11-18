@@ -741,7 +741,19 @@ impl<'a> View<'a> {
         } else {
             0.0
         };
-        let ink = theme.text;
+        let pulse = marks.unread
+            && !marks.selected
+            && !marks.pointed
+            && self.cx.themes.motion() == crate::themes::Motion::Full
+            && (self.cx.motion / 24) % 2 == 1;
+        let ink = if pulse {
+            Color {
+                a: theme.text.a * 0.72,
+                ..theme.text
+            }
+        } else {
+            theme.text
+        };
         let mut layers = stack![];
         if pill > 0.0 {
             layers = layers.push(controls::placed(

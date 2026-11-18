@@ -548,11 +548,16 @@ fn stage_tile(
                 // last.
                 let side = (size.height * 0.45).min(80.0).round();
                 let opacity = if person.connected { 1.0 } else { 0.5 };
+                let radius = if app.ctx().themes.square_avatars() {
+                    0.0
+                } else {
+                    side / 2.0
+                };
                 let avatar = app.ctx().avatar(
                     person.avatar.as_deref(),
                     &person.user,
                     side,
-                    side / 2.0,
+                    radius,
                     opacity,
                 );
                 let content = container(avatar).center(Length::Fill).padding(Padding {
@@ -579,6 +584,9 @@ fn stage_tile(
             let mut tile = Tile::new(size, content, Some(ground))
                 .ring(speaking(person).then_some(theme.live))
                 .chip(tile::chip(app.look(), marks, &person.user, live, note));
+            if app.ctx().themes.square_avatars() {
+                tile = tile.square();
+            }
             if person.local && voice.camera_phase == voice::CameraPhase::Starting {
                 tile = tile.top_left(tile::pill("Starting camera...", GLASS, Color::WHITE));
             }

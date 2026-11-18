@@ -131,6 +131,19 @@ pub enum Event {
     ResetAccent,
     Effects(bool),
     LowPower(bool),
+    Scanlines(u8),
+    Grain(u8),
+    Vignette(u8),
+    Beam(bool),
+    Flicker(bool),
+    Frame(bool),
+    AvatarFilter(bool),
+    Background,
+    ClearBackground,
+    BackgroundDim(u8),
+    PanelOpacity(u8),
+    Font(&'static str),
+    Motion(crate::themes::Motion),
     /// A CSS option while it's being typed, and when it's applied.
     CssDraft(String, String),
     CssApply(String, String),
@@ -274,6 +287,76 @@ impl Settings {
             Event::LowPower(on) => {
                 let root = cx.client.root().to_path_buf();
                 cx.themes.set_low_power(&root, on);
+                cx.request(Request::Changed(Shown::Theme));
+            }
+            Event::Scanlines(percent) => {
+                let root = cx.client.root().to_path_buf();
+                cx.themes.set_scanlines(&root, percent);
+                cx.request(Request::Changed(Shown::Theme));
+            }
+            Event::Grain(percent) => {
+                let root = cx.client.root().to_path_buf();
+                cx.themes.set_grain(&root, percent);
+                cx.request(Request::Changed(Shown::Theme));
+            }
+            Event::Vignette(percent) => {
+                let root = cx.client.root().to_path_buf();
+                cx.themes.set_vignette(&root, percent);
+                cx.request(Request::Changed(Shown::Theme));
+            }
+            Event::Beam(on) => {
+                let root = cx.client.root().to_path_buf();
+                cx.themes.set_beam(&root, on);
+                cx.request(Request::Changed(Shown::Theme));
+            }
+            Event::Flicker(on) => {
+                let root = cx.client.root().to_path_buf();
+                cx.themes.set_flicker(&root, on);
+                cx.request(Request::Changed(Shown::Theme));
+            }
+            Event::Frame(on) => {
+                let root = cx.client.root().to_path_buf();
+                cx.themes.set_frame(&root, on);
+                cx.request(Request::Changed(Shown::Theme));
+            }
+            Event::AvatarFilter(on) => {
+                let root = cx.client.root().to_path_buf();
+                cx.themes.set_avatar_filter(&root, on);
+                cx.request(Request::Changed(Shown::Theme));
+            }
+            Event::Background => {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("Image", &["png", "jpg", "jpeg", "gif", "webp", "bmp"])
+                    .pick_file()
+                {
+                    let root = cx.client.root().to_path_buf();
+                    cx.themes.set_background(&root, Some(path));
+                    cx.request(Request::Changed(Shown::Theme));
+                }
+            }
+            Event::ClearBackground => {
+                let root = cx.client.root().to_path_buf();
+                cx.themes.set_background(&root, None);
+                cx.request(Request::Changed(Shown::Theme));
+            }
+            Event::BackgroundDim(percent) => {
+                let root = cx.client.root().to_path_buf();
+                cx.themes.set_background_dim(&root, percent);
+                cx.request(Request::Changed(Shown::Theme));
+            }
+            Event::PanelOpacity(percent) => {
+                let root = cx.client.root().to_path_buf();
+                cx.themes.set_panel_opacity(&root, percent);
+                cx.request(Request::Changed(Shown::Theme));
+            }
+            Event::Font(name) => {
+                let root = cx.client.root().to_path_buf();
+                cx.themes.set_font(&root, name);
+                cx.request(Request::Changed(Shown::Theme));
+            }
+            Event::Motion(motion) => {
+                let root = cx.client.root().to_path_buf();
+                cx.themes.set_motion(&root, motion);
                 cx.request(Request::Changed(Shown::Theme));
             }
             Event::CssDraft(name, value) => {
@@ -587,6 +670,142 @@ impl<'a> Page<'a> {
                 )
                 .description("Drops the grain and the constant repaints; the scanlines and vignette stay.")
                 .view(self.cx.look),
+            ]),
+            form::group([
+                form::heading(theme, "CRT DETAILS"),
+                form::note(
+                    theme,
+                    "ReCord's own knobs. They apply to ReCore and ReCore Paper; a CSS theme keeps the values its file names.",
+                ),
+                switch(
+                    "Beam",
+                    self.cx.themes.recore.beam,
+                    Some(theme_message(Event::Beam(!self.cx.themes.recore.beam))),
+                )
+                .description("The slow band travelling down the screen.")
+                .view(self.cx.look),
+                switch(
+                    "Flicker",
+                    self.cx.themes.recore.flicker,
+                    Some(theme_message(Event::Flicker(!self.cx.themes.recore.flicker))),
+                )
+                .description("A quiet, irregular brightness change.")
+                .view(self.cx.look),
+                switch(
+                    "Corner frame",
+                    self.cx.themes.recore.frame > 0.0,
+                    Some(theme_message(Event::Frame(self.cx.themes.recore.frame <= 0.0))),
+                )
+                .description("The four corner brackets around the window.")
+                .view(self.cx.look),
+                switch(
+                    "Avatar scanlines",
+                    self.cx.themes.recore.avatar_filter,
+                    Some(theme_message(Event::AvatarFilter(
+                        !self.cx.themes.recore.avatar_filter,
+                    ))),
+                )
+                .description("ReCord's warm grade and fine lines over every picture.")
+                .view(self.cx.look),
+                slider(
+                    "Scanlines",
+                    (self.cx.themes.recore.scanlines * 100.0).round() as u32,
+                    100,
+                    |value| theme_message(Event::Scanlines(value as u8)),
+                )
+                .step(1)
+                .view(self.cx.look.theme),
+                slider(
+                    "Film grain",
+                    (self.cx.themes.recore.grain * 100.0).round() as u32,
+                    100,
+                    |value| theme_message(Event::Grain(value as u8)),
+                )
+                .step(1)
+                .view(self.cx.look.theme),
+                slider(
+                    "Vignette",
+                    (self.cx.themes.recore.vignette * 100.0).round() as u32,
+                    100,
+                    |value| theme_message(Event::Vignette(value as u8)),
+                )
+                .step(1)
+                .view(self.cx.look.theme),
+            ]),
+            form::group([
+                form::heading(theme, "RECORE WINDOW"),
+                form::note(
+                    theme,
+                    "ReCord's surface picture and type. Lower the panel opacity to let the picture show through, as ReCord does.",
+                ),
+                row![
+                    action(
+                        theme,
+                        "Choose background",
+                        Kind::Plain,
+                        Some(theme_message(Event::Background)),
+                    )
+                    .small(),
+                    action(
+                        theme,
+                        "Clear",
+                        Kind::Plain,
+                        Some(theme_message(Event::ClearBackground)),
+                    )
+                    .small(),
+                ]
+                .spacing(8)
+                .into(),
+                form::note(
+                    theme,
+                    self.cx
+                        .themes
+                        .recore
+                        .background
+                        .as_ref()
+                        .map(|path| path.display().to_string())
+                        .unwrap_or_else(|| "No background picture.".into()),
+                ),
+                slider(
+                    "Background dim",
+                    (self.cx.themes.recore.background_dim * 100.0).round() as u32,
+                    100,
+                    |value| theme_message(Event::BackgroundDim(value as u8)),
+                )
+                .step(1)
+                .view(self.cx.look.theme),
+                slider(
+                    "Panel opacity",
+                    (self.cx.themes.recore.panel_opacity * 100.0).round() as u32,
+                    100,
+                    |value| theme_message(Event::PanelOpacity(value as u8)),
+                )
+                .step(1)
+                .view(self.cx.look.theme),
+                form::heading(theme, "TYPE"),
+                row![
+                    action(theme, "Pixel", Kind::Plain, Some(theme_message(Event::Font("pixel")))).small(),
+                    action(theme, "Pixel mono", Kind::Plain, Some(theme_message(Event::Font("mono")))).small(),
+                    action(theme, "System", Kind::Plain, Some(theme_message(Event::Font("system")))).small(),
+                ]
+                .spacing(8)
+                .into(),
+                form::heading(theme, "MOTION"),
+                row![
+                    action(theme, "Full", Kind::Plain, Some(theme_message(Event::Motion(crate::themes::Motion::Full)))).small(),
+                    action(theme, "Subtle", Kind::Plain, Some(theme_message(Event::Motion(crate::themes::Motion::Subtle)))).small(),
+                    action(theme, "Off", Kind::Plain, Some(theme_message(Event::Motion(crate::themes::Motion::Off)))).small(),
+                ]
+                .spacing(8)
+                .into(),
+                form::note(
+                    theme,
+                    match self.cx.themes.motion() {
+                        crate::themes::Motion::Full => "Everything: the boot signal, the stepped popups, the pulsing badges and the live presence blink.",
+                        crate::themes::Motion::Subtle => "Menus and dialogs only; the boot signal stays, the loops hold still.",
+                        crate::themes::Motion::Off => "No motion loops; the boot signal still finishes.",
+                    },
+                ),
             ]),
             self.css_options_view(),
             self.title_bar_switch(),

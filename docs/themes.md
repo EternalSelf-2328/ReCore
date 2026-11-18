@@ -25,6 +25,22 @@ The presets match ReCord's: Amber, Phosphor, Ice, Paper (which switches to
 ReCore Paper) and Terminal. ReCord's Pixel Operator and Pixel Operator Mono
 are bundled and used by both.
 
+Appearance also carries ReCord's own look options for these two themes, kept
+in `layout.json` beside `recore_accent`:
+
+- `recore_scanlines`, `recore_grain` and `recore_vignette` (percentages);
+- `recore_beam`, `recore_flicker`, `recore_frame` and `recore_avatar_filter`;
+- `recore_background`, `recore_background_dim` and `recore_panel_opacity`;
+- `recore_font` (`pixel`, `mono` or `system`) and `recore_motion` (`full`,
+  `subtle` or `off`).
+
+The window boots with ReCord's signal: a stepped mark, a twelve-step loading
+bar, a blinking line and the same screen-in. Menus and dialogs use the
+theme's stepped 190 ms motion, a changed room flashes its channel and fades
+in over 260 ms, unread rail marks pulse, and speaking rings breathe. These
+are native iced animations, not DOM/CSS animations: Discord selectors whose
+targets do not exist in a native client are still not painted.
+
 ## CSS themes
 
 ReCore reads the themes Vencord, Vesktop, Equicord, BetterDiscord, Legcord

@@ -5,7 +5,7 @@
 
 use iced::{
     ContentFit, Element, Length, Point,
-    widget::{Space, column, container, image, row, stack},
+    widget::{Space, column, container, image, row, stack, text},
 };
 
 use crate::{
@@ -28,6 +28,7 @@ impl App {
     pub fn view(&self) -> Element<'_, Message> {
         // Whatever this returns, what it no longer shows goes at its end.
         let _viewing = self.win.pictures.view();
+        crate::widgets::motion::set_moving(self.themes.motion() != crate::themes::Motion::Off);
         if !crate::signin::workspace(self) {
             return self.frame_layers(crate::signin::view(self.ctx()));
         }
@@ -95,6 +96,22 @@ impl App {
                     .into()
             }
             None => base,
+        };
+        // ReCord's screen-in when the open room changes, under the
+        // overlays and the title bar.
+        let base: Element<'_, Message> = match self.switch_view() {
+            Some(switch) => stack![base, switch]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into(),
+            None => base,
+        };
+        // After the boot signal, the screen unfolds from its power-on line.
+        let base: Element<'_, Message> = match self.reveal {
+            Some(start) if self.themes.motion() == crate::themes::Motion::Full => {
+                crate::widgets::motion::power_on(base, start)
+            }
+            _ => base,
         };
         // Always a stack, so the window's widget state stays as overlays
         // come and go: the card, the suggestions, the picker, a menu, the
@@ -351,6 +368,15 @@ impl App {
         if let Some(edges) = crate::window_bar::resize_edges(self) {
             layers = layers.push(edges);
         }
+        // ReCord's boot signal: the mark fills in, the bar steps across,
+        // and the tip's underscore blinks over everything while the
+        // window comes up.
+        if let Some(boot) = self.boot_view() {
+            layers = layers.push(boot);
+        }
+        if let Some(reveal) = self.reveal_view() {
+            layers = layers.push(reveal);
+        }
         // ReCord's CRT layer over the whole window. Its canvas takes no
         // pointer events, so everything under it behaves as if it weren't
         // there.
@@ -362,6 +388,132 @@ impl App {
             );
         }
         crate::widgets::CtrlWheel::new(layers, zoom_turn, recore_core::zoom::Wheel::reset).into()
+    }
+
+    /// ReCord's `rl-screen-in`: the new room's content fades back from the
+    /// theme's ground in five steps.
+    fn switch_view(&self) -> Option<Element<'_, Message>> {
+        let start = self.switched?;
+        let elapsed = start.elapsed();
+        if elapsed >= std::time::Duration::from_millis(260)
+            || self.themes.motion() != crate::themes::Motion::Full
+        {
+            return None;
+        }
+        let t = elapsed.as_secs_f32() / 0.260;
+        let step = (t * 5.0).floor() / 5.0;
+        let alpha = if step < 0.3 {
+            1.0 - step / 0.3
+        } else if step < 0.6 {
+            0.14
+        } else {
+            0.0
+        };
+        let ground = self.theme.chat;
+        Some(
+            container(Space::new())
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(move |_| crate::style::fill(iced::Color { a: alpha, ..ground }))
+                .into(),
+        )
+    }
+
+    /// ReCord's boot screen: a centered mark growing in four steps, a
+    /// stepped loading bar, a tip and its blinking line.
+    fn boot_view(&self) -> Option<Element<'_, Message>> {
+        let start = self.boot?;
+        let elapsed = start.elapsed();
+        if elapsed >= crate::app::BOOT {
+            return None;
+        }
+        let theme = &self.theme;
+        let whole = crate::app::BOOT.as_secs_f32();
+        let progress = (elapsed.as_secs_f32() / (whole * 0.86)).clamp(0.0, 1.0);
+        let stepped = (progress * 12.0).floor() / 12.0;
+        let mark = 72.0 + 56.0 * ((progress * 4.0).floor() / 4.0).min(1.0);
+        let caret = (elapsed.as_millis() / 450) % 2 == 1;
+        let dim = theme.sunken;
+        let accent = theme.accent;
+        let bone = theme.text;
+        let secondary = theme.secondary;
+        let track = container(Space::new())
+            .width(220)
+            .height(8)
+            .style(move |_| container::Style {
+                background: Some(dim.into()),
+                border: iced::Border {
+                    color: accent,
+                    width: 1.0,
+                    radius: 0.0.into(),
+                },
+                ..container::Style::default()
+            });
+        let filled = container(Space::new())
+            .width(Length::Fixed(220.0 * stepped))
+            .height(8)
+            .style(move |_| crate::style::fill(accent));
+        let tip = if progress < 0.45 {
+            "CONNECTING THE TERMINAL"
+        } else if progress < 0.86 {
+            "LOADING THE RECORD"
+        } else {
+            "SIGNAL LOCKED"
+        };
+        Some(
+            container(
+                column![
+                    container(self.look().glyph(
+                        crate::pictures::Icon::Logo,
+                        mark.round() as u32,
+                        accent,
+                    ))
+                    .center(128),
+                    Space::new().height(30),
+                    stack![track, filled],
+                    Space::new().height(26),
+                    text(tip).font(fonts::BOLD()).size(12).color(accent),
+                    Space::new().height(10),
+                    row![
+                        text("// RECORE").font(fonts::BOLD()).size(12).color(bone),
+                        text(if caret { "_" } else { " " })
+                            .font(fonts::BOLD())
+                            .size(12)
+                            .color(accent),
+                    ],
+                    Space::new().height(34),
+                    text(format!("v{}", self.build.version))
+                        .font(fonts::MEDIUM())
+                        .size(11)
+                        .color(secondary),
+                ]
+                .align_x(iced::Alignment::Center),
+            )
+            .center(Length::Fill)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(move |_| crate::style::fill(theme.chat))
+            .into(),
+        )
+    }
+
+    /// The screen-in after the boot signal: black over the window, stepping
+    /// off in five ReCord frames.
+    fn reveal_view(&self) -> Option<Element<'_, Message>> {
+        let start = self.reveal?;
+        let elapsed = start.elapsed();
+        if elapsed >= crate::app::REVEAL || self.themes.motion() != crate::themes::Motion::Full {
+            return None;
+        }
+        let t = elapsed.as_secs_f32() / crate::app::REVEAL.as_secs_f32();
+        let alpha = (1.0 - (t * 5.0).floor() / 5.0).clamp(0.0, 1.0);
+        Some(
+            container(Space::new())
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(move |_| crate::style::fill(iced::Color::from_rgba(0.0, 0.0, 0.0, alpha)))
+                .into(),
+        )
     }
 
     /// The zoom level, a moment after it changes.

@@ -66,6 +66,15 @@ impl App {
             subscriptions
                 .push(iced::time::every(Duration::from_millis(100)).map(|_| Message::EffectsTick));
         }
+        // ReCord moves in steps: badges pulse, the boot line blinks and a
+        // new screen fades in while the motion level asks for it.
+        if self.boot.is_some()
+            || self.reveal.is_some()
+            || self.themes.motion() != crate::themes::Motion::Off
+        {
+            subscriptions
+                .push(iced::time::every(Duration::from_millis(50)).map(|_| Message::MotionTick));
+        }
         // A look at the releases every six hours while the check is on.
         if self.layout.prefs.check_for_updates {
             subscriptions.push(

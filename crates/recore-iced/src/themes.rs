@@ -29,6 +29,85 @@ use crate::{
 const DEFAULT: &str = "recore";
 
 /// The themes this data folder offers and the one it chose.
+/// ReCore's own look, the knobs ReCord's plugin exposes: its CRT levels,
+/// its window picture, how opaque the panels over it are, and its type.
+/// A CSS theme keeps its own values instead.
+#[derive(Clone, Debug)]
+pub struct RecoreOptions {
+    pub scanlines: f32,
+    pub grain: f32,
+    pub vignette: f32,
+    pub frame: f32,
+    pub beam: bool,
+    pub flicker: bool,
+    pub avatar_filter: bool,
+    pub background: Option<PathBuf>,
+    pub background_dim: f32,
+    pub panel_opacity: f32,
+    pub font: String,
+    pub motion: Motion,
+}
+
+/// ReCord's three motion levels.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Motion {
+    #[default]
+    Full,
+    Subtle,
+    Off,
+}
+
+impl Default for RecoreOptions {
+    fn default() -> Self {
+        Self {
+            scanlines: 0.25,
+            grain: 0.18,
+            vignette: 0.55,
+            frame: 0.6,
+            beam: true,
+            flicker: false,
+            avatar_filter: true,
+            background: None,
+            background_dim: 0.5,
+            panel_opacity: 0.75,
+            font: "pixel".into(),
+            motion: Motion::Full,
+        }
+    }
+}
+
+impl RecoreOptions {
+    fn read(layout: &Layout) -> Self {
+        let percent = |value: Option<u8>, fallback: f32| {
+            value
+                .map(|value| f32::from(value.min(100)) / 100.0)
+                .unwrap_or(fallback)
+        };
+        Self {
+            scanlines: percent(layout.recore_scanlines, 0.25),
+            grain: percent(layout.recore_grain, 0.18),
+            vignette: percent(layout.recore_vignette, 0.55),
+            frame: if layout.recore_frame.unwrap_or(true) {
+                0.6
+            } else {
+                0.0
+            },
+            beam: layout.recore_beam.unwrap_or(true),
+            flicker: layout.recore_flicker.unwrap_or(false),
+            avatar_filter: layout.recore_avatar_filter.unwrap_or(true),
+            background: layout.recore_background.as_deref().map(PathBuf::from),
+            background_dim: percent(layout.recore_background_dim, 0.5),
+            panel_opacity: percent(layout.recore_panel_opacity, 0.75),
+            font: layout.recore_font.clone().unwrap_or_else(|| "pixel".into()),
+            motion: match layout.recore_motion.as_deref() {
+                Some("subtle") => Motion::Subtle,
+                Some("off") => Motion::Off,
+                _ => Motion::Full,
+            },
+        }
+    }
+}
+
 pub struct Themes {
     pub custom: Vec<Custom>,
     /// Discord CSS themes read from the folders below.
@@ -43,6 +122,8 @@ pub struct Themes {
     /// Whether the CRT layer is drawn, and whether low power takes its grain.
     pub effects: bool,
     pub low_power: bool,
+    /// ReCore's own options, when ReCore or ReCore Paper is chosen.
+    pub recore: RecoreOptions,
     /// The values the person changed in CSS themes, by theme id and custom
     /// property, kept in `layout.json`.
     pub overrides: BTreeMap<String, BTreeMap<String, String>>,
@@ -62,6 +143,7 @@ impl Themes {
         let accent = layout.recore_accent.as_deref().and_then(palette::parse);
         let effects = layout.recore_effects.unwrap_or(true);
         let low_power = layout.recore_low_power.unwrap_or(false);
+        let recore = RecoreOptions::read(layout);
         let overrides = layout.css_options.clone();
         let mut themes = Self {
             custom,
@@ -72,6 +154,7 @@ impl Themes {
             accent,
             effects,
             low_power,
+            recore,
             overrides,
             background: None,
             background_dim: 0.0,
@@ -124,7 +207,7 @@ impl Themes {
     /// own themes, and a CSS theme whose radius is square.
     pub fn square_avatars(&self) -> bool {
         if matches!(self.chosen_id(), "recore" | "recore-light") {
-            return true;
+            return self.recore.avatar_filter;
         }
         self.chosen_css()
             .is_some_and(|css| css.look.radius.unwrap_or(8.0) < 2.0)
@@ -222,6 +305,35 @@ impl Themes {
         DEFAULT
     }
 
+    /// Lowers the panels over ReCore's own background picture, as ReCord's
+    /// surface opacity does. Text and lines keep their full strength.
+    fn paint_recore(&self, shown: &mut Theme) {
+        if !matches!(self.chosen_id(), "recore" | "recore-light")
+            || self.background.is_none()
+            || self.recore.panel_opacity >= 1.0
+        {
+            return;
+        }
+        let opacity = self.recore.panel_opacity.clamp(0.0, 1.0);
+        for colour in [
+            &mut shown.rail,
+            &mut shown.sidebar,
+            &mut shown.panel,
+            &mut shown.chat,
+            &mut shown.stage,
+            &mut shown.raised,
+            &mut shown.field,
+            &mut shown.sunken,
+            &mut shown.hover,
+            &mut shown.active,
+            &mut shown.row_hover,
+            &mut shown.button_default,
+            &mut shown.button_default_hover,
+        ] {
+            colour.a *= opacity;
+        }
+    }
+
     /// `id`'s theme, if it's one ReCore has, the person made, or a CSS theme
     /// in one of the folders.
     pub fn find(&self, id: &str) -> Option<Theme> {
@@ -233,7 +345,9 @@ impl Themes {
                 ("recore" | "recore-light", Some(accent)) => found.accented(accent),
                 _ => found,
             };
-            theme(id, &found)
+            let mut shown = theme(id, &found);
+            self.paint_recore(&mut shown);
+            shown.worked_out()
         })
     }
 
@@ -255,6 +369,88 @@ impl Themes {
         layout::store(root, "recore_low_power", on);
     }
 
+    /// ReCore's CRT knobs, kept in `layout.json`.
+    pub fn set_scanlines(&mut self, root: &Path, percent: u8) {
+        self.recore.scanlines = f32::from(percent.min(100)) / 100.0;
+        layout::store(root, "recore_scanlines", percent.min(100));
+    }
+
+    pub fn set_grain(&mut self, root: &Path, percent: u8) {
+        self.recore.grain = f32::from(percent.min(100)) / 100.0;
+        layout::store(root, "recore_grain", percent.min(100));
+    }
+
+    pub fn set_vignette(&mut self, root: &Path, percent: u8) {
+        self.recore.vignette = f32::from(percent.min(100)) / 100.0;
+        layout::store(root, "recore_vignette", percent.min(100));
+    }
+
+    pub fn set_beam(&mut self, root: &Path, on: bool) {
+        self.recore.beam = on;
+        layout::store(root, "recore_beam", on);
+    }
+
+    pub fn set_flicker(&mut self, root: &Path, on: bool) {
+        self.recore.flicker = on;
+        layout::store(root, "recore_flicker", on);
+    }
+
+    pub fn set_frame(&mut self, root: &Path, on: bool) {
+        self.recore.frame = if on { 0.6 } else { 0.0 };
+        layout::store(root, "recore_frame", on);
+    }
+
+    pub fn set_avatar_filter(&mut self, root: &Path, on: bool) {
+        self.recore.avatar_filter = on;
+        layout::store(root, "recore_avatar_filter", on);
+    }
+
+    pub fn set_background(&mut self, root: &Path, path: Option<PathBuf>) {
+        let kept = path.map(|path| path.display().to_string());
+        self.recore.background = kept.as_deref().map(PathBuf::from);
+        layout::store(root, "recore_background", kept);
+        self.load_background();
+    }
+
+    pub fn set_background_dim(&mut self, root: &Path, percent: u8) {
+        self.recore.background_dim = f32::from(percent.min(100)) / 100.0;
+        layout::store(root, "recore_background_dim", percent.min(100));
+    }
+
+    pub fn set_panel_opacity(&mut self, root: &Path, percent: u8) {
+        self.recore.panel_opacity = f32::from(percent.min(100)) / 100.0;
+        layout::store(root, "recore_panel_opacity", percent.min(100));
+    }
+
+    pub fn set_font(&mut self, root: &Path, name: &str) {
+        self.recore.font = name.to_owned();
+        layout::store(root, "recore_font", name.to_owned());
+        let chosen = self.chosen_id().to_owned();
+        self.apply_font(&chosen);
+    }
+
+    pub fn set_motion(&mut self, root: &Path, motion: Motion) {
+        self.recore.motion = motion;
+        let name = match motion {
+            Motion::Full => "full",
+            Motion::Subtle => "subtle",
+            Motion::Off => "off",
+        };
+        layout::store(root, "recore_motion", name);
+    }
+
+    /// The chosen theme's motion level.
+    pub fn motion(&self) -> Motion {
+        if matches!(self.chosen_id(), "recore" | "recore-light") {
+            return self.recore.motion;
+        }
+        match self.chosen_css().map(|css| css.look.motion) {
+            Some(recore_css::Motion::Off) => Motion::Off,
+            Some(recore_css::Motion::Subtle) => Motion::Subtle,
+            _ => Motion::Full,
+        }
+    }
+
     /// Whether the CRT layer has a beam or flicker that needs the clock.
     pub fn animates_effects(&self) -> bool {
         self.shade(&Theme::new("probe", true))
@@ -272,30 +468,31 @@ impl Themes {
             css.look.effects.clone()
         } else if matches!(self.chosen_id(), "recore" | "recore-light") {
             recore_css::Effects {
-                scanlines: 0.25,
-                grain: 0.18,
-                vignette: 0.55,
-                flicker: false,
-                beam: true,
-                frame: 0.6,
+                scanlines: self.recore.scanlines,
+                grain: self.recore.grain,
+                vignette: self.recore.vignette,
+                flicker: self.recore.flicker,
+                beam: self.recore.beam,
+                frame: self.recore.frame,
                 avatar_filter: None,
-                avatar_scanline: 0.14,
+                avatar_scanline: if self.recore.avatar_filter { 0.14 } else { 0.0 },
             }
         } else {
             return None;
         };
         let grain = if self.low_power { 0.0 } else { effects.grain };
+        let moving = self.motion() != Motion::Off;
         let shade = recore_iced_kit::effects::Shade {
             scanlines: effects.scanlines,
             grain,
             vignette: effects.vignette,
             frame: effects.frame,
-            beam: if self.low_power || !effects.beam {
+            beam: if self.low_power || !effects.beam || !moving {
                 0.0
             } else {
                 0.5
             },
-            flicker: if self.low_power || !effects.flicker {
+            flicker: if self.low_power || !effects.flicker || !moving {
                 0.0
             } else {
                 1.0
@@ -319,6 +516,11 @@ impl Themes {
     /// Decodes the chosen CSS theme's background picture, if it names one
     /// ReCore can read, and keeps how far it is dimmed.
     fn load_background(&mut self) {
+        if matches!(self.chosen_id(), "recore" | "recore-light") {
+            self.background = self.recore.background.as_deref().and_then(load_picture);
+            self.background_dim = self.recore.background_dim;
+            return;
+        }
         let (dim, background) = {
             let Some(css) = self.chosen_css() else {
                 self.background = None;
@@ -334,11 +536,7 @@ impl Themes {
                         iced::widget::image::Handle::from_rgba(width, height, picture.into_raw())
                     })
                 }
-                Some(recore_css::Image::File(path)) => image::open(path).ok().map(|picture| {
-                    let picture = picture.to_rgba8();
-                    let (width, height) = picture.dimensions();
-                    iced::widget::image::Handle::from_rgba(width, height, picture.into_raw())
-                }),
+                Some(recore_css::Image::File(path)) => load_picture(path),
                 _ => None,
             };
             (dim, background)
@@ -355,7 +553,7 @@ impl Themes {
             .find(|custom| custom.id == id)
             .is_some_and(|custom| matches!(custom.base, "recore" | "recore-light"));
         if matches!(id, "recore" | "recore-light") || based_on_recore {
-            fonts::set_family(Some("Pixel Operator"));
+            fonts::set_family(recore_family(&self.recore.font));
             return;
         }
         if let Some(css) = self.css.iter().find(|css| css.id == id) {
@@ -382,11 +580,31 @@ impl Themes {
 pub fn prepare_fonts(root: &Path) {
     let layout = Layout::read(root);
     if matches!(layout.theme.as_deref(), Some("recore" | "recore-light")) {
-        fonts::set_family(Some("Pixel Operator"));
+        fonts::set_family(recore_family(
+            layout.recore_font.as_deref().unwrap_or("pixel"),
+        ));
         return;
     }
     let themes = Themes::read(root, &layout);
     themes.apply_font(themes.chosen_id());
+}
+
+/// Loads a background picture, as the CSS and ReCore options both need.
+fn load_picture(path: &Path) -> Option<iced::widget::image::Handle> {
+    image::open(path).ok().map(|picture| {
+        let picture = picture.to_rgba8();
+        let (width, height) = picture.dimensions();
+        iced::widget::image::Handle::from_rgba(width, height, picture.into_raw())
+    })
+}
+
+/// The family ReCore's own theme draws with.
+fn recore_family(name: &str) -> Option<&'static str> {
+    match name {
+        "mono" => Some("Pixel Operator Mono"),
+        "system" => None,
+        _ => Some("Pixel Operator"),
+    }
 }
 
 /// The folders a theme may come from: this data folder's, then the desktop's
@@ -591,6 +809,7 @@ mod tests {
             accent: None,
             effects: true,
             low_power: false,
+            recore: RecoreOptions::default(),
             overrides: BTreeMap::new(),
             background: None,
             background_dim: 0.0,
@@ -609,6 +828,7 @@ mod tests {
                 accent: None,
                 effects: true,
                 low_power: false,
+                recore: RecoreOptions::default(),
                 overrides: BTreeMap::new(),
                 background: None,
                 background_dim: 0.0,

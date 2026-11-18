@@ -89,6 +89,9 @@ pub enum Message {
     FontsLoaded,
     /// A frame of the CRT beam or flicker.
     EffectsTick,
+    /// A frame of the window's stepped motion: the boot signal, badges,
+    /// presence and the screen-in.
+    MotionTick,
     /// Nothing to do: a click a backdrop takes.
     Nothing,
     /// The header's bell: the open channel's notification choices.
