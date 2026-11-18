@@ -68,7 +68,9 @@ impl Default for RecoreOptions {
         Self {
             scanlines: 0.25,
             grain: 0.18,
-            vignette: 0.55,
+            // ReCord's vignette darkens the window's edges, and its top and
+            // bottom most of all; ReCore starts without it.
+            vignette: 0.0,
             frame: 0.6,
             beam: true,
             flicker: false,
@@ -95,7 +97,7 @@ impl RecoreOptions {
         Self {
             scanlines: percent(layout.recore_scanlines, 0.25),
             grain: percent(layout.recore_grain, 0.18),
-            vignette: percent(layout.recore_vignette, 0.55),
+            vignette: percent(layout.recore_vignette, 0.0),
             frame: if layout.recore_frame.unwrap_or(true) {
                 0.6
             } else {

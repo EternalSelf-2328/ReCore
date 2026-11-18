@@ -118,15 +118,6 @@ impl App {
             }
             None => base,
         };
-        // ReCord's screen-in when the open room changes, under the
-        // overlays and the title bar.
-        let base: Element<'_, Message> = match self.switch_view() {
-            Some(switch) => stack![base, switch]
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into(),
-            None => base,
-        };
         // After the boot signal, the screen unfolds from its power-on line.
         let base: Element<'_, Message> = match self.reveal {
             Some(start) if self.themes.motion() == crate::themes::Motion::Full => {
@@ -138,6 +129,14 @@ impl App {
         // come and go: the card, the suggestions, the picker, a menu, the
         // modal, each over the last.
         let mut layers = stack![base];
+        // ReCord's screen-in when the open room changes: over the room,
+        // under the overlays and the title bar. It joins the window's one
+        // stack rather than wrapping the room, which would give the rail,
+        // the sidebar and the timeline a new tree and lose where they
+        // were scrolled to.
+        if let Some(switch) = self.switch_view() {
+            layers = layers.push(switch);
+        }
         // A role's card, under the card of someone on it.
         if let Some(role) = crate::info_cards::role_layers(&self.cards, &self.profiles, self.ctx())
         {

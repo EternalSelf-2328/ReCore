@@ -624,6 +624,10 @@ impl<'a> View<'a> {
             );
             faces = faces.push(controls::placed(face, x, y));
         }
+        // The stack takes the folder's size, so every placed face has the
+        // room it sits in; a stack sized by its first child would squash
+        // the rest into the corner.
+        let faces = faces.width(FOLDER).height(FOLDER);
         let ground = Color {
             a: if pointed { 0.55 } else { 0.4 },
             ..tint

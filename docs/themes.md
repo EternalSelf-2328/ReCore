@@ -38,6 +38,9 @@ in `layout.json` beside `recore_accent`:
 - `recore_font` (`pixel`, `mono` or `system`) and `recore_motion` (`full`,
   `subtle` or `off`).
 
+The vignette starts at 0, off: it darkens the window's edges, its top and
+bottom most of all.
+
 The window boots with ReCord's signal: a stepped mark, a twelve-step loading
 bar, a blinking line and the same screen-in. Menus and dialogs use the
 theme's stepped 190 ms motion, a changed room flashes its channel and fades
