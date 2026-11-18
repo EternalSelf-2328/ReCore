@@ -1,4 +1,6 @@
-# A stable release: push a tag such as v0.5.0, or run this workflow with a tag.
+# A stable release: push a tag such as v0.5.0, or run this workflow with a
+# version. A manual run builds the selected branch and creates the tag when
+# it publishes the release if the tag does not exist yet.
 # It builds the Linux AppImage and Arch package, the Windows portable ZIP, the
 # source snapshot and the checksums, then publishes them on the tag's release
 # page. The website reads that page through the GitHub releases API, so a new
@@ -18,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release, such as v0.5.0"
+        description: "Tag to release or create, such as v0.5.0"
         required: true
         type: string
 
@@ -39,8 +41,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          # A manual dispatch starts from the selected branch; the tag may
+          # not exist yet. A tag push checks out that tag as before.
+          ref: ${{ github.ref }}
           fetch-depth: 0
+          fetch-tags: true
       - id: version
         env:
           INPUT_TAG: ${{ github.event.inputs.tag }}
@@ -57,9 +62,16 @@ jobs:
             echo "release: prereleases and nightlies use their own workflow" >&2
             exit 2
           fi
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            commit=$(git rev-parse "$tag^{commit}")
+          else
+            # A manual dispatch can name a new tag. Build the selected
+            # branch now; the release step creates the tag at this commit.
+            commit=$(git rev-parse HEAD)
+          fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "commit=$(git rev-parse "$tag^{commit}")" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
 
   linux:
     needs: version
@@ -137,6 +149,7 @@ jobs:
         with:
           ref: ${{ needs.version.outputs.commit }}
           fetch-depth: 0
+          fetch-tags: true
           sparse-checkout: |
             .github
             packaging/keys
@@ -218,8 +231,12 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" release/* --clobber
             gh release edit "$TAG" --title "ReCore $VERSION" --notes-file notes.md --latest
+          elif git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            gh release create "$TAG" release/* \
+              --title "ReCore $VERSION" --notes-file notes.md --latest
           else
-            gh release create "$TAG" release/* --verify-tag \
+            # No tag yet: GitHub creates it at the commit this build used.
+            gh release create "$TAG" release/* --target "$COMMIT" \
               --title "ReCore $VERSION" --notes-file notes.md --latest
           fi
           gh release view "$TAG" --json url,assets \
