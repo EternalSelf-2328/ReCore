@@ -311,7 +311,7 @@ impl Themes {
     /// Lowers the panels over ReCore's own background picture, as ReCord's
     /// surface opacity does. Text and lines keep their full strength.
     fn paint_recore(&self, shown: &mut Theme) {
-        if !matches!(self.chosen_id(), "recore" | "recore-light")
+        if !matches!(shown.id.as_str(), "recore" | "recore-light")
             || self.background.is_none()
             || self.recore.panel_opacity >= 1.0
         {
