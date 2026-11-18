@@ -349,6 +349,7 @@ impl Themes {
                 _ => found,
             };
             let mut shown = theme(id, &found);
+            shown.square = matches!(id, "recore" | "recore-light");
             self.paint_recore(&mut shown);
             shown.worked_out()
         })
@@ -675,6 +676,7 @@ recore_iced_kit::for_theme_colours!(from_palette);
 fn from_css(file: &ThemeFile) -> Theme {
     let theme = &file.palette;
     let mut shown = Theme::new(&file.id, theme.dark);
+    shown.square = file.look.radius.unwrap_or(8.0) < 2.0;
     macro_rules! assign {
         ($($name:ident,)*) => {
             $(shown.$name = css_color(theme.$name);)*

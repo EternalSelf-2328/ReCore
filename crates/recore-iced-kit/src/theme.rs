@@ -73,6 +73,9 @@ macro_rules! declare_theme {
             pub selection: Color,
             /// A mention's colour without one of its own.
             pub mention: Color,
+            /// Whether panels, menus and buttons use square corners, as
+            /// ReCord's terminal theme does.
+            pub square: bool,
             /// What iced's own styles read: the theme's ground, text and
             /// accent.
             iced: iced::Theme,
@@ -93,6 +96,7 @@ macro_rules! declare_theme {
                     danger_text: Color::TRANSPARENT,
                     selection: Color::TRANSPARENT,
                     mention: Color::TRANSPARENT,
+                    square: false,
                     iced: iced::Theme::Dark,
                 }
             }

@@ -353,7 +353,13 @@ impl<'a> super::View<'a> {
         .spacing(8)
         .align_y(Alignment::Center);
         if !badge.is_empty() {
-            face = face.push(count_pill(theme, badge, ROW_COUNT, None));
+            face = face.push(count_pill(
+                theme,
+                badge,
+                ROW_COUNT,
+                None,
+                self.cx.themes.square_avatars(),
+            ));
         }
         self.row_face(id.into(), face.into(), ROW, selected, Some(message), None)
     }
@@ -542,7 +548,13 @@ impl<'a> super::View<'a> {
             face = face.push(text(lasted).size(12).color(theme.muted));
         }
         if !room.badge.is_empty() {
-            face = face.push(count_pill(theme, &room.badge, ROW_COUNT, None));
+            face = face.push(count_pill(
+                theme,
+                &room.badge,
+                ROW_COUNT,
+                None,
+                self.cx.themes.square_avatars(),
+            ));
         }
         // A voice channel's chat opens without joining it, from a button
         // shown under the pointer or while it's selected, as in Discord.

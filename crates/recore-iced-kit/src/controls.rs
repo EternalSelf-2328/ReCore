@@ -110,6 +110,7 @@ pub fn action<'a, M: Clone + 'a>(
         small: false,
         icon: None,
         hover: None,
+        square: theme.square,
     }
 }
 
@@ -126,6 +127,8 @@ pub struct Action<'a, M> {
     icon: Option<iced::advanced::image::Handle>,
     /// What it sends when the pointer comes onto it.
     hover: Option<M>,
+    /// Whether its corners are square, as ReCord's are.
+    square: bool,
 }
 
 /// A button's ground and ink at rest and lit, and its ring.
@@ -173,6 +176,7 @@ impl<M: Clone> Action<'_, M> {
 impl<'a, M: Clone + 'a> From<Action<'a, M>> for Element<'a, M> {
     fn from(action: Action<'a, M>) -> Self {
         let faces = action.faces;
+        let radius = if action.square { 0.0 } else { 6.0 };
         let button = button(
             container({
                 let label = text(action.label)
@@ -204,7 +208,7 @@ impl<'a, M: Clone + 'a> From<Action<'a, M>> for Element<'a, M> {
                 border: Border {
                     color: faces.ring.unwrap_or(Color::TRANSPARENT),
                     width: if faces.ring.is_some() { 2.0 } else { 0.0 },
-                    radius: 6.0.into(),
+                    radius: radius.into(),
                 },
                 ..Default::default()
             }
@@ -441,8 +445,12 @@ impl<'a, M: Clone + 'a> From<Outline> for Element<'a, M> {
 /// A menu's panel: the menu's ground in its outline, round corners, the
 /// raised shadow.
 pub fn menu_panel(theme: &Theme) -> impl Fn(&iced::Theme) -> container::Style + use<> {
-    let (ground, edge) = (theme.menu, theme.menu_line);
-    move |_| crate::style::panel(ground, edge, 8.0)
+    let (ground, edge, radius) = (
+        theme.menu,
+        theme.menu_line,
+        if theme.square { 0.0 } else { 8.0 },
+    );
+    move |_| crate::style::panel(ground, edge, radius)
 }
 
 /// A box of one colour: a line between parts of the window, a bar, a dot.
@@ -726,7 +734,7 @@ impl<'a> crate::look::Look<'a> {
             side: 28.0,
             glyph: 18,
             ground: Ground::Clear,
-            radius: 6.0,
+            radius: if self.theme.square { 0.0 } else { 6.0 },
             below: false,
             hover: M::hover_feedback(),
         }
@@ -930,6 +938,7 @@ pub fn count_pill<'a, M: Clone + 'a>(
     count: &str,
     look: Count,
     ring: Option<Color>,
+    square: bool,
 ) -> Element<'a, M> {
     let danger = theme.danger;
     let number = text(count.to_owned())
@@ -947,11 +956,12 @@ pub fn count_pill<'a, M: Clone + 'a>(
     } else {
         pill
     };
-    let pill = pill.style(move |_| rounded(danger, look.height / 2.0));
+    let radius = if square { 0.0 } else { look.height / 2.0 };
+    let pill = pill.style(move |_| rounded(danger, radius));
     match ring {
         Some(ring) => container(pill)
             .padding(3)
-            .style(move |_| rounded(ring, look.height / 2.0 + 3.0))
+            .style(move |_| rounded(ring, if square { 0.0 } else { radius + 3.0 }))
             .into(),
         None => pill.into(),
     }
@@ -962,6 +972,7 @@ pub fn count_pill<'a, M: Clone + 'a>(
 /// the stream, lit under the pointer.
 pub fn live_pill<'a, M: Clone + 'a>(theme: &Theme, press: Option<M>) -> Element<'a, M> {
     let (rest, lit) = (theme.danger, theme.danger_hover);
+    let radius = if theme.square { 0.0 } else { 8.0 };
     let face = container(text("LIVE").size(10).font(BOLD()).color(theme.on_danger))
         .padding([0, 5])
         .height(16)
@@ -972,11 +983,11 @@ pub fn live_pill<'a, M: Clone + 'a>(theme: &Theme, press: Option<M>) -> Element<
             .on_press(press)
             .style(move |_, status| button::Style {
                 background: Some(if lights(status) { lit } else { rest }.into()),
-                border: Border::default().rounded(8),
+                border: Border::default().rounded(radius),
                 ..Default::default()
             })
             .into(),
-        None => face.style(move |_| rounded(rest, 8)).into(),
+        None => face.style(move |_| rounded(rest, radius)).into(),
     }
 }
 

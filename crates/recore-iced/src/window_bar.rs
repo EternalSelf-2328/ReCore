@@ -762,6 +762,7 @@ fn inbox_line<'a>(app: &'a App, entry: &'a InboxRow) -> Element<'a, Message> {
             &controls::count_badge(entry.mentions),
             controls::INBOX_COUNT,
             None,
+            app.themes.square_avatars(),
         ));
     }
     button(line)

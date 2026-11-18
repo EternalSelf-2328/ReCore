@@ -764,7 +764,14 @@ impl<'a> View<'a> {
                 container(Space::new())
                     .width(4)
                     .height(pill)
-                    .style(move |_| rounded(ink, corners([0.0, 4.0, 4.0, 0.0]))),
+                    .style(move |_| {
+                        let radius = if self.cx.themes.square_avatars() {
+                            corners([0.0; 4])
+                        } else {
+                            corners([0.0, 4.0, 4.0, 0.0])
+                        };
+                        rounded(ink, radius)
+                    }),
                 0.0,
                 above + (side - pill) / 2.0,
             ));
@@ -796,11 +803,17 @@ impl<'a> View<'a> {
         if !marks.badge.is_empty() {
             // Its right and bottom edges 4 px past the tile's.
             layers = layers.push(
-                container(count_pill(theme, marks.badge, RAIL_COUNT, Some(theme.rail)))
-                    .width(left + side + BELOW)
-                    .height(above + side + BELOW)
-                    .align_x(Alignment::End)
-                    .align_y(Alignment::End),
+                container(count_pill(
+                    theme,
+                    marks.badge,
+                    RAIL_COUNT,
+                    Some(theme.rail),
+                    self.cx.themes.square_avatars(),
+                ))
+                .width(left + side + BELOW)
+                .height(above + side + BELOW)
+                .align_x(Alignment::End)
+                .align_y(Alignment::End),
             );
         }
         layers.width(WIDTH).height(above + side + BELOW).into()

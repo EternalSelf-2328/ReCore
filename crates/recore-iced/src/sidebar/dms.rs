@@ -109,7 +109,13 @@ impl<'a> super::View<'a> {
             face = face.push(self.cx.look.glyph(Icon::Pin, 14, theme.faint));
         }
         if !room.badge.is_empty() {
-            face = face.push(count_pill(theme, &room.badge, ROW_COUNT, None));
+            face = face.push(count_pill(
+                theme,
+                &room.badge,
+                ROW_COUNT,
+                None,
+                self.cx.themes.square_avatars(),
+            ));
         }
         let select = Some(Message::Side(Event::Select(room.id.clone())));
         let Some((url, palette)) = room.nameplate.as_ref().filter(|_| pointed || room.selected)

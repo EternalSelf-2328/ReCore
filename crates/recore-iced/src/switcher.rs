@@ -400,6 +400,7 @@ impl<'a> View<'a> {
                 &controls::count_badge(mentions),
                 controls::ROW_COUNT,
                 None,
+                self.cx.themes.square_avatars(),
             ));
         }
         let (active, hover) = (theme.active, theme.hover);
