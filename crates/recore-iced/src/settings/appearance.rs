@@ -142,6 +142,9 @@ pub enum Event {
     ClearBackground,
     BackgroundDim(u8),
     PanelOpacity(u8),
+    BackgroundFilter(crate::background::Filter),
+    BackgroundBrightness(u8),
+    BackgroundAnimate(bool),
     Font(&'static str),
     Motion(crate::themes::Motion),
     /// A CSS option while it's being typed, and when it's applied.
@@ -352,6 +355,21 @@ impl Settings {
             Event::PanelOpacity(percent) => {
                 let root = cx.client.root().to_path_buf();
                 cx.themes.set_panel_opacity(&root, percent);
+                cx.request(Request::Changed(Shown::Theme));
+            }
+            Event::BackgroundFilter(filter) => {
+                let root = cx.client.root().to_path_buf();
+                cx.themes.set_background_filter(&root, filter);
+                cx.request(Request::Changed(Shown::Theme));
+            }
+            Event::BackgroundBrightness(percent) => {
+                let root = cx.client.root().to_path_buf();
+                cx.themes.set_background_brightness(&root, percent);
+                cx.request(Request::Changed(Shown::Theme));
+            }
+            Event::BackgroundAnimate(on) => {
+                let root = cx.client.root().to_path_buf();
+                cx.themes.set_background_animate(&root, on);
                 cx.request(Request::Changed(Shown::Theme));
             }
             Event::Font(name) => {
@@ -792,6 +810,34 @@ impl<'a> Page<'a> {
                 )
                 .step(1)
                 .view(self.cx.look.theme),
+                form::heading(theme, "BACKGROUND GRADE"),
+                row![
+                    action(theme, "None", Kind::Plain, Some(theme_message(Event::BackgroundFilter(crate::background::Filter::None)))).small(),
+                    action(theme, "Warm", Kind::Plain, Some(theme_message(Event::BackgroundFilter(crate::background::Filter::Warm)))).small(),
+                    action(theme, "Cool", Kind::Plain, Some(theme_message(Event::BackgroundFilter(crate::background::Filter::Cool)))).small(),
+                    action(theme, "Mono", Kind::Plain, Some(theme_message(Event::BackgroundFilter(crate::background::Filter::Mono)))).small(),
+                    action(theme, "Sepia", Kind::Plain, Some(theme_message(Event::BackgroundFilter(crate::background::Filter::Sepia)))).small(),
+                    action(theme, "Scanlines", Kind::Plain, Some(theme_message(Event::BackgroundFilter(crate::background::Filter::Scanlines)))).small(),
+                ]
+                .spacing(8)
+                .into(),
+                slider(
+                    "Background brightness",
+                    (self.cx.themes.recore.background_brightness * 100.0).round() as u32,
+                    200,
+                    |value| theme_message(Event::BackgroundBrightness(value as u8)),
+                )
+                .step(5)
+                .view(self.cx.look.theme),
+                switch(
+                    "Animate background",
+                    self.cx.themes.recore.background_animate,
+                    Some(theme_message(Event::BackgroundAnimate(
+                        !self.cx.themes.recore.background_animate,
+                    ))),
+                )
+                .description("Pause GIFs and videos when the window is not focused, or keep them playing.")
+                .view(self.cx.look),
                 form::heading(theme, "TYPE"),
                 row![
                     action(theme, "Pixel", Kind::Plain, Some(theme_message(Event::Font("pixel")))).small(),

@@ -79,14 +79,17 @@ it.
 
 | Media | Formats | Playback |
 | --- | --- | --- |
-| Still pictures | PNG, JPEG, WebP, BMP | Decoded at up to 1920 × 1080 and drawn under the panels |
+| Still pictures | PNG, JPEG, WebP, BMP | Decoded at up to 1280 × 720 and drawn under the panels |
 | Animated pictures | GIF, APNG, WebP | Frames are decoded as they fall due; the still is shown until the first frame |
 | Video | MP4, WebM, MOV, MKV | Decoded through the bundled FFmpeg path into a capped background animation |
 
 Choose the file in **Appearance → ReCore window → Choose background**. CSS
 themes can name one through `--rl-background-image` or `--background-image`,
-and the same media types are accepted. The background never takes pointer
-input or audio.
+and the same media types are accepted. **Background grade** adds None, Warm,
+Cool, Mono, Sepia or Scanlines and a 25–200% brightness slider. **Animate
+background** pauses moving backgrounds when the window is unfocused, away or
+set to low power; still backgrounds never decode frames. The background never
+takes pointer input or audio.
 
 ## The theme, natively
 

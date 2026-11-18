@@ -4,8 +4,8 @@
 //! the theme it's drawn in.
 
 use iced::{
-    Element, Length, Point, Rectangle, Size,
-    widget::{Space, column, container, row, stack, text},
+    ContentFit, Element, Length, Point, Rectangle, Size,
+    widget::{Space, column, container, image, row, stack, text},
 };
 
 use crate::{
@@ -76,14 +76,29 @@ impl App {
         // panels opaque hides it, as ReCord's panel opacity does.
         let base: Element<'_, Message> = match &self.themes.background_picture {
             Some(picture) => {
-                let size = Size::new(self.window.width, self.window.height);
-                let at = Rectangle::with_size(size);
-                let picture: Element<'_, Message> = self
-                    .win
-                    .pictures
-                    .animated(picture, size, at, true)
-                    .still(self.themes.background.clone())
-                    .into();
+                let animate = self.themes.recore.background_animate
+                    && self.themes.motion() != crate::themes::Motion::Off
+                    && !self.themes.low_power
+                    && crate::pictures::plays(self);
+                let picture: Element<'_, Message> = if animate {
+                    let size = Size::new(self.window.width, self.window.height);
+                    let at = Rectangle::with_size(size);
+                    self.win
+                        .pictures
+                        .animated(picture, size, at, true)
+                        .still(self.themes.background.clone())
+                        .grade(self.themes.background_grade())
+                        .into()
+                } else {
+                    match &self.themes.background {
+                        Some(still) => image(still.clone())
+                            .content_fit(ContentFit::Cover)
+                            .width(Length::Fill)
+                            .height(Length::Fill)
+                            .into(),
+                        None => Space::new().into(),
+                    }
+                };
                 let dim = self.themes.background_dim.clamp(0.0, 1.0);
                 let mut under = stack![picture];
                 if dim > 0.0 {

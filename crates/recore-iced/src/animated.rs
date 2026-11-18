@@ -19,6 +19,7 @@ use iced::{
 use recore_core::chat::Picture as CorePicture;
 
 use crate::{
+    background::Grade,
     paint,
     pictures::Player,
     widgets::{Renderer, draw_picture},
@@ -102,6 +103,8 @@ pub struct Animated<'a> {
     opacity: f32,
     /// What shows until the first frame.
     still: Option<Handle>,
+    /// The background grade, identity for every other moving picture.
+    grade: Grade,
     playing: &'a RefCell<HashMap<PlayKey, Playing>>,
 }
 
@@ -121,6 +124,7 @@ impl<'a> Animated<'a> {
             radius: [0.0; 4],
             opacity: 1.0,
             still: None,
+            grade: Grade::default(),
             playing,
         }
     }
@@ -150,6 +154,12 @@ impl<'a> Animated<'a> {
 
     pub fn still(mut self, still: Option<Handle>) -> Self {
         self.still = still;
+        self
+    }
+
+    /// Grades each frame as it is made, as the window's background does.
+    pub fn grade(mut self, grade: Grade) -> Self {
+        self.grade = grade;
         self
     }
 }
@@ -238,6 +248,7 @@ impl Animated<'_> {
             && due <= now + Duration::from_millis(4)
             && let Some(mut rgba) = entry.player.next(due.max(now))
         {
+            crate::background::apply(&mut rgba, self.picture.width, self.grade);
             paint::to_native(&mut rgba);
             let (width, height) = (self.picture.width, self.picture.height);
             let (to_width, to_height) = (self.at.width as u32, self.at.height as u32);

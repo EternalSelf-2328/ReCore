@@ -20,6 +20,7 @@ use recore_core::theme::{self as palette, Colour, Custom};
 use recore_css::{NativeStyle, ThemeFile};
 
 use crate::{
+    background::{self, Filter, Grade},
     fonts,
     layout::{self, Layout},
     theme::Theme,
@@ -46,6 +47,11 @@ pub struct RecoreOptions {
     pub panel_opacity: f32,
     pub font: String,
     pub motion: Motion,
+    /// The background's filter, brightness (0.25–2) and whether a moving
+    /// background plays.
+    pub background_filter: Filter,
+    pub background_brightness: f32,
+    pub background_animate: bool,
 }
 
 /// ReCord's three motion levels.
@@ -72,6 +78,9 @@ impl Default for RecoreOptions {
             panel_opacity: 0.75,
             font: "pixel".into(),
             motion: Motion::Full,
+            background_filter: Filter::None,
+            background_brightness: 1.0,
+            background_animate: true,
         }
     }
 }
@@ -104,6 +113,14 @@ impl RecoreOptions {
                 Some("off") => Motion::Off,
                 _ => Motion::Full,
             },
+            background_filter: Filter::from_name(
+                layout.recore_background_filter.as_deref().unwrap_or("none"),
+            ),
+            background_brightness: layout
+                .recore_background_brightness
+                .map(|value| f32::from(value.clamp(25, 200)) / 100.0)
+                .unwrap_or(1.0),
+            background_animate: layout.recore_background_animate.unwrap_or(true),
         }
     }
 }
@@ -553,14 +570,42 @@ impl Themes {
     /// Keeps a decoded background and the handle that shows its first frame
     /// until an animation's player begins.
     fn set_background_picture(&mut self, picture: Option<recore_core::chat::Picture>) {
-        self.background = picture.as_ref().map(|picture| {
-            iced::widget::image::Handle::from_rgba(
-                picture.width,
-                picture.height,
-                picture.rgba.to_vec(),
-            )
-        });
         self.background_picture = picture.map(std::sync::Arc::new);
+        self.refresh_background_handle();
+    }
+
+    /// The grade the background is drawn with.
+    pub fn background_grade(&self) -> Grade {
+        Grade::new(
+            self.recore.background_filter,
+            self.recore.background_brightness,
+        )
+    }
+
+    /// Makes the still background from the source picture and its grade.
+    fn refresh_background_handle(&mut self) {
+        self.background = self.background_picture.as_ref().map(|picture| {
+            let mut rgba = picture.rgba.to_vec();
+            background::apply(&mut rgba, picture.width, self.background_grade());
+            iced::widget::image::Handle::from_rgba(picture.width, picture.height, rgba)
+        });
+    }
+
+    pub fn set_background_filter(&mut self, root: &Path, filter: Filter) {
+        self.recore.background_filter = filter;
+        layout::store(root, "recore_background_filter", filter.name());
+        self.refresh_background_handle();
+    }
+
+    pub fn set_background_brightness(&mut self, root: &Path, percent: u8) {
+        self.recore.background_brightness = f32::from(percent.clamp(25, 200)) / 100.0;
+        layout::store(root, "recore_background_brightness", percent.clamp(25, 200));
+        self.refresh_background_handle();
+    }
+
+    pub fn set_background_animate(&mut self, root: &Path, on: bool) {
+        self.recore.background_animate = on;
+        layout::store(root, "recore_background_animate", on);
     }
 
     /// Loads the fonts a theme carries and draws with its family.
@@ -609,8 +654,8 @@ pub fn prepare_fonts(root: &Path) {
 
 /// How large a background is decoded: large enough for a desktop, small
 /// enough that a GIF's frames and a video's RGBA buffer stay reasonable.
-const BACKGROUND_WIDTH: u32 = 1920;
-const BACKGROUND_HEIGHT: u32 = 1080;
+const BACKGROUND_WIDTH: u32 = 1280;
+const BACKGROUND_HEIGHT: u32 = 720;
 
 /// Loads a background picture from a file. GIF, APNG, WebP and video files
 /// keep their animation, which the window's picture players step.

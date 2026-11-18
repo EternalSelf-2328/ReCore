@@ -55,6 +55,11 @@ pub struct Layout {
     pub recore_background: Option<String>,
     pub recore_background_dim: Option<u8>,
     pub recore_panel_opacity: Option<u8>,
+    /// The background's grade: its filter, its brightness as a percentage,
+    /// and whether a video or GIF plays or holds its first frame.
+    pub recore_background_filter: Option<String>,
+    pub recore_background_brightness: Option<u8>,
+    pub recore_background_animate: Option<bool>,
     /// Pixel Operator, Pixel Operator Mono, the system's monospace, or the
     /// client's default.
     pub recore_font: Option<String>,

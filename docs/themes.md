@@ -31,9 +31,10 @@ in `layout.json` beside `recore_accent`:
 - `recore_scanlines`, `recore_grain` and `recore_vignette` (percentages);
 - `recore_beam`, `recore_flicker`, `recore_frame` and `recore_avatar_filter`;
 - `recore_background`, `recore_background_dim` and `recore_panel_opacity`;
-  the background may be a still picture, an animated GIF/APNG/WebP, or a
-  video (MP4, WebM, MOV or MKV), which plays through the window's picture
-  players;
+  `recore_background_filter`, `recore_background_brightness` and
+  `recore_background_animate`; the background may be a still picture, an
+  animated GIF/APNG/WebP, or a video (MP4, WebM, MOV or MKV), which plays
+  through the window's picture players;
 - `recore_font` (`pixel`, `mono` or `system`) and `recore_motion` (`full`,
   `subtle` or `off`).
 
