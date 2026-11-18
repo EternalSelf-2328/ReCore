@@ -74,6 +74,46 @@ pub enum Pref {
     SystemTitleBar(bool),
 }
 
+impl Pref {
+    /// Whether this is one of the settings' switches, whose feedback is
+    /// ReCord's toggle rather than its select.
+    fn is_toggle(&self) -> bool {
+        matches!(
+            self,
+            Self::TwelveHour(_)
+                | Self::Seconds(_)
+                | Self::LinkPreviews(_)
+                | Self::CollapseLong(_)
+                | Self::BoostGems(_)
+                | Self::ShareTyping(_)
+                | Self::ReplyPing(_)
+                | Self::StripTracking(_)
+                | Self::Notifications(_)
+                | Self::NotificationText(_)
+                | Self::FlashTaskbar(_)
+                | Self::InterfaceSounds(_)
+                | Self::HoverSounds(_)
+                | Self::TypingSounds(_)
+                | Self::BootSound(_)
+                | Self::AdjustEach(_)
+                | Self::GpuRendering(_)
+                | Self::GpuEncoding(_)
+                | Self::CloseToTray(_)
+                | Self::MultipleWindows(_)
+                | Self::DeveloperMode(_)
+                | Self::ShowHiddenChannels(_)
+                | Self::SyncReads(_)
+                | Self::ShowIdle(_)
+                | Self::HideBlocked(_)
+                | Self::CheckUpdates(_)
+                | Self::Nightlies(_)
+                | Self::StartOnSignIn(_)
+                | Self::DiscordLinks(_)
+                | Self::SystemTitleBar(_)
+        )
+    }
+}
+
 /// My account's and the Discord page's buttons.
 #[derive(Clone, Debug)]
 pub enum AccountEvent {
@@ -113,6 +153,9 @@ fn pref(pref: Pref) -> Message {
 
 impl Settings {
     pub(in crate::settings) fn pref(&mut self, pref: Pref, cx: &mut Cx<'_>) {
+        if pref.is_toggle() {
+            try_interface(cx, recore_core::sounds::InterfaceSound::Toggle);
+        }
         let prefs = &mut cx.layout.prefs;
         match pref {
             Pref::TwelveHour(on) => {
