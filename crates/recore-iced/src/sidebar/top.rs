@@ -32,16 +32,32 @@ impl<'a> super::View<'a> {
             None => {
                 let (ground, ink, hint, selection) =
                     (theme.field, theme.text, theme.muted, theme.selection);
+                let square = self.cx.themes.square_avatars();
+                let line = theme.line;
+                let accent = theme.accent;
+                let void = theme.chat;
                 text_input("Find a conversation", &self.s.filter)
                     .id(FILTER)
                     .on_input(|filter| Message::Side(Event::Filter(filter)))
                     .size(13)
                     .padding([8, 10])
-                    .style(move |_, _| text_input::Style {
-                        background: ground.into(),
-                        border: crate::style::round(6),
-                        icon: ink,
-                        placeholder: hint,
+                    .style(move |_, status| text_input::Style {
+                        background: (if square { void } else { ground }).into(),
+                        border: if square {
+                            iced::Border {
+                                color: if matches!(status, text_input::Status::Focused { .. }) {
+                                    accent
+                                } else {
+                                    line
+                                },
+                                width: 1.0,
+                                radius: 0.0.into(),
+                            }
+                        } else {
+                            crate::style::round(6)
+                        },
+                        icon: if square { theme.faint } else { ink },
+                        placeholder: if square { theme.faint } else { hint },
                         value: ink,
                         selection,
                     })

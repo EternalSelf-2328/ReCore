@@ -366,10 +366,11 @@ pub fn toggle<'a, M: Clone + 'a>(theme: &Theme, on: bool, message: Option<M>) ->
         (true, true) => theme.on_accent,
         (true, false) => theme.secondary,
     };
+    let square = theme.square;
     let knob = container(Space::new())
         .width(KNOB)
         .height(KNOB)
-        .style(move |_| rounded(knob_ink, KNOB / 2.0));
+        .style(move |_| rounded(knob_ink, if square { 0.0 } else { KNOB / 2.0 }));
     let (field, active, accent, accent_hover, line) = (
         theme.field,
         theme.active,
@@ -406,7 +407,11 @@ pub fn toggle<'a, M: Clone + 'a>(theme: &Theme, on: bool, message: Option<M>) ->
                     line
                 },
                 width: 1.0,
-                radius: (TOGGLE_HEIGHT / 2.0).into(),
+                radius: if square {
+                    0.0.into()
+                } else {
+                    (TOGGLE_HEIGHT / 2.0).into()
+                },
             },
             ..Default::default()
         }
@@ -502,12 +507,17 @@ impl<'a, M: Clone + 'a> Dropdown<'a, M> {
         ]
         .spacing(8)
         .align_y(Alignment::Center);
-        let (ground, lit, edge, accent) = (
-            theme.active,
-            crate::theme::mix(theme.overlay, theme.active, 0.04),
-            theme.wash(0.06),
-            theme.accent,
-        );
+        let square = theme.square;
+        let (ground, lit, edge, accent) = if square {
+            (theme.chat, theme.active, theme.line, theme.accent)
+        } else {
+            (
+                theme.active,
+                crate::theme::mix(theme.overlay, theme.active, 0.04),
+                theme.wash(0.06),
+                theme.accent,
+            )
+        };
         let open = self.open;
         let base = button(
             container(face)
@@ -521,7 +531,10 @@ impl<'a, M: Clone + 'a> Dropdown<'a, M> {
         .on_press_maybe(enabled.then(|| self.toggle.clone()))
         .style(move |_, status| button::Style {
             background: Some(if lights(status) { lit } else { ground }.into()),
-            border: crate::style::edge(if open { accent } else { edge }, 4.0),
+            border: crate::style::edge(
+                if open { accent } else { edge },
+                if square { 0.0 } else { 4.0 },
+            ),
             ..Default::default()
         });
         let list = (self.open && enabled).then(|| {

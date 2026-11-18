@@ -117,7 +117,9 @@ pub(super) fn reactions<'a>(
             .align_y(Alignment::Center),
         )
         .padding([2, 8])
-        .style(move |_| crate::style::outlined(ground, edge, 8.0));
+        .style(move |_| {
+            crate::style::outlined(ground, edge, if ctx.look.theme.square { 0.0 } else { 8.0 })
+        });
         let mut chip = mouse_area(chip);
         if clicks {
             chip = chip

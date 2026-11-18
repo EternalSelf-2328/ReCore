@@ -2,7 +2,7 @@
 //! them, and their faces and inks.
 
 use iced::{
-    Alignment, Color, Element, Length, Padding,
+    Alignment, Background, Color, Element, Length, Padding, gradient,
     widget::{Space, column, container, mouse_area, row, stack, text},
 };
 
@@ -19,6 +19,43 @@ use crate::{
 use super::{
     CHAT_BUTTON, Event, GAP, HEADING, INSET, ROW, ROW_RADIUS, Room, SideRow, VOICE_CARD_GAP,
 };
+
+/// ReCord's selected-channel wash: signal at 19% on the left, fading to
+/// 5% before the right edge, or its hover wash at 6.5%.
+pub(super) fn row_background(
+    theme: &crate::theme::Theme,
+    square: bool,
+    selected: bool,
+    pointed: bool,
+) -> Background {
+    if !square {
+        return if selected {
+            theme.active.into()
+        } else if pointed {
+            theme.hover.into()
+        } else {
+            Color::TRANSPARENT.into()
+        };
+    }
+    if selected {
+        let accent = theme.accent;
+        Background::Gradient(
+            gradient::Linear::new(0.0)
+                .add_stop(0.0, Color { a: 0.19, ..accent })
+                .add_stop(0.72, Color { a: 0.05, ..accent })
+                .add_stop(1.0, Color::TRANSPARENT)
+                .into(),
+        )
+    } else if pointed {
+        Color {
+            a: 0.065,
+            ..theme.accent
+        }
+        .into()
+    } else {
+        Color::TRANSPARENT.into()
+    }
+}
 
 impl<'a> super::View<'a> {
     pub(super) fn side_row(self, row: &'a SideRow, place: Option<usize>) -> Element<'a, Message> {
@@ -389,27 +426,52 @@ impl<'a> super::View<'a> {
         } else {
             0.0
         };
-        let ground = if selected {
+        let square = self.cx.themes.square_avatars();
+        let ground = if square {
+            row_background(theme, true, selected, pointed)
+        } else if selected {
             if flash > 0.0 {
-                crate::theme::mix(theme.active, theme.accent, 0.22 * flash)
+                crate::theme::mix(theme.active, theme.accent, 0.22 * flash).into()
             } else {
-                theme.active
+                theme.active.into()
             }
         } else if pointed {
-            theme.hover
+            theme.hover.into()
+        } else {
+            Color::TRANSPARENT.into()
+        };
+        let radius = if square { 0.0 } else { ROW_RADIUS };
+        let ink_edge = if selected {
+            theme.accent
+        } else if pointed {
+            Color {
+                a: 0.34,
+                ..theme.accent
+            }
         } else {
             Color::TRANSPARENT
         };
-        let square = self.cx.themes.square_avatars();
-        let radius = if square { 0.0 } else { ROW_RADIUS };
         let body = container(face)
             .padding([0, 8])
             .height(height)
             .width(Length::Fill)
             .align_y(Alignment::Center)
             .clip(true)
-            .style(move |_| rounded(ground, radius));
-        self.row_presses(id, body.into(), message, menu)
+            .style(move |_| iced::widget::container::Style {
+                background: Some(ground),
+                border: iced::Border::default().rounded(radius),
+                ..Default::default()
+            });
+        let body: Element<'a, Message> = if square && ink_edge.a > 0.0 {
+            let edge = container(Space::new())
+                .width(2)
+                .height(height)
+                .style(move |_| crate::style::fill(ink_edge));
+            stack![body, edge].into()
+        } else {
+            body.into()
+        };
+        self.row_presses(id, body, message, menu)
     }
 
     /// What a row's face takes: the pointer over it, a press (unless a
@@ -541,7 +603,18 @@ impl<'a> super::View<'a> {
             };
             face = face.push(self.cx.look.glyph(room.icon, 20, faded(icon_ink, opacity)));
         }
-        let name = elide(room.name.as_str()).size(15).font(MEDIUM()).color(ink);
+        let name = elide(room.name.as_str())
+            .size(if self.cx.themes.square_avatars() {
+                14
+            } else {
+                15
+            })
+            .font(if room.unread || room.selected {
+                BOLD()
+            } else {
+                MEDIUM()
+            })
+            .color(ink);
         face = face.push(column![name].width(Length::Fill));
         if let Some(started) = room.started {
             let lasted = recore_core::clock::lasted(started, self.cx.minute);

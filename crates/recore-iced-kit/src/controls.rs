@@ -342,6 +342,7 @@ pub fn tip<'a, M: Clone + 'a>(theme: &Theme, label: impl text::IntoFragment<'a>)
 /// than a label (a reaction's).
 pub fn tip_style(theme: &Theme) -> impl Fn(&iced::Theme) -> container::Style + use<> {
     let ground = theme.tooltip;
+    let square = theme.square;
     move |_| container::Style {
         shadow: Shadow {
             color: Color {
@@ -351,7 +352,7 @@ pub fn tip_style(theme: &Theme) -> impl Fn(&iced::Theme) -> container::Style + u
             offset: Vector::new(0.0, 3.0),
             blur_radius: 12.0,
         },
-        ..rounded(ground, 6)
+        ..rounded(ground, if square { 0.0 } else { 6.0 })
     }
 }
 
@@ -940,7 +941,11 @@ pub fn count_pill<'a, M: Clone + 'a>(
     ring: Option<Color>,
     square: bool,
 ) -> Element<'a, M> {
-    let danger = theme.danger;
+    let danger = if theme.square {
+        theme.accent
+    } else {
+        theme.danger
+    };
     let number = text(count.to_owned())
         .size(look.size)
         .font(BOLD())
@@ -1086,6 +1091,7 @@ impl<'a, M: Clone + 'a> Slider<'a, M> {
                 .color(theme.text),
         ];
         let (field, accent, knob) = (theme.field, theme.accent, theme.text);
+        let square = theme.square;
         let track = iced::widget::slider(0..=maximum, value, move |value| {
             let value = if mark && value.abs_diff(100) <= 4 {
                 100
@@ -1100,10 +1106,21 @@ impl<'a, M: Clone + 'a> Slider<'a, M> {
             rail: iced::widget::slider::Rail {
                 backgrounds: (accent.into(), field.into()),
                 width: 4.0,
-                border: Border::default().rounded(2),
+                border: if square {
+                    Border::default()
+                } else {
+                    Border::default().rounded(2)
+                },
             },
             handle: iced::widget::slider::Handle {
-                shape: iced::widget::slider::HandleShape::Circle { radius: 7.0 },
+                shape: if square {
+                    iced::widget::slider::HandleShape::Rectangle {
+                        width: 14,
+                        border_radius: 0.0.into(),
+                    }
+                } else {
+                    iced::widget::slider::HandleShape::Circle { radius: 7.0 }
+                },
                 background: knob.into(),
                 border_width: 0.0,
                 border_color: Color::TRANSPARENT,

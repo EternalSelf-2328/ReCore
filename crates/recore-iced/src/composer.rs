@@ -847,7 +847,11 @@ fn composer_box<'a>(ctx: crate::ctx::Ctx<'a>, look: &Look) -> Element<'a, Messag
         field::Colors {
             ground: iced::Color::TRANSPARENT,
             text: theme.text,
-            placeholder: theme.placeholder,
+            placeholder: if ctx.themes.square_avatars() {
+                theme.faint
+            } else {
+                theme.placeholder
+            },
             selection: theme.selection,
         },
     )
@@ -931,18 +935,29 @@ fn composer_box<'a>(ctx: crate::ctx::Ctx<'a>, look: &Look) -> Element<'a, Messag
         .spacing(6)
         .align_y(Alignment::End)
         .padding(Padding::ZERO.left(10).right(8));
-    let ground = if look.enabled {
+    let square = ctx.themes.square_avatars();
+    let ground = if square {
+        theme.chat
+    } else if look.enabled {
         theme.composer
     } else {
         theme.field
     };
-    // Discord's outline: faint, and a notch lighter with the keys.
-    let edge = if ctx.composer.focused {
+    // Discord's outline: faint, and the signal under the keys in ReCord.
+    let edge = if square {
+        if ctx.composer.focused {
+            theme.accent
+        } else {
+            theme.line
+        }
+    } else if ctx.composer.focused {
         faded(theme.muted, 0.55)
     } else {
         theme.outline_field
     };
-    let radius = if replying {
+    let radius = if square {
+        0.0.into()
+    } else if replying {
         corners([0.0, 0.0, 10.0, 10.0])
     } else {
         10.0.into()

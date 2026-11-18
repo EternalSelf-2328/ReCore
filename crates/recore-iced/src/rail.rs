@@ -750,14 +750,14 @@ impl<'a> View<'a> {
             && !marks.pointed
             && self.cx.themes.motion() == crate::themes::Motion::Full
             && (self.cx.motion / 24) % 2 == 1;
-        let ink = if pulse {
-            Color {
-                a: theme.text.a * 0.72,
-                ..theme.text
-            }
+        let mut ink = if theme.square && (marks.unread || marks.selected) {
+            theme.accent
         } else {
             theme.text
         };
+        if pulse {
+            ink.a *= 0.72;
+        }
         let mut layers = stack![];
         if pill > 0.0 {
             layers = layers.push(controls::placed(
