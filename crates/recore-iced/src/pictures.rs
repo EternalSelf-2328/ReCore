@@ -20,9 +20,9 @@ use std::{
 };
 
 use iced::{
-    Color, Element, Point, Rectangle, Size,
+    Border, Color, Element, Point, Rectangle, Size,
     advanced::{graphics::text::font_system, image::Handle},
-    widget::{container, stack, text},
+    widget::{Space, container, stack, text},
 };
 use recore_core::chat::{Picture, Presence};
 
@@ -321,6 +321,8 @@ impl Player {
 pub enum Mark {
     /// A presence dot on a ring of the ground colour.
     Dot(Presence, u32),
+    /// ReCord's square presence glyph on a ring of the ground colour.
+    SquareDot(Presence, u32),
 }
 
 pub use crate::icons::Icon;
@@ -657,6 +659,12 @@ impl<'a> crate::ctx::Ctx<'a> {
                 crate::theme::rgb(self.look.theme.live),
                 crate::theme::rgb(self.look.theme.faint),
             )?,
+            Mark::SquareDot(presence, ring) => paint::status_pixel(
+                presence,
+                ring,
+                crate::theme::rgb(self.look.theme.live),
+                crate::theme::rgb(self.look.theme.faint),
+            )?,
         };
         let handle = handle(canvas);
         self.pictures
@@ -709,11 +717,31 @@ impl<'a> crate::ctx::Ctx<'a> {
         opacity: f32,
     ) -> Element<'a, Message> {
         let pixels = size as u32;
+        let square = self.themes.square_avatars();
+        let radius = if square { 0.0 } else { radius };
+        let line = self.look.theme.line;
         if let Some(handle) = url.and_then(|url| self.picture(url, pixels, pixels, true)) {
-            return Pic::square(handle, size)
-                .radius(radius)
-                .opacity(opacity)
+            let picture = Pic::square(handle, size).radius(radius).opacity(opacity);
+            if square {
+                return stack![
+                    picture,
+                    container(Space::new())
+                        .width(size)
+                        .height(size)
+                        .style(move |_| {
+                            container::Style {
+                                border: Border {
+                                    color: line,
+                                    width: 1.0,
+                                    radius: 0.0.into(),
+                                },
+                                ..Default::default()
+                            }
+                        })
+                ]
                 .into();
+            }
+            return picture.into();
         }
         let tint = faded(hex(tint(key)), opacity);
         container(
@@ -722,7 +750,17 @@ impl<'a> crate::ctx::Ctx<'a> {
                 .color(faded(Color::WHITE, opacity)),
         )
         .center(size)
-        .style(move |_| rounded(tint, radius))
+        .style(move |_| {
+            let mut style = rounded(tint, radius);
+            if square {
+                style.border = Border {
+                    color: line,
+                    width: 1.0,
+                    radius: 0.0.into(),
+                };
+            }
+            style
+        })
         .into()
     }
 
@@ -757,7 +795,11 @@ impl<'a> crate::ctx::Ctx<'a> {
             }
         }
         if let Some((presence, ring, at)) = dot
-            && let Some(dot) = self.mark(Mark::Dot(presence, ring))
+            && let Some(dot) = self.mark(if self.themes.square_avatars() {
+                Mark::SquareDot(presence, ring)
+            } else {
+                Mark::Dot(presence, ring)
+            })
         {
             // The phone stands 5 px taller than the dot.
             let tall = if presence == Presence::Mobile {

@@ -87,6 +87,8 @@ pub enum Message {
     /// Fallback fonts the shaper wanted are in (`fonts::load_wanted`): the
     /// view is built and its text laid out again.
     FontsLoaded,
+    /// A frame of the CRT beam or flicker.
+    EffectsTick,
     /// Nothing to do: a click a backdrop takes.
     Nothing,
     /// The header's bell: the open channel's notification choices.

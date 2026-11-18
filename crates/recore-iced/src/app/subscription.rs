@@ -60,6 +60,12 @@ impl App {
             crate::window_bar::history_keys(),
             Self::shell_subscription(),
         ];
+        // The CRT beam and flicker move on their own while the layer has
+        // them; the view reads the phase.
+        if self.themes.animates_effects() {
+            subscriptions
+                .push(iced::time::every(Duration::from_millis(100)).map(|_| Message::EffectsTick));
+        }
         // A look at the releases every six hours while the check is on.
         if self.layout.prefs.check_for_updates {
             subscriptions.push(

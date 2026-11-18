@@ -22,6 +22,8 @@ pub(super) const GITHUB: &str = "https://github.com/leriart/ReCore";
 
 pub(super) const DISCORD: &str = "https://github.com/leriart/ReCore/issues";
 
+pub(super) const RECORD: &str = "https://leriart.github.io/ReCord/";
+
 impl<'a> Page<'a> {
     pub(in crate::settings) fn about_page(self) -> Element<'a, Message> {
         let settings = self.s;
@@ -111,6 +113,7 @@ impl<'a> Page<'a> {
             link("Website", Icon::Logo, WEBSITE),
             link("GitHub", Icon::GitHub, GITHUB),
             link("Discord", Icon::Discord, DISCORD),
+            link("ReCord theme", Icon::Palette, RECORD),
         ]));
         form::page(parts)
     }

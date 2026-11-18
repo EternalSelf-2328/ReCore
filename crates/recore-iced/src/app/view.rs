@@ -356,7 +356,7 @@ impl App {
         // there.
         if let Some(shade) = self.themes.shade(&self.theme) {
             layers = layers.push(
-                iced::widget::Canvas::new(shade)
+                iced::widget::Canvas::new(shade.at_phase(self.effects_phase as f32 / 90.0))
                     .width(Length::Fill)
                     .height(Length::Fill),
             );

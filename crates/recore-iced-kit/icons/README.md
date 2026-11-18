@@ -71,7 +71,7 @@ sketches: a comic shout balloon with typing dots cut out of it.
 
 ## ReCord pixel set
 
-The icons whose names overlap with ReCord's set (53 of them, including check,
+The icons whose names or meanings map onto ReCord's set (78 of them, including check,
 bell, copy, pin, play, settings, trash and the chevrons) are ReCord's original
 16 x 16 pixel glyphs, from leriart's ReCord theme under Apache-2.0; the licence
 is in `LICENSE-ReCord-Apache-2.0.txt`. The rest are the Solar/Lucide/ReCore

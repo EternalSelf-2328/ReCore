@@ -367,7 +367,6 @@ const ES = {
     "CSS THEMES DOC": "DOC DE TEMAS CSS",
     "THEME PREVIEW": "VISTA DEL TEMA",
     "RECORD ICONS": "ICONOS DE RECORD",
-    "A fork of Yapfast, with ReCord's theme and a CSS interpreter. Theme code Apache-2.0, ReCore GPL-3.0-or-later, Pixel Operator CC0. REPLACED is a game by Sad Cat Studios, published by Thunderful; this project is not affiliated with either company and bundles no game assets.": "Un fork de Yapfast, con el tema ReCord y un intérprete CSS. El código del tema es Apache-2.0, ReCore GPL-3.0-or-later, Pixel Operator CC0. REPLACED es un juego de Sad Cat Studios, publicado por Thunderful; este proyecto no está afiliado a ninguna de las dos compañías y no incluye recursos del juego.",
     "NATIVE RELAY // NODE 04": "RELÉ NATIVO // NODO 04",
     "ReCord theme preview with orange terminal panels, pixel typography and a dark CRT surface.": "Vista del tema ReCord con paneles de terminal naranjas, tipografía pixel y una superficie CRT oscura.",
     "RECORE / live demo": "RECORE / demo en vivo",
@@ -428,9 +427,14 @@ const ES = {
     "downloads": "descargas",
     "Could not load the releases from GitHub. Open the releases page instead.": "No se pudieron cargar las versiones de GitHub. Abre la página de versiones.",
     "Open releases on GitHub": "Abrir versiones en GitHub",
-    "No releases yet. Build one from source or run the Release workflow with a v tag.": "Todavía no hay versiones. Compila desde el código o ejecuta el workflow Release con un tag v.",
+    "No releases yet. Build one from source or run the Release workflow with a v tag.": "Todavía no hay versiones. Compila desde el código o ejecuta el flujo de trabajo Release con un tag v.",
     "Published by the release workflow from a tag, with the Windows ZIP, the Linux AppImage, the Arch package, the source snapshot and the checksums. This list reads GitHub's releases API, so it follows the repository.": "Publicadas por el workflow Release a partir de un tag, con el ZIP de Windows, el AppImage de Linux, el paquete de Arch, el código fuente y las sumas de comprobación. Esta lista lee la API de versiones de GitHub, así que sigue al repositorio.",
     "ALL RELEASES": "TODAS LAS VERSIONES",
+    "ReCore now uses 78 ReCord glyphs, matching by name or by meaning, in the native window. The rest of this reference set is for the remaining screens, and for the theme itself.": "ReCore ya usa 78 glifos de ReCord, coincidiendo por nombre o significado, en la ventana nativa. El resto de este set de referencia es para las pantallas que faltan y para el propio tema.",
+    "Scanlines, film grain, a vignette, corner brackets, a rolling scan beam and flicker are drawn natively over the window. The CRT switch and low-power mode are in Appearance.": "Las scanlines, el grano de película, la viñeta, los corchetes de las esquinas, el haz de barrido y el parpadeo se dibujan de forma nativa sobre la ventana. El interruptor CRT y el modo de bajo consumo están en Apariencia.",
+    "CONTACT ICONS: avatars are user images, not SVG. ReCore draws them square with a thin frame and square presence glyphs for ReCore themes. A CSS theme's --rl-avatar-filter and --rl-avatar-scanline values are read but the warm filter and scanline overlay are not applied yet.": "ICONOS DE CONTACTO: los avatares son imágenes de usuario, no SVG. ReCore los dibuja cuadrados con un marco fino y glifos de presencia cuadrados en los temas ReCore. Los valores --rl-avatar-filter y --rl-avatar-scanline de un tema CSS se leen, pero el filtro cálido y la scanline todavía no se aplican.",
+    "A fork of Yapfast, with ReCord as its theme and a CSS interpreter.": "Un fork de Yapfast, con ReCord como su tema y un intérprete de CSS.",
+    "Theme code Apache-2.0, ReCore GPL-3.0-or-later, Pixel Operator CC0. REPLACED is a game by Sad Cat Studios, published by Thunderful; this project is not affiliated with either company and bundles no game assets.": "El código del tema es Apache-2.0, ReCore GPL-3.0-or-later, Pixel Operator CC0. REPLACED es un juego de Sad Cat Studios, publicado por Thunderful; este proyecto no está afiliado a ninguna de las dos empresas y no incluye assets del juego.",
 };
 
 const clean = text => text.replace(/\s+/g, " ").trim();

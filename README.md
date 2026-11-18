@@ -16,8 +16,9 @@
   <a href="https://github.com/leriart/ReCord"><img src="https://img.shields.io/badge/theme-ReCord-e94221" alt="ReCord"></a>
 </p>
 
-ReCore is [Yapfast](https://github.com/yapfast/yapfast) with **ReCord** as its
-own look and a CSS theme interpreter. It talks to Discord's API directly and
+ReCore is [Yapfast](https://github.com/yapfast/yapfast) with
+[**ReCord**](https://leriart.github.io/ReCord/) as its own look and a CSS
+theme interpreter. It talks to Discord's API directly and
 draws its own window with [iced](https://iced.rs), so there is no Chromium
 anywhere in it. Servers, DMs, threads, forums, friends, voice, screen sharing,
 GIFs and the rest of Yapfast's features are here; the fork adds:
@@ -26,7 +27,8 @@ GIFs and the rest of Yapfast's features are here; the fork adds:
   and paper daylight, with Pixel Operator and Pixel Operator Mono bundled.
 - **An accent picker** that recolours the ReCore themes live.
 - **ReCord's call and message sounds**, as a sound set in Settings → Sounds,
-  and the 53 ReCord pixel glyphs that overlap ReCore's icon set.
+  the 78 ReCord pixel glyphs that map onto ReCore's icon set, and square
+  framed avatars with square presence glyphs.
 - **A CSS theme interpreter** for Vencord, Vesktop, Equicord, BetterDiscord,
   Legcord and ReCord theme files: colours, accents, fonts, radius, background
   pictures and ReCord's CRT options. Themes are read from ReCore's folder and
@@ -84,8 +86,8 @@ own CSS is included at [`themes/ReCord.theme.css`](themes/ReCord.theme.css),
 and dropping it into the themes folder gives the built-in ReCore colours and
 fonts. A CSS theme's background picture is placed under the panels, and
 ReCord's scanlines, grain, vignette and corner frame are drawn natively over
-the window; its scan beam and flicker values are read but not animated yet,
-and a CSS theme's DOM animations are not drawn.
+the window, with the rolling scan beam and flicker; a CSS theme's DOM
+animations are not drawn.
 
 ## What comes from Yapfast
 

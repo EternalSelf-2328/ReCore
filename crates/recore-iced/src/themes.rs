@@ -120,6 +120,16 @@ impl Themes {
         }
     }
 
+    /// Whether avatars are square and framed, as ReCord draws them: ReCore's
+    /// own themes, and a CSS theme whose radius is square.
+    pub fn square_avatars(&self) -> bool {
+        if matches!(self.chosen_id(), "recore" | "recore-light") {
+            return true;
+        }
+        self.chosen_css()
+            .is_some_and(|css| css.look.radius.unwrap_or(8.0) < 2.0)
+    }
+
     /// The chosen theme if it is a CSS one, for Appearance's options.
     pub fn chosen_css(&self) -> Option<&ThemeFile> {
         self.css.iter().find(|css| css.id == self.chosen_id())
@@ -222,6 +232,12 @@ impl Themes {
         layout::store(root, "recore_low_power", on);
     }
 
+    /// Whether the CRT layer has a beam or flicker that needs the clock.
+    pub fn animates_effects(&self) -> bool {
+        self.shade(&Theme::new("probe", true))
+            .is_some_and(|shade| shade.beam > 0.0 || shade.flicker > 0.0)
+    }
+
     /// The CRT layer the window draws over itself: ReCord's effect levels for
     /// a ReCore theme, the CSS theme's own `--rl-*` levels otherwise. `None`
     /// when the layer is off or the theme asks for no effects.
@@ -251,8 +267,19 @@ impl Themes {
             grain,
             vignette: effects.vignette,
             frame: effects.frame,
+            beam: if self.low_power {
+                0.0
+            } else {
+                effects.beam as u8 as f32 * 0.5
+            },
+            flicker: if self.low_power || !effects.flicker {
+                0.0
+            } else {
+                1.0
+            },
             line: theme.line,
             accent: theme.accent,
+            phase: 0.0,
         };
         shade.visible().then_some(shade)
     }

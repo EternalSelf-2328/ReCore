@@ -16,14 +16,29 @@ pub struct Shade {
     pub grain: f32,
     pub vignette: f32,
     pub frame: f32,
+    pub beam: f32,
+    pub flicker: f32,
     pub line: Color,
     pub accent: Color,
+    /// How far through the beam's and flicker's cycles this frame is.
+    pub phase: f32,
 }
 
 impl Shade {
     /// Whether there is anything to draw.
     pub fn visible(&self) -> bool {
-        self.scanlines > 0.0 || self.grain > 0.0 || self.vignette > 0.0 || self.frame > 0.0
+        self.scanlines > 0.0
+            || self.grain > 0.0
+            || self.vignette > 0.0
+            || self.frame > 0.0
+            || self.beam > 0.0
+            || self.flicker > 0.0
+    }
+
+    /// The layer at a moment of its cycle: 0 at the start, 1 after 9 s.
+    pub fn at_phase(mut self, phase: f32) -> Self {
+        self.phase = phase.fract();
+        self
     }
 }
 
@@ -176,6 +191,34 @@ impl<Message> canvas::Program<Message> for Shade {
                     Point::new(x + 5.0, down),
                     Size::new(1.0, length / 2.0),
                     soft,
+                );
+            }
+        }
+
+        if self.flicker > 0.0 {
+            let wave = ((self.phase * std::f32::consts::TAU * 1.5).sin() * 0.5 + 0.5) * 0.035;
+            frame.fill_rectangle(
+                Point::ORIGIN,
+                size,
+                Color::from_rgba(1.0, 1.0, 1.0, self.flicker * wave),
+            );
+        }
+
+        if self.beam > 0.0 {
+            let band = 120.0f32.min(size.height / 3.0);
+            let travel = size.height + band;
+            let y = self.phase * travel - band;
+            let strips = 30;
+            for step in 0..strips {
+                let offset = step as f32 / strips as f32;
+                let edge = (1.0 - (offset * 2.0 - 1.0).abs()).powf(2.0);
+                frame.fill_rectangle(
+                    Point::new(0.0, y + offset * band),
+                    Size::new(size.width, band / strips as f32 + 1.0),
+                    Color {
+                        a: self.beam * edge * 0.045,
+                        ..self.accent
+                    },
                 );
             }
         }

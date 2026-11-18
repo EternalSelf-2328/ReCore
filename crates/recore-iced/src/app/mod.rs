@@ -65,6 +65,8 @@ pub struct App {
     /// A look at the releases nobody asked for is under way, whose newer
     /// release a notification tells of (`settings/updates.rs`).
     pub announce_updates: bool,
+    /// The CRT beam's or flicker's place in its cycle, in 100 ms ticks.
+    pub effects_phase: u32,
     /// What lives only as long as the window, torn down with it.
     pub win: Window,
     /// What's under the pointer, part by part.
@@ -249,6 +251,7 @@ impl App {
             inbox: None,
             bar_drag: Default::default(),
             announce_updates: false,
+            effects_phase: 0,
             win: Window::new(crate::pictures::Pictures::new(fitter)),
             pointed: Pointed::default(),
             layout,
@@ -463,6 +466,10 @@ impl App {
             Message::Report => {
                 self.reporting = false;
                 self.report()
+            }
+            Message::EffectsTick => {
+                self.effects_phase = self.effects_phase.wrapping_add(1);
+                Task::none()
             }
             Message::Fitted(fitted) => {
                 self.win.pictures.fitter.borrow_mut().made(fitted);

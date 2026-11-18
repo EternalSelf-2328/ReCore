@@ -99,8 +99,8 @@ parts that describe a palette and a look — colours, fonts, radius,
 background, ReCord's effect levels — and keeps the rest in the file without
 painting it. CSS animations, Discord's DOM rules and client-specific hacks
 are not applied. ReCord's scanlines, grain, vignette and corner frame are
-drawn natively over the window; its flicker and scan beam values are read but
-not animated yet. The note under **Appearance → Theme** says how many files
+drawn natively over the window, including the rolling scan beam and flicker;
+a CSS theme's DOM animations are not drawn. The note under **Appearance → Theme** says how many files
 were read and how many could not be.
 
 ## Custom themes

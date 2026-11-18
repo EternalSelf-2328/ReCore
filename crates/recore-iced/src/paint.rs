@@ -52,6 +52,34 @@ pub fn status_dot(presence: Presence, ring: u32, live: u32, faint: u32) -> Optio
     Some(canvas)
 }
 
+/// ReCord's square presence glyph: a block for online, a notch for idle, a
+/// bar for do not disturb and a hollow square for offline. Mobile keeps its
+/// tall phone shape.
+pub fn status_pixel(presence: Presence, ring: u32, live: u32, faint: u32) -> Option<Canvas> {
+    let ring = Ink(ring, 1.0);
+    if presence == Presence::Mobile {
+        return status_dot(presence, ring.0, live, faint);
+    }
+    let mut canvas = Canvas::new(16, 16);
+    canvas.rounded(0.0, 0.0, 16.0, 16.0, 0.0, ring);
+    match presence {
+        Presence::Online => canvas.rounded(3.0, 3.0, 10.0, 10.0, 0.0, Ink(live, 1.0)),
+        Presence::Idle => {
+            canvas.rounded(3.0, 3.0, 10.0, 10.0, 0.0, Ink(0xf0b232, 1.0));
+            canvas.rounded(8.0, 8.0, 5.0, 5.0, 0.0, ring);
+        }
+        Presence::DoNotDisturb => {
+            canvas.rounded(3.0, 7.0, 10.0, 3.0, 0.0, Ink(0xf23f43, 1.0));
+        }
+        Presence::Offline => {
+            canvas.rounded(3.0, 3.0, 10.0, 10.0, 0.0, Ink(faint, 1.0));
+            canvas.rounded(6.0, 6.0, 4.0, 4.0, 0.0, ring);
+        }
+        Presence::Mobile => return None,
+    }
+    Some(canvas)
+}
+
 /// A picture in the renderer's format fitted to `width` by `height` by area
 /// averaging: scaled to fit inside it about its middle, keeping its shape,
 /// with the rest see-through (a tall custom emoji in a square stays tall),
