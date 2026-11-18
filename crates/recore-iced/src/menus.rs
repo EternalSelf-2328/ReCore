@@ -354,6 +354,8 @@ pub fn update(app: &mut App, event: Event) -> Task<Message> {
         }
         Event::React(item, key) => {
             app.win.menu = None;
+            // ReCord's reaction feedback: the same tick as a toggle.
+            app.interface_sound(recore_core::sounds::InterfaceSound::Toggle);
             app.client.dispatch(Action::React { item, key });
             Task::batch([app.sync(), crate::composer::refocus(app)])
         }

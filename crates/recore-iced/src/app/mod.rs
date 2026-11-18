@@ -636,6 +636,15 @@ impl App {
     /// asked for after half a second on it, as Discord's client waits.
     pub fn point_reaction(&mut self, item: String, key: String, entered: bool) -> Task<Message> {
         if entered {
+            let changed = self
+                .pointed
+                .reaction
+                .as_ref()
+                .map(|(i, k)| (i.as_str(), k.as_str()))
+                != Some((item.as_str(), key.as_str()));
+            if changed {
+                self.interface_sound(recore_core::sounds::InterfaceSound::Hover);
+            }
             self.pointed.reaction = Some((item.clone(), key.clone()));
             let due = crate::timeline::Event::ReactionDue(item, key);
             return after(Duration::from_millis(500), Message::Timeline(due));

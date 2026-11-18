@@ -551,33 +551,99 @@ fn interface_samples(sound: InterfaceSound) -> Vec<f32> {
     wav(bytes).unwrap_or_default()
 }
 
+/// The one player thread for the interface's short sounds: the hover and
+/// typing blips last 10 to 20 ms, and opening the speakers for each of
+/// them on a thread of its own made rapid streams race and drop blips on
+/// some backends. The thread keeps one stream and writes the sounds back
+/// to back, the way the theme's WebAudio preview overlaps them; a stream
+/// that fails is reopened on the next sound, and a changed speaker swaps
+/// it.
+fn interface_player() -> &'static std::sync::mpsc::Sender<(Vec<f32>, Option<Arc<str>>)> {
+    use std::sync::mpsc::{Receiver, Sender};
+    static SENDER: std::sync::OnceLock<Sender<(Vec<f32>, Option<Arc<str>>)>> =
+        std::sync::OnceLock::new();
+    fn run(receiver: Receiver<(Vec<f32>, Option<Arc<str>>)>) {
+        let mut stream: Option<(Option<Arc<str>>, Output<i16>)> = None;
+        while let Ok((samples, speaker)) = receiver.recv() {
+            let fresh = match &stream {
+                None => true,
+                Some((current, _)) => *current != speaker,
+            };
+            if fresh {
+                stream = match Output::<i16>::open_or_default(
+                    speaker.as_deref(),
+                    "Sound",
+                    RATE,
+                    2,
+                    None,
+                ) {
+                    Ok(output) => Some((speaker.clone(), output)),
+                    Err(error) => {
+                        tracing::warn!(
+                            error = format!("{error:#}"),
+                            "could not open the speakers for interface sounds"
+                        );
+                        None
+                    }
+                };
+            }
+            if let Some((_, output)) = &mut stream
+                && let Err(error) = write_samples(output, &samples)
+            {
+                tracing::warn!(
+                    error = format!("{error:#}"),
+                    "could not play an interface sound"
+                );
+                // The next sound opens the speakers again.
+                stream = None;
+            }
+        }
+    }
+    SENDER.get_or_init(|| {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        match std::thread::Builder::new()
+            .name("recore-interface-sounds".into())
+            .spawn(move || run(receiver))
+        {
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!(%error, "could not start the interface sound player");
+            }
+        }
+        sender
+    })
+}
+
 /// Plays one of ReCord's interface sounds once, at `volume` from [`gain`],
-/// on `speaker` or the default output. It is made and played on a thread
-/// of its own so a hover tick never holds the UI.
+/// on `speaker` or the default output. The interface player writes it to
+/// its open stream; if that thread is gone, a thread of its own plays it.
 pub fn play_interface(sound: InterfaceSound, volume: f32, speaker: Option<&str>) {
     if volume <= 0.0 {
         return;
     }
+    let mono = interface_samples(sound);
+    if mono.is_empty() {
+        return;
+    }
+    let mut samples = Vec::with_capacity(mono.len() * 2);
+    for sample in mono {
+        samples.push(sample * volume);
+        samples.push(sample * volume);
+    }
     let speaker: Option<Arc<str>> = speaker.map(Into::into);
-    let started = std::thread::Builder::new()
-        .name("recore-interface-sound".into())
-        .spawn(move || {
-            let mono = interface_samples(sound);
-            let mut samples = Vec::with_capacity(mono.len() * 2);
-            for sample in mono {
-                samples.push(sample * volume);
-                samples.push(sample * volume);
-            }
-            if let Err(error) = play_samples(&samples, speaker.as_deref()) {
-                tracing::warn!(
-                    error = format!("{error:#}"),
-                    ?sound,
-                    "could not play an interface sound"
-                );
-            }
-        });
-    if let Err(error) = started {
-        tracing::warn!(%error, "could not start an interface sound");
+    if let Err(unsent) = interface_player().send((samples, speaker)) {
+        let (samples, speaker) = unsent.0;
+        let _ = std::thread::Builder::new()
+            .name("recore-interface-sound".into())
+            .spawn(move || {
+                if let Err(error) = play_samples(&samples, speaker.as_deref()) {
+                    tracing::warn!(
+                        error = format!("{error:#}"),
+                        ?sound,
+                        "could not play an interface sound"
+                    );
+                }
+            });
     }
 }
 
@@ -614,12 +680,10 @@ pub fn play(set: SoundSet, sound: Sound, volume: f32, speaker: Option<&str>) {
     }
 }
 
-/// Plays interleaved stereo samples to the end.
-fn play_samples(samples: &[f32], speaker: Option<&str>) -> anyhow::Result<()> {
+/// Writes interleaved stereo samples in the stream's chunks, without
+/// waiting for the last of them to play.
+fn write_samples(output: &mut Output<i16>, samples: &[f32]) -> anyhow::Result<()> {
     use anyhow::Context;
-    // Speakers that are gone play on the default ones.
-    let mut output = Output::<i16>::open_or_default(speaker, "Sound", RATE, 2, None)
-        .context("could not open the speakers")?;
     let mut chunk = [0i16; RATE as usize / 50 * 2];
     for part in samples.chunks(chunk.len()) {
         for (sample, value) in chunk.iter_mut().zip(part) {
@@ -629,6 +693,16 @@ fn play_samples(samples: &[f32], speaker: Option<&str>) -> anyhow::Result<()> {
             .write(&chunk[..part.len()])
             .context("could not play")?;
     }
+    Ok(())
+}
+
+/// Plays interleaved stereo samples to the end.
+fn play_samples(samples: &[f32], speaker: Option<&str>) -> anyhow::Result<()> {
+    use anyhow::Context;
+    // Speakers that are gone play on the default ones.
+    let mut output = Output::<i16>::open_or_default(speaker, "Sound", RATE, 2, None)
+        .context("could not open the speakers")?;
+    write_samples(&mut output, samples)?;
     output.drain().context("could not finish playing")?;
     Ok(())
 }
