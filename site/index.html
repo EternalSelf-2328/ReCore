@@ -202,8 +202,8 @@
                         </div>
                         <p class="section-note">
                             A theme written for Discord's web window is not a theme a native window can paint
-                            one-to-one. ReCore reads the parts that describe a palette and a look, and turns the
-                            rest into options instead of pretending to draw DOM rules.
+                            one-to-one. ReCore reads the palette and the look, and matches the selectors that
+                            name Discord's regions — sidebar, chat, members, composer — onto its native window.
                         </p>
                     </div>
 
@@ -211,7 +211,7 @@
                         <article class="feature">
                             <div class="feature-num">01</div>
                             <h3>READ</h3>
-                            <p>Discord tokens and the theme's own variables, var(), color-mix(), light-dark(), local @import, dark and light blocks, @font-face, radius, pictures and ReCord's --rl-* options.</p>
+                            <p>Discord tokens and the theme's own variables, var(), color-mix(), light-dark(), local @import, dark and light blocks, @font-face, radius, pictures and ReCord's --rl-* options. Common region selectors are matched to native roles.</p>
                         </article>
                         <article class="feature">
                             <div class="feature-num">02</div>
@@ -225,8 +225,8 @@
                         </article>
                         <article class="feature">
                             <div class="feature-num">04</div>
-                            <h3>HONEST</h3>
-                            <p>DOM selectors, pseudo-elements and @keyframes are not painted. ReCore says what it read and what it skipped; CSS animations stay in the file.</p>
+                            <h3>NATIVE</h3>
+                            <p>Region rules for sidebar, chat, members, messages and composer reach the native window with text, surfaces and radius. Layouts, pseudo-elements and @keyframes still stay out.</p>
                         </article>
                     </div>
 

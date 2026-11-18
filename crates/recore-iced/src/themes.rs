@@ -17,7 +17,7 @@ use std::{
 
 use iced::Color;
 use recore_core::theme::{self as palette, Colour, Custom};
-use recore_css::ThemeFile;
+use recore_css::{NativeStyle, ThemeFile};
 
 use crate::{
     fonts,
@@ -445,6 +445,7 @@ fn from_css(file: &ThemeFile) -> Theme {
     }
     recore_iced_kit::for_theme_colours!(assign);
     shown.mention = css_color(theme.link);
+    apply_kit_native(&mut shown, &file.native);
     shown.worked_out()
 }
 
@@ -459,7 +460,36 @@ pub fn css_palette(file: &ThemeFile) -> palette::Theme {
         };
     }
     recore_iced_kit::for_theme_colours!(assign);
+    apply_core_native(&mut found, &file.native);
     found
+}
+
+/// A selector-derived colour on the window's palette.
+fn apply_kit_native(theme: &mut Theme, native: &NativeStyle) {
+    macro_rules! set {
+        ($($field:ident,)*) => {
+            $(if let Some(colour) = native.$field {
+                theme.$field = css_color(colour);
+            })*
+        };
+    }
+    set!(
+        rail, sidebar, panel, chat, raised, field, text, secondary, muted, hover, row_hover,
+    );
+}
+
+/// A selector-derived colour on the core's palette, for Appearance's tile.
+fn apply_core_native(theme: &mut palette::Theme, native: &NativeStyle) {
+    macro_rules! set {
+        ($($field:ident,)*) => {
+            $(if let Some(colour) = native.$field {
+                theme.$field = core_colour(colour);
+            })*
+        };
+    }
+    set!(
+        rail, sidebar, panel, chat, raised, field, text, secondary, muted, hover, row_hover,
+    );
 }
 
 /// A core colour as iced's.

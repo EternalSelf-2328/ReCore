@@ -76,10 +76,19 @@ What a CSS theme can carry into a native window:
 
 | Read | Not painted |
 | --- | --- |
-| Discord colour tokens, `var()`, `color-mix()`, `light-dark()`, `@import` | Rules that style Discord's DOM (`.messageContent_…`, `[class*=…]`) |
-| `.theme-dark` / `.theme-light` and `prefers-color-scheme` | Arbitrary layouts, pseudo-elements and selectors |
-| `@font-face` data URIs and local font files, `--font-primary` | CSS `@keyframes` and DOM animations |
-| Radius, background picture, ReCord's `--rl-*` colour and CRT options | Client-specific hacks and scripts |
+| Discord colour tokens, `var()`, `color-mix()`, `light-dark()`, `@import` | Arbitrary layouts and pseudo-elements |
+| Common region selectors: `[class*="sidebar"]`, `guilds_`, `chat_`, `membersWrap_`, `message_`, `channelTextArea_` | Class hashes with no usable substring, and selectors outside those regions |
+| `.theme-dark` / `.theme-light`, `:root`, `html`, `body`, `#app-mount`, `:is`, `:not`, `:where` | CSS `@keyframes` and DOM animations |
+| Backgrounds, text, radius, font family and size from region rules | Client-specific hacks and scripts |
+| `@font-face` data URIs and local font files, `--font-primary` | |
+| Radius, background picture, ReCord's `--rl-*` colour and CRT options | |
+
+ReCore builds a small native tree for the regions Discord themes skin, gives
+each one the class fragments themes commonly use, and runs the theme's rules
+through a selector matcher with specificity, `!important` and source order.
+That makes region rules such as `[class*="sidebarList_"] { background: … }`
+reach the native sidebar instead of being discarded. It is still not a
+browser: layout, pseudo-elements and arbitrary DOM structure stay out.
 
 That is the honest boundary of a CSS interpreter in a native renderer: the
 palette and the look travel, the web-only rules stay in the file. ReCord's

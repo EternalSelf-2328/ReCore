@@ -166,6 +166,9 @@ pub struct ThemeFile {
     pub path: Option<PathBuf>,
     pub palette: Palette,
     pub look: Look,
+    /// Colours and shape values won by selectors that name the native
+    /// sidebar, chat, member list and so on.
+    pub native: crate::NativeStyle,
     pub fonts: Vec<Font>,
     /// The custom properties Appearance can change, with their labels.
     pub options: Vec<crate::ThemeOption>,
@@ -328,7 +331,12 @@ pub fn load_str(
     }
     warnings.extend(sheet.warnings);
     let palette = palette(&vars, dark);
-    let look = look(&vars, palette, directory, &fonts, options, &mut warnings);
+    let native = crate::NativeStyle::compute(&sheet.rules, &vars, dark);
+    let mut look = look(&vars, palette, directory, &fonts, options, &mut warnings);
+    look.radius = native.radius.or(look.radius);
+    look.font_family = native.font_family.clone().or(look.font_family);
+    look.font_size = native.font_size.or(look.font_size);
+    look.letter_spacing = native.letter_spacing.or(look.letter_spacing);
     let specs = crate::options::detect(&vars, dark);
     let name = meta.name.clone().unwrap_or_else(|| "CSS theme".to_owned());
     Ok(ThemeFile {
@@ -342,6 +350,7 @@ pub fn load_str(
         path: None,
         palette,
         look,
+        native,
         fonts,
         options: specs,
         warnings,

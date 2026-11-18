@@ -736,7 +736,7 @@ pub fn root_selector(selector: &str, theme_dark: bool) -> Option<bool> {
 }
 
 /// Splits a selector at its combinators, keeping the pieces that matter.
-fn selector_compounds(selector: &str) -> Vec<String> {
+pub(crate) fn selector_compounds(selector: &str) -> Vec<String> {
     let mut compounds = Vec::new();
     let mut current = String::new();
     let mut depth = 0u32;

@@ -4,10 +4,13 @@
 //!
 //! The interpreter reads the theme's palette, accent, fonts, radius,
 //! background picture and ReCord's CRT options into [`ThemeFile`], which the
-//! window turns into its own colours. CSS that styles Discord's web DOM has no
-//! nodes in a native window; those rules are read without error and simply
-//! not painted. [`theme_folders`] lists the places the common clients keep
-//! local themes, and [`scan`] reads them.
+//! window turns into its own colours. It also matches the theme's selectors
+//! against ReCore's native regions (sidebar, chat, member list, composer) and
+//! applies the colours and shape values that win the cascade there. CSS for
+//! Discord's web DOM has no exact nodes in a native window; layout,
+//! pseudo-elements and DOM animations are read without error but are not
+//! painted. [`theme_folders`] lists the places the common clients keep local
+//! themes, and [`scan`] reads them.
 //!
 //! ```
 //! use recore_css::{Mode, Options, load_str};
@@ -20,11 +23,13 @@
 mod base64;
 pub mod color;
 pub mod css;
+mod native;
 mod options;
 mod theme;
 
 pub use color::Rgba;
 pub use css::{Meta, ParseError, Stylesheet};
+pub use native::NativeStyle;
 pub use options::{OptionKind, ThemeOption};
 pub use theme::{
     Effects, Font, Image, Look, Mode, Motion, Options, Palette, Problem, Scan, ThemeFile, load,

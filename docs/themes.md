@@ -91,19 +91,38 @@ theme is re-read with them, so its palette and effects change live. **Reset
 these options** forgets them; **Show every variable** also lists the
 properties ReCore cannot place.
 
+### Native region selectors
+
+Discord themes often style a region directly, not only its variables:
+
+```css
+.theme-dark [class*="sidebarList_"] { background: #14161a; }
+[class*="chat_"] [class*="message_"]:hover { background: #1b1d21; }
+[class*="membersWrap_"] { border-radius: 0; }
+```
+
+ReCore gives its native sidebar, guild rail, chat, message area, member list,
+composer, header and cards a synthetic node with the class fragments Discord
+themes commonly target, then matches the theme's rules against them. It
+understands class, id and tag selectors, attribute fragments such as
+`[class*="..."]`, descendant selectors, `:is()`, `:not()`, `:where()`, the
+`.theme-dark`/`.theme-light` roots and `:hover`/`:focus` states. Specificity,
+`!important` and source order are applied, and `var()` values are resolved
+before they reach the window. The mapped properties are `background` and
+`background-color`, `color`, `border-radius`, `font-family`, `font-size` and
+`letter-spacing`.
+
 ### What CSS cannot do here
 
-A Discord CSS theme is written for Discord's web window: it styles
-`.messageContent_...`, animates DOM nodes with `@keyframes`, rearranges
-layouts with flexbox and draws scanlines with pseudo-elements. ReCore draws a
-native window with iced; those nodes do not exist. The interpreter reads the
-parts that describe a palette and a look — colours, fonts, radius,
-background, ReCord's effect levels — and keeps the rest in the file without
-painting it. CSS animations, Discord's DOM rules and client-specific hacks
-are not applied. ReCord's scanlines, grain, vignette and corner frame are
-drawn natively over the window, including the rolling scan beam and flicker;
-a CSS theme's DOM animations are not drawn. The note under **Appearance → Theme** says how many files
-were read and how many could not be.
+A Discord CSS theme is still written for Discord's web window. ReCore matches
+the selectors that name its regions, but it cannot reproduce arbitrary DOM
+structure, flexbox or grid layout, pseudo-elements, generated class hashes
+without a usable substring, or CSS animations. Those rules stay in the file
+without being painted. ReCord's scanlines, grain, vignette and corner frame
+are drawn natively over the window, including the rolling scan beam and
+flicker; a CSS theme's DOM animations are not drawn. The note under
+**Appearance → Theme** says how many files were read and how many could not
+be.
 
 ## Custom themes
 
