@@ -50,6 +50,18 @@ struct View<'a> {
     cx: crate::ctx::Ctx<'a>,
 }
 
+impl View<'_> {
+    /// ReCord's square rail: servers, folders, their previews and the
+    /// action tiles lose Discord's rounded corners.
+    fn square(self) -> bool {
+        self.cx.themes.square_avatars()
+    }
+
+    fn radius(self, radius: f32) -> f32 {
+        if self.square() { 0.0 } else { radius }
+    }
+}
+
 impl Rail {
     pub fn new(height: f32) -> Self {
         Self {
@@ -497,11 +509,12 @@ impl<'a> View<'a> {
         } else {
             (theme.raised, theme.accent)
         };
+        let radius = self.radius(RADIUS);
         self.cx
             .look
             .glyph(icon, 24, ink)
             .boxed(TILE)
-            .style(move |_| rounded(ground, RADIUS))
+            .style(move |_| rounded(ground, radius))
             .into()
     }
 
@@ -530,6 +543,7 @@ impl<'a> View<'a> {
     fn server_face(self, item: &RailItem, lit: bool) -> Element<'a, Message> {
         let theme = self.cx.look.theme;
         let side = TILE as u32;
+        let radius = self.radius(RADIUS);
         let opacity = if item.unavailable { 0.5 } else { 1.0 };
         if let Some(picture) = item
             .icon
@@ -537,7 +551,7 @@ impl<'a> View<'a> {
             .and_then(|url| self.cx.picture(url, side, side, true))
         {
             return Pic::square(picture, TILE)
-                .radius(RADIUS)
+                .radius(radius)
                 .opacity(opacity)
                 .into();
         }
@@ -579,9 +593,12 @@ impl<'a> View<'a> {
         let raised = self.cx.look.theme.raised;
         let mut faces = stack![];
         for (index, (initial, icon)) in preview.iter().enumerate() {
-            // Each one's outer corner is round, as the folder's.
-            let mut radius = [4.0; 4];
-            radius[[0, 1, 3, 2][index]] = 13.0;
+            // Each one's outer corner is round, as the folder's, unless
+            // the theme draws square folders.
+            let mut radius = if self.square() { [0.0; 4] } else { [4.0; 4] };
+            if !self.square() {
+                radius[[0, 1, 3, 2][index]] = 13.0;
+            }
             let face: Element<'a, Message> = match icon
                 .as_deref()
                 .and_then(|url| self.cx.picture(url, SMALL as u32, SMALL as u32, true))
@@ -607,10 +624,11 @@ impl<'a> View<'a> {
             a: if pointed { 0.55 } else { 0.4 },
             ..tint
         };
+        let folder_radius = self.radius(FOLDER_RADIUS);
         container(faces)
             .width(FOLDER)
             .height(FOLDER)
-            .style(move |_| rounded(ground, FOLDER_RADIUS))
+            .style(move |_| rounded(ground, folder_radius))
             .into()
     }
 
@@ -682,7 +700,8 @@ impl<'a> View<'a> {
                 a: 0.16,
                 ..hex(tint)
             };
-            let round = |on: bool| if on { RADIUS } else { 0.0 };
+            let square = self.square();
+            let round = |on: bool| if on && !square { RADIUS } else { 0.0 };
             let shape = [round(top), round(top), round(last), round(last)];
             let strip_height = if last { TILE + 4.0 } else { height };
             layers = layers.push(controls::placed(
