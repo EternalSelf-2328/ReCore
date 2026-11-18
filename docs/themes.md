@@ -63,7 +63,9 @@ tile with the CSS badge. A theme carries:
   (`--rl-background-image`, `--background-image`) drawn under the panels, and ReCord's CRT options
   (`--rl-motion`, `--rl-icons`, `--rl-scanline-opacity`,
   `--rl-grain-opacity`, `--rl-vignette-opacity`, `--rl-flicker-duration`,
-  `--rl-beam-opacity`, `--rl-frame-opacity`, `--rl-avatar-filter`).
+  `--rl-beam-opacity`, `--rl-frame-opacity`, `--rl-avatar-filter`,
+  `--rl-avatar-scanline`). The avatar filter and scanline grade the pictures
+  the client draws.
 
 ReCord's own `--rl-*` palette is mapped exactly, so dropping
 [`themes/ReCord.theme.css`](../themes/ReCord.theme.css) in gives the built-in

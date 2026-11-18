@@ -130,6 +130,29 @@ impl Themes {
             .is_some_and(|css| css.look.radius.unwrap_or(8.0) < 2.0)
     }
 
+    /// Whether avatars get ReCord's warm grade and scanlines: ReCore's own
+    /// themes, and a CSS theme that names an avatar filter or scanline.
+    pub fn avatar_filter(&self) -> bool {
+        if self.low_power {
+            return false;
+        }
+        if matches!(self.chosen_id(), "recore" | "recore-light") {
+            return true;
+        }
+        self.chosen_css().is_some_and(|css| {
+            css.look.effects.avatar_scanline > 0.0
+                || css
+                    .look
+                    .effects
+                    .avatar_filter
+                    .as_deref()
+                    .is_some_and(|filter| {
+                        let filter = filter.trim();
+                        !filter.is_empty() && !filter.eq_ignore_ascii_case("none")
+                    })
+        })
+    }
+
     /// The chosen theme if it is a CSS one, for Appearance's options.
     pub fn chosen_css(&self) -> Option<&ThemeFile> {
         self.css.iter().find(|css| css.id == self.chosen_id())
@@ -267,10 +290,10 @@ impl Themes {
             grain,
             vignette: effects.vignette,
             frame: effects.frame,
-            beam: if self.low_power {
+            beam: if self.low_power || !effects.beam {
                 0.0
             } else {
-                effects.beam as u8 as f32 * 0.5
+                0.5
             },
             flicker: if self.low_power || !effects.flicker {
                 0.0

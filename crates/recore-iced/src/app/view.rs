@@ -404,9 +404,10 @@ impl App {
 
     /// Shows the window in another theme, built in or the person's own, and
     /// keeps the choice, as Appearance does. Returns whether there's such a
-    /// theme. Pictures stay as they are; only what the client drew in the
-    /// old colours (icons, dots, the card's name) is drawn again, and the
-    /// member list's styled names take the theme's palette.
+    /// theme. Pictures stay as they are, save avatars that a new grade may
+    /// colour; what the client drew in the old colours (icons, dots, the
+    /// card's name) is drawn again, and the member list's styled names take
+    /// the theme's palette.
     pub fn choose_theme(&mut self, id: &str) -> bool {
         let Some(theme) = self.themes.find(id) else {
             return false;
@@ -419,6 +420,7 @@ impl App {
     /// Shows the window in `theme` without keeping it, as the theme
     /// editor shows what's edited.
     pub fn show_theme(&mut self, theme: Theme) {
+        self.win.pictures.clear_filtered();
         if theme == self.theme {
             return;
         }

@@ -28,7 +28,8 @@ GIFs and the rest of Yapfast's features are here; the fork adds:
 - **An accent picker** that recolours the ReCore themes live.
 - **ReCord's call and message sounds**, as a sound set in Settings → Sounds,
   the 78 ReCord pixel glyphs that map onto ReCore's icon set, and square
-  framed avatars with square presence glyphs.
+  framed avatars with square presence glyphs and ReCord's warm, scanlined
+grade.
 - **A CSS theme interpreter** for Vencord, Vesktop, Equicord, BetterDiscord,
   Legcord and ReCord theme files: colours, accents, fonts, radius, background
   pictures and ReCord's CRT options. Themes are read from ReCore's folder and

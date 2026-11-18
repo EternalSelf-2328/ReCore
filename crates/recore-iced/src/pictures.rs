@@ -151,6 +151,9 @@ pub struct Pictures {
     pub players: Players,
     /// Copies of pictures at the sizes messages show them at.
     pub fitter: RefCell<Fitter>,
+    /// Avatars with ReCord's warm, contrasty grade and scanlines, by the
+    /// size they're drawn at and the picture they show.
+    filtered: RefCell<HashMap<u32, Converted<Handle>>>,
     /// Whether each picture shown in a box is opaque all over, looked at
     /// once: one that is hides the box's ground, which isn't drawn then.
     opaque: RefCell<Converted<bool>>,
@@ -165,8 +168,33 @@ impl Pictures {
             emoji: Default::default(),
             players: Players::default(),
             fitter: RefCell::new(fitter),
+            filtered: Default::default(),
             opaque: Default::default(),
         }
+    }
+
+    /// A copy of `picture` at `size`, graded warm and scanlined as ReCord
+    /// draws an avatar. Kept with the picture, like a fitted copy.
+    pub fn filtered_avatar(&self, picture: &Arc<Picture>, size: u32) -> Handle {
+        self.filtered
+            .borrow_mut()
+            .entry(size)
+            .or_default()
+            .get(picture, |picture| {
+                let mut pixels = fitted(
+                    &picture.rgba,
+                    (picture.width, picture.height),
+                    (size, size),
+                    true,
+                );
+                grade_avatar(&mut pixels, byte_order(picture), size);
+                Handle::from_rgba(size, size, pixels)
+            })
+    }
+
+    /// Graded avatars go when the theme does: another may want no grade.
+    pub fn clear_filtered(&self) {
+        self.filtered.borrow_mut().clear();
     }
 
     /// Whether `picture` is opaque all over.
@@ -206,6 +234,10 @@ impl Pictures {
             converted.prune(0);
             !converted.is_empty()
         });
+        self.filtered.borrow_mut().retain(|_, converted| {
+            converted.prune(0);
+            !converted.is_empty()
+        });
     }
 
     /// The window went: every picture made for it goes.
@@ -213,6 +245,7 @@ impl Pictures {
         *self.previews.borrow_mut() = Default::default();
         *self.opaque.borrow_mut() = Default::default();
         self.scaled.borrow_mut().clear();
+        self.filtered.borrow_mut().clear();
         self.marks.borrow_mut().clear();
         self.emoji.borrow_mut().clear();
         self.players.clear();
@@ -225,6 +258,7 @@ impl Pictures {
         self.previews.borrow().is_empty()
             && self.opaque.borrow().is_empty()
             && self.scaled.borrow().is_empty()
+            && self.filtered.borrow().is_empty()
             && self.marks.borrow().is_empty()
             && self.emoji.borrow().is_empty()
             && self.players.is_empty()
@@ -312,6 +346,50 @@ impl Player {
         // From when it was due, so the pace holds; from now after a stall.
         self.due = (due + Duration::from_millis(u64::from(delay))).max(now);
         Some(frame)
+    }
+}
+
+/// ReCord's avatar grade: a little sepia and contrast, a touch less
+/// saturation and brightness, and a scanline every third row. Applied in
+/// place in the renderer's channel order.
+fn grade_avatar(pixels: &mut [u8], order: recore_core::dominant_colour::Order, side: u32) {
+    use recore_core::dominant_colour::Order;
+    let (ri, gi, bi) = match order {
+        Order::Bgra => (2, 1, 0),
+        Order::Rgba => (0, 1, 2),
+    };
+    for y in 0..side as usize {
+        for x in 0..side as usize {
+            let i = (y * side as usize + x) * 4;
+            let (mut r, mut g, mut b) = (
+                pixels[i + ri] as f32,
+                pixels[i + gi] as f32,
+                pixels[i + bi] as f32,
+            );
+            let (sr, sg, sb) = (
+                0.393 * r + 0.769 * g + 0.189 * b,
+                0.349 * r + 0.686 * g + 0.168 * b,
+                0.272 * r + 0.534 * g + 0.131 * b,
+            );
+            r = r * 0.82 + sr * 0.18;
+            g = g * 0.82 + sg * 0.18;
+            b = b * 0.82 + sb * 0.18;
+            let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+            r = lum + (r - lum) * 0.82;
+            g = lum + (g - lum) * 0.82;
+            b = lum + (b - lum) * 0.82;
+            r = ((r - 128.0) * 1.08 + 128.0) * 0.97;
+            g = ((g - 128.0) * 1.08 + 128.0) * 0.97;
+            b = ((b - 128.0) * 1.08 + 128.0) * 0.97;
+            if y % 3 == 2 {
+                r *= 0.86;
+                g *= 0.86;
+                b *= 0.86;
+            }
+            pixels[i + ri] = r.clamp(0.0, 255.0) as u8;
+            pixels[i + gi] = g.clamp(0.0, 255.0) as u8;
+            pixels[i + bi] = b.clamp(0.0, 255.0) as u8;
+        }
     }
 }
 
@@ -720,7 +798,16 @@ impl<'a> crate::ctx::Ctx<'a> {
         let square = self.themes.square_avatars();
         let radius = if square { 0.0 } else { radius };
         let line = self.look.theme.line;
-        if let Some(handle) = url.and_then(|url| self.picture(url, pixels, pixels, true)) {
+        let handle = url
+            .and_then(|url| self.state.pictures.get(url))
+            .and_then(|picture| {
+                if self.themes.avatar_filter() {
+                    Some(self.pictures.filtered_avatar(picture, pixels))
+                } else {
+                    self.fit(picture, pixels, pixels, true)
+                }
+            });
+        if let Some(handle) = handle {
             let picture = Pic::square(handle, size).radius(radius).opacity(opacity);
             if square {
                 return stack![
