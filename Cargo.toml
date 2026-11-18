@@ -1,5 +1,5 @@
 [package]
-name = "yapfast"
+name = "recore"
 version = "0.4.1"
 edition = "2024"
 rust-version = "1.97"
@@ -7,7 +7,7 @@ publish = false
 license = "GPL-3.0-or-later"
 
 [workspace]
-members = ["crates/yapfast-core", "crates/yapfast-discord", "crates/yapfast-iced", "crates/yapfast-iced-kit"]
+members = ["crates/recore-core", "crates/recore-css", "crates/recore-discord", "crates/recore-iced", "crates/recore-iced-kit"]
 default-members = ["."]
 exclude = ["vendor/matrix-rtc-livekit", "vendor/webrtc-sys", "vendor/davey", "vendor/x264-src", "vendor/ffmpeg-src"]
 resolver = "3"
@@ -48,21 +48,21 @@ workspace = true
 # The release's features: the window, with Discord. Matrix is optional beside
 # it; scripts/check --matrix checks the builds with Matrix.
 default = ["desktop", "discord"]
-matrix = ["yapfast-core/matrix", "yapfast-iced?/matrix"]
-discord = ["yapfast-core/discord"]
-# The window (crates/yapfast-iced, which shows Discord in every build) and
+matrix = ["recore-core/matrix", "recore-iced?/matrix"]
+discord = ["recore-core/discord"]
+# The window (crates/recore-iced, which shows Discord in every build) and
 # what the desktop gives it: the tray, notifications, the single instance,
 # links, starting at sign-in, updates, the icon, pasted and copied pictures
 # and keybinds. Without it the program has only the commands that need no
 # window.
-desktop = ["discord", "dep:yapfast-iced", "dep:raw-window-handle", "dep:resvg", "dep:ksni", "dep:zbus", "dep:windows-sys", "dep:windows", "dep:reqwest", "dep:rustls", "dep:sha2", "dep:minisign-verify", "dep:wayland-client", "dep:wayland-backend", "dep:wayland-protocols", "dep:arboard", "dep:image", "dep:tempfile", "dep:wl-clipboard-rs", "dep:x11rb", "dep:futures-util", "dep:winit"]
+desktop = ["discord", "dep:recore-iced", "dep:raw-window-handle", "dep:resvg", "dep:ksni", "dep:zbus", "dep:windows-sys", "dep:windows", "dep:reqwest", "dep:rustls", "dep:sha2", "dep:minisign-verify", "dep:wayland-client", "dep:wayland-backend", "dep:wayland-protocols", "dep:arboard", "dep:image", "dep:tempfile", "dep:wl-clipboard-rs", "dep:x11rb", "dep:futures-util", "dep:winit"]
 
 [dependencies]
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-yapfast-core = { path = "crates/yapfast-core", default-features = false }
-yapfast-iced = { path = "crates/yapfast-iced", default-features = false, optional = true }
+recore-core = { path = "crates/recore-core", default-features = false }
+recore-iced = { path = "crates/recore-iced", default-features = false, optional = true }
 # Pictures copied from messages.
 arboard = { version = "3.6", default-features = false, features = ["image-data", "wayland-data-control"], optional = true }
 # Saves pictures pasted as pixels to PNG files to attach, after decoding the
@@ -82,7 +82,7 @@ minisign-verify = { version = "0.3", optional = true }
 # and its icon on Windows act on; the version winit's are.
 raw-window-handle = { version = "0.6.2", optional = true }
 # The tray's and the window's icons drawn from their SVGs; the version
-# yapfast-core already builds, without text.
+# recore-core already builds, without text.
 resvg = { version = "0.49", default-features = false, optional = true }
 
 # Desktop notifications through the freedesktop service, on the session bus
@@ -95,7 +95,7 @@ wl-clipboard-rs = { version = "0.9.4", optional = true }
 # device on winit's own connection; see src/drop.rs. Already in the tree through winit.
 wayland-client = { version = "0.31.15", optional = true }
 wayland-backend = { version = "0.3.17", features = ["client_system"], optional = true }
-# Bringing the window forward when Yapfast starts again, with the token the
+# Bringing the window forward when ReCore starts again, with the token the
 # desktop gave that start or the tray click's; see src/instance.rs. Already in
 # the tree through winit.
 wayland-protocols = { version = "0.32.13", features = ["client", "staging"], optional = true }
@@ -114,7 +114,7 @@ x11rb = { version = "0.13.2", default-features = false, features = ["xinput"], o
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_Console", "Win32_System_DataExchange", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_Security", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"], optional = true }
 # Keybinds' hook names keys as the window's winit does.
 winit = { version = "0.30.13", default-features = false, optional = true }
-# Toasts, through WinRT, in the version yapfast-core already builds.
+# Toasts, through WinRT, in the version recore-core already builds.
 windows = { version = "0.62", features = ["Data_Xml_Dom", "UI_Notifications"], optional = true }
 
 # A stand-in tray on the private test bus; see testing/tray_host.rs.
@@ -130,7 +130,7 @@ path = "testing/record_host.rs"
 required-features = ["desktop"]
 
 [dev-dependencies]
-yapfast-core = { path = "crates/yapfast-core", default-features = false, features = ["test-fixtures"] }
+recore-core = { path = "crates/recore-core", default-features = false, features = ["test-fixtures"] }
 tempfile.workspace = true
 
 # testing/record_host.rs: Weston's capture protocol, signals and poll, and the
@@ -171,11 +171,11 @@ webrtc-sys = { path = "vendor/webrtc-sys" }
 davey = { path = "vendor/davey" }
 tungstenite = { path = "vendor/tungstenite" }
 const_panic = { git = "https://github.com/jplatte/const_panic", rev = "e0b317a9a7bde2d48a7d15b6a60d70e4a41d3b5f" }
-# iced 0.14's renderers with Yapfast's patches; see docs/building.md.
+# iced 0.14's renderers with ReCore's patches; see docs/building.md.
 iced_tiny_skia = { path = "vendor/iced_tiny_skia" }
 iced_wgpu = { path = "vendor/iced_wgpu" }
 # cosmic-text with a hook for characters no loaded font has; see
-# vendor/cosmic-text/README.yapfast.md.
+# vendor/cosmic-text/README.recore.md.
 cosmic-text = { path = "vendor/cosmic-text" }
 
 [profile.dev]

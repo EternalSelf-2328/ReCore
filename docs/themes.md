@@ -1,31 +1,119 @@
 # Themes
 
-Settings → Appearance shows the window in one of the themes Yapfast comes with,
-or one of the person's own. Each is a full set of the colours of `Theme` in
-`yapfast_core::theme` (`crates/yapfast-core/src/theme.rs`), plus whether it's
+Settings → Appearance shows the window in one of the themes ReCore comes with,
+one of the person's own, or a Discord CSS theme read from a `.theme.css` file.
+Each theme is a full set of the colours of `Theme` in
+`recore_core::theme` (`crates/recore-core/src/theme.rs`), plus whether it's
 dark, which sets the scrollbars' shade and the colours worked out from the
 others. The core holds the built-in ones as `BUILT_IN` and reads custom
-themes and hex colours; `crates/yapfast-iced/src/themes.rs` makes the chosen
-one the kit's `Theme` (`crates/yapfast-iced-kit/src/theme.rs`), which every
+themes and hex colours; `crates/recore-iced/src/themes.rs` makes the chosen
+one the kit's `Theme` (`crates/recore-iced-kit/src/theme.rs`), which every
 widget paints with; see [the client's theme](client/window.md#theme). The
 choice is kept in `layout.json` as `theme`, the theme's id, and applied
 before the window's first frame, and again to a window made anew. With none
-kept, the window shows Bonfire. An id Yapfast doesn't know, or a deleted
-theme's, shows Yap. The window-control command `theme ID` chooses and keeps
-one as Appearance does.
+kept, the window shows ReCore. An id ReCore doesn't know, or a deleted
+theme's, shows ReCore too. The window-control command `theme ID` chooses and
+keeps one as Appearance does.
+
+## ReCore and ReCore Paper
+
+The fork's own theme is ReCord's terminal palette: signal orange on warm
+charcoal, paper-coloured type, square panels. **ReCore Paper** is the same
+palette in daylight. `Appearance → ReCore accent` changes the accent both
+derive every shade from; it is kept in `layout.json` as `recore_accent`.
+The presets match ReCord's: Amber, Phosphor, Ice, Paper (which switches to
+ReCore Paper) and Terminal. ReCord's Pixel Operator and Pixel Operator Mono
+are bundled and used by both.
+
+## CSS themes
+
+ReCore reads the themes Vencord, Vesktop, Equicord, BetterDiscord, Legcord
+and ReCord itself load. Put a `.theme.css` file in the folder that
+**Appearance → Themes folder** opens, or leave it in the client's own themes
+folder; ReCore also looks there:
+
+| Client | Folder |
+| --- | --- |
+| Vencord | `~/.config/Vencord/themes` (or `%APPDATA%\Vencord\themes`) |
+| Vesktop | `~/.config/vesktop/themes` |
+| Equicord | `~/.config/Equicord/themes` |
+| BetterDiscord | `~/.config/BetterDiscord/themes` |
+| Legcord | `~/.config/Legcord/themes` |
+| ReCore | the data folder's `themes` (the button opens it) |
+
+**Reload CSS** reads them again without restarting. Each theme appears as a
+tile with the CSS badge. A theme carries:
+
+- The colours of Discord's tokens: `--background-primary`, `--background-secondary`,
+  `--background-floating`, `--channeltextarea-background`, `--text-normal`,
+  `--text-muted`, `--header-primary`, `--brand-experiment`, `--status-danger`,
+  `--status-positive`, `--text-link`, the border, interactive and input tokens,
+  and the newer `--background-base-*`, `--background-surface-*`,
+  `--control-*`, `--text-default` names wherever it uses those instead.
+- Its own variable chain: `var()`, fallbacks, `!important`, `@import` between
+  local files, `@media (prefers-color-scheme: dark|light)`, `.theme-dark`
+  and `.theme-light` blocks, `color-mix(in srgb, ...)` and `light-dark()`.
+  Hex, `rgb()`, `rgba()`, `hsl()`, `hsla()` and named colours are read.
+  A remote `@import` is skipped with a warning: ReCore reads local theme
+  files, so download a theme that imports a web base beside it first.
+- Its fonts: `@font-face` with a `data:` URI or a file beside the theme is
+  loaded into the window's font system, and `--font-primary` picks the
+  family.
+- Its radius (`--radius-md` or ReCord's `--rl-radius`), a background picture
+  (`--rl-background-image`, `--background-image`) drawn under the panels, and ReCord's CRT options
+  (`--rl-motion`, `--rl-icons`, `--rl-scanline-opacity`,
+  `--rl-grain-opacity`, `--rl-vignette-opacity`, `--rl-flicker-duration`,
+  `--rl-beam-opacity`, `--rl-frame-opacity`, `--rl-avatar-filter`).
+
+ReCord's own `--rl-*` palette is mapped exactly, so dropping
+[`themes/ReCord.theme.css`](../themes/ReCord.theme.css) in gives the built-in
+ReCore colours and its four Pixel Operator faces.
+
+### Options the theme exposes
+
+Appearance lists the chosen CSS theme's custom properties as controls:
+
+- a colour becomes a swatch and a hex field;
+- an opacity, dimming or surface becomes a slider;
+- `on`/`off`, `true`/`false` and ReCord's flicker/beam durations become a
+  switch;
+- a font and a text variable become a field;
+- a `url(...)` picture becomes a field with **Choose…** and **Clear**;
+- ReCord's `full`/`subtle`/`off` and background fits become buttons.
+
+The controls are detected from the values, so a theme does not need to
+declare them. ReCord's `--rl-*` names get readable labels and groups; other
+themes group their colours, typography, shape, pictures and effects. Values
+changed there are kept per theme in `layout.json` under `css_options` and the
+theme is re-read with them, so its palette and effects change live. **Reset
+these options** forgets them; **Show every variable** also lists the
+properties ReCore cannot place.
+
+### What CSS cannot do here
+
+A Discord CSS theme is written for Discord's web window: it styles
+`.messageContent_...`, animates DOM nodes with `@keyframes`, rearranges
+layouts with flexbox and draws scanlines with pseudo-elements. ReCore draws a
+native window with iced; those nodes do not exist. The interpreter reads the
+parts that describe a palette and a look — colours, fonts, radius,
+background, ReCord's effect levels — and keeps the rest in the file without
+painting it. CSS animations, Discord's DOM rules and client-specific hacks
+are not applied. ReCord's scanlines, grain, vignette and corner frame are
+drawn natively over the window; its flicker and scan beam values are read but
+not animated yet. The note under **Appearance → Theme** says how many files
+were read and how many could not be.
 
 ## Custom themes
 
 New theme opens an editor on a copy of the theme shown; START FROM swaps it
 for a copy of any other. The editor lists every colour by its name
 (`Theme::NAMES`, with `-` for `_`), with a swatch and its hex, which takes
-`#rgb`, `#rrggbb` or
-`#rrggbbaa` and marks anything else. Each change shows at once, so the whole
-window is the preview. Save keeps the theme and chooses it; Cancel, leaving
-Appearance or closing settings shows the theme from before. A saved theme's
-card has a pencil that opens it again to rename, change or delete it;
-deleting the chosen one shows Yap. Closing the window to the
-[tray](tray.md) closes Settings, so it drops the unsaved edit too.
+`#rgb`, `#rrggbb` or `#rrggbbaa` and marks anything else. Each change shows at
+once, so the whole window is the preview. Save keeps the theme and chooses
+it; Cancel, leaving Appearance or closing settings shows the theme from
+before. A saved theme's card has a pencil that opens it again to rename,
+change or delete it; deleting the chosen one shows ReCore. Closing the window
+to the [tray](tray.md) closes Settings, so it drops the unsaved edit too.
 
 `layout.json` keeps them in `custom_themes`, in the order Appearance shows
 them after the built-in ones:
@@ -34,26 +122,28 @@ them after the built-in ones:
 {
   "id": "custom:1",
   "name": "Plum",
-  "base": "yap",
+  "base": "recore",
   "dark": true,
   "colours": { "rail": "#111215", "chat": "#2a1a3a", "row-hover": "#1a1b20" }
 }
 ```
 
 `base` is the built-in theme the first copy came from (a copy of a custom
-theme takes its base). Yapfast writes every colour, but a colour that's missing,
-such as one added in a later version, or that isn't a colour, takes the
-base's value, and a name Yapfast doesn't know is ignored, so themes survive new
-colours. Ids are `custom:` and a number, and no built-in id has a colon, so
-they can't collide; on reading, Yapfast gives a fresh one to any custom theme
-whose id isn't of that form or repeats another's. The editor's fields exist
-only while it's open; otherwise a custom theme costs its parsed colours and a
-card.
+theme takes its base). ReCore writes every colour, but a colour that's
+missing, such as one added in a later version, or that isn't a colour, takes
+the base's value, and a name ReCore doesn't know is ignored, so themes survive
+new colours. Ids are `custom:` and a number, and no built-in id has a colon,
+so they can't collide; on reading, ReCore gives a fresh one to any custom
+theme whose id isn't of that form or repeats another's. The editor's fields
+exist only while it's open; otherwise a custom theme costs its parsed colours
+and a card.
 
 | Theme | Id | Dark | Accent | From |
 | --- | --- | --- | --- | --- |
+| ReCore | `recore` | yes | signal orange | ReCord's terminal palette, the default |
+| ReCore Paper | `recore-light` | no | signal orange | ReCord's paper palette |
 | Yap | `yap` | yes | marigold | Yapfast's own |
-| Bonfire | `bonfire` | yes | blurple | Discord's Dark theme, the default |
+| Bonfire | `bonfire` | yes | blurple | Discord's Dark theme |
 | Catppuccin Mocha | `catppuccin-mocha` | yes | mauve | [Catppuccin](https://github.com/catppuccin/catppuccin) |
 | Dracula | `dracula` | yes | purple | [Dracula](https://draculatheme.com/contribute) |
 | Nord | `nord` | yes | frost nord8 | [Nord](https://www.nordtheme.com/docs/colors-and-palettes) |
@@ -66,8 +156,8 @@ card.
 The palettes of Catppuccin, Dracula, Nord, Gruvbox, Tokyo Night and Rosé Pine
 are published under the MIT licence; thanks to their authors. For Tokyo
 Night, the steps between its grounds and text (bg_highlight, fg_gutter, dark3,
-dark5) are named as folke's tokyonight.nvim names them. Yapfast takes their
-colours, not their names for UI parts, so each mapping is Yapfast's:
+dark5) are named as folke's tokyonight.nvim names them. ReCore takes their
+colours, not their names for UI parts, so each mapping is ReCore's:
 
 - The ground steps go rail, sidebar, chat from the deepest to the one text
   sits on, with raised surfaces (popovers, reactions, stage tiles) and the
@@ -76,7 +166,7 @@ colours, not their names for UI parts, so each mapping is Yapfast's:
   darken it, and hover and some row grounds are halfway mixes of two palette
   colours.
 - Text, secondary, muted and faint take the palette's text ramp; faint keeps
-  at least 2.5:1 against the sidebar, near Yap's 2.8:1.
+  at least 2.5:1 against the sidebar.
 - Content on the accent and on red (on-accent, on-danger) takes the palette's
   darkest or lightest colour, whichever reads; on pastel accents, as in
   Catppuccin and Tokyo Night, that's dark.
@@ -100,4 +190,18 @@ on it), red `--control-critical-primary-background-default` (#d22d39), live
 no Discord name or logo.
 
 Discord role colours stay as servers set them, and some read faintly on a
-light theme; Yapfast doesn't adjust them yet.
+light theme; ReCore doesn't adjust them yet.
+
+## Reading a theme's files
+
+The interpreter lives in `crates/recore-css`. `recore_css::load(path)` reads a
+file and returns a `ThemeFile` with the resolved `Palette`, `Look`, fonts,
+warnings and the metadata from the theme's `/** @name ... */` header. `scan`
+walks folders, and `theme_folders` names the common clients' folders.
+`Options` chooses the dark or light set, forces an accent, or overrides a
+custom property. The crate has no dependencies, so its parser can be tested
+on its own:
+
+```bash
+cargo test -p recore-css
+```

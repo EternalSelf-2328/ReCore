@@ -1,0 +1,16 @@
+[package]
+name = "recore-css"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+publish = false
+license = "GPL-3.0-or-later"
+description = "Reads Discord CSS themes (Vencord, Vesktop and compatible) into ReCore's colours and look; see docs/themes.md"
+
+[lints]
+workspace = true
+
+[lib]
+doctest = false
+
+[dependencies]

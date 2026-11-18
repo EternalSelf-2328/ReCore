@@ -1,0 +1,226 @@
+# A stable release: push a tag such as v0.5.0, or run this workflow with a tag.
+# It builds the Linux AppImage and Arch package, the Windows portable ZIP, the
+# source snapshot and the checksums, then publishes them on the tag's release
+# page. The website reads that page through the GitHub releases API, so a new
+# release shows up there without rebuilding the site.
+#
+# Stable releases normally carry SHA256SUMS.txt.minisig, which Update and
+# restart requires. The stable key is not in the repository: set
+# STABLE_SIGNING_KEY in the release environment to publish a signed release.
+# Without it the release is still published and downloadable, but the app will
+# not install it from About.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release, such as v0.5.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+      commit: ${{ steps.version.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+      - id: version
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          tag="${INPUT_TAG:-$REF_NAME}"
+          case "$tag" in
+            v*) ;;
+            *) echo "release: the tag must start with v, such as v0.5.0" >&2; exit 2 ;;
+          esac
+          version=${tag#v}
+          if ! [[ $version =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "release: $tag is not a stable SemVer tag such as v0.5.0" >&2
+            echo "release: prereleases and nightlies use their own workflow" >&2
+            exit 2
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse "$tag^{commit}")" >> "$GITHUB_OUTPUT"
+
+  linux:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.version.outputs.commit }}
+          # Nix refuses a shallow Git repository as a flake.
+          fetch-depth: 0
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ github.token }}
+      - run: scripts/set-version "${{ needs.version.outputs.version }}"
+      - name: Fetch the toolchain and crates
+        run: nix develop path:./nix --command cargo fetch --locked
+      - run: scripts/build-appimage
+      - run: scripts/package-arch
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            target/dist/linux/ReCore-*
+            target/dist/linux/recore-*.pkg.tar.zst
+          if-no-files-found: error
+          compression-level: 0
+
+  windows:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.version.outputs.commit }}
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ github.token }}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/cargo-xwin
+          key: windows-xwin-${{ hashFiles('nix/flake.lock') }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - run: scripts/set-version "${{ needs.version.outputs.version }}"
+      # Wine doesn't start on the runner, so the installer is built on a
+      # machine with one; the portable ZIP is the Windows asset here.
+      - run: nix develop path:./nix#windows --command scripts/build-windows discord --no-installer
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: target/dist/discord/ReCore-*
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    needs: [version, linux, windows]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ needs.version.outputs.tag }}
+      VERSION: ${{ needs.version.outputs.version }}
+      COMMIT: ${{ needs.version.outputs.commit }}
+      STABLE_SIGNING_KEY: ${{ secrets.STABLE_SIGNING_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.version.outputs.commit }}
+          fetch-depth: 0
+          sparse-checkout: |
+            .github
+            packaging/keys
+      - name: Install minisign
+        if: env.STABLE_SIGNING_KEY != ''
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends minisign
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Assemble assets
+        run: |
+          set -euo pipefail
+          mkdir release
+          # Both jobs produce the same source snapshot; keep one.
+          cmp "dist/linux/ReCore-$VERSION-source.zip" "dist/windows/ReCore-$VERSION-source.zip"
+          cp dist/linux/ReCore-* dist/linux/recore-*.pkg.tar.zst release/
+          cp dist/windows/ReCore-*-windows-x64* release/
+          # The package scripts' own sums name only their own files; make one
+          # complete list for the release.
+          (cd release && find . -maxdepth 1 -type f ! -name 'SHA256SUMS.txt' ! -name 'SHA256SUMS.txt.minisig' -printf '%f\n' | sort | xargs sha256sum > SHA256SUMS.txt)
+          ls -lh release
+
+      - name: Sign the checksums when the stable key is configured
+        id: sign
+        run: |
+          set -euo pipefail
+          if [[ -z "${STABLE_SIGNING_KEY:-}" ]]; then
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "No STABLE_SIGNING_KEY in the release environment; publishing unsigned." >&2
+            exit 0
+          fi
+          key="$RUNNER_TEMP/stable.key"
+          (umask 077 && printf '%s\n' "$STABLE_SIGNING_KEY" > "$key")
+          comment="recore $TAG SHA256SUMS.txt"
+          minisign -S -W -s "$key" -m release/SHA256SUMS.txt -t "$comment" -c "ReCore $TAG"
+          rm "$key"
+          test "$(minisign -V -p packaging/keys/stable.pub -m release/SHA256SUMS.txt -Q)" = "$comment"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Write release notes
+        run: |
+          set -euo pipefail
+          previous=$(git describe --tags --abbrev=0 "$COMMIT^" 2>/dev/null || true)
+          body=$(git tag -l --format='%(contents)' "$TAG")
+          {
+            echo "ReCore $TAG."
+            echo
+            if [[ -n "$body" ]]; then
+              echo "$body"
+              echo
+            fi
+            echo "## Downloads"
+            echo
+            echo "- **Windows:** the portable ZIP. Run \`recore.exe\` after extracting it."
+            echo "- **Linux:** the AppImage, and the Arch package for \`pacman -U\`."
+            echo "- **Source:** the snapshot used for this build."
+            echo
+            echo "## What's new"
+            echo
+            if [[ -n "$previous" ]]; then
+              git log --no-merges --pretty='- `%h` %s' "$previous..$COMMIT" | head -120
+              echo
+              echo "All changes: https://github.com/$GH_REPO/compare/$previous...$TAG"
+            else
+              echo "First release."
+            fi
+            echo
+            if [[ "${{ steps.sign.outputs.signed }}" != "true" ]]; then
+              echo "> **Unsigned release.** Update and restart needs a signed \`SHA256SUMS.txt\`; this build can be downloaded and run, but the app will not install it automatically."
+              echo
+            fi
+            echo "Third-party clients are against Discord's Terms of Service. Use ReCore only if losing the account would not be a disaster."
+          } > notes.md
+          cat notes.md
+
+      - name: Publish
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/* --clobber
+            gh release edit "$TAG" --title "ReCore $VERSION" --notes-file notes.md --latest
+          else
+            gh release create "$TAG" release/* --verify-tag \
+              --title "ReCore $VERSION" --notes-file notes.md --latest
+          fi
+          gh release view "$TAG" --json url,assets \
+            --jq '"Released \(.url) with \([.assets[].name] | length) assets"'

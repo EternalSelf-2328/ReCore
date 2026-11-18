@@ -11,7 +11,7 @@
 //!   filesystem. The running copy keeps working from the file it has open.
 //! - **Windows' installer** put the program in a folder with its uninstaller
 //!   beside it. The release's installer is downloaded to the temporary folder
-//!   and checked; after Yapfast has quit, a hidden `cmd` runs it silently,
+//!   and checked; after ReCore has quit, a hidden `cmd` runs it silently,
 //!   waits, and starts the program again, as a silent Inno Setup run starts
 //!   nothing itself.
 //!
@@ -32,8 +32,8 @@ use std::{
     },
 };
 
+use recore_core::runtime::BackgroundRuntime;
 use sha2::{Digest, Sha256};
-use yapfast_core::runtime::BackgroundRuntime;
 
 use super::{Asset, Release, Source, signature};
 
@@ -57,10 +57,10 @@ impl Target {
     /// rename stays on one filesystem; in the temporary folder for the installer.
     pub fn part(&self) -> PathBuf {
         match self {
-            Target::AppImage { current, .. } => current.with_file_name(".yapfast-update.part"),
-            Target::Installer { asset, .. } => std::env::temp_dir()
-                .join("yapfast-update")
-                .join(&asset.name),
+            Target::AppImage { current, .. } => current.with_file_name(".recore-update.part"),
+            Target::Installer { asset, .. } => {
+                std::env::temp_dir().join("recore-update").join(&asset.name)
+            }
         }
     }
 }
@@ -78,8 +78,8 @@ pub const FLAVOUR: &str = if cfg!(feature = "matrix") {
 const FLAVOURS: [&str; 1] = ["-full-preview"];
 
 /// Whether a release file `name` is `flavour`'s file for this platform,
-/// whose names end in `platform`: `Yapfast-0.5.0-x86_64.AppImage` is the
-/// release's and `Yapfast-0.5.0-full-preview-x86_64.AppImage` the full
+/// whose names end in `platform`: `ReCore-0.5.0-x86_64.AppImage` is the
+/// release's and `ReCore-0.5.0-full-preview-x86_64.AppImage` the full
 /// preview's, though both end the same.
 fn of_flavour(name: &str, platform: &str, flavour: &str) -> bool {
     let Some(stem) = name.strip_suffix(platform) else {
@@ -133,12 +133,12 @@ pub fn target_for(
                 .to_path_buf();
             let folder = current.parent().ok_or("The AppImage has no folder.")?;
             if !writable(folder) {
-                return Err("Yapfast can't write to the AppImage's folder.".into());
+                return Err("ReCore can't write to the AppImage's folder.".into());
             }
             Ok(Target::AppImage { asset, current })
         }
         _ => {
-            let folder = program.parent().ok_or("Yapfast has no folder.")?;
+            let folder = program.parent().ok_or("ReCore has no folder.")?;
             // The installer left its uninstaller there; a folder without one
             // was unpacked by hand or installed by something else.
             if !folder.join("unins000.exe").is_file() {
@@ -148,7 +148,7 @@ pub fn target_for(
                 );
             }
             if !writable(folder) {
-                return Err("Yapfast can't write to its own folder.".into());
+                return Err("ReCore can't write to its own folder.".into());
             }
             Ok(Target::Installer {
                 asset,
@@ -179,7 +179,7 @@ pub fn target(release: &Release) -> Result<Target, String> {
 /// Whether a file can be made in `folder`.
 fn writable(folder: &Path) -> bool {
     tempfile::Builder::new()
-        .prefix(".yapfast-write-test")
+        .prefix(".recore-write-test")
         .tempfile_in(folder)
         .is_ok()
 }
@@ -495,7 +495,7 @@ pub fn windows_command(
     ))
 }
 
-/// Runs the installer once Yapfast has quit, then starts the program again.
+/// Runs the installer once ReCore has quit, then starts the program again.
 /// The caller returns right after, so the files can be replaced.
 #[cfg(windows)]
 pub fn run_installer(installer: &Path, program: &Path, arguments: &[String]) -> Result<(), String> {
@@ -527,7 +527,7 @@ pub fn run_installer(_: &Path, _: &Path, _: &[String]) -> Result<(), String> {
 mod tests {
     use super::*;
     use crate::update::Version;
-    use yapfast_core::runtime::BackgroundRuntime;
+    use recore_core::runtime::BackgroundRuntime;
 
     fn asset(name: &str) -> Asset {
         Asset {
@@ -544,10 +544,10 @@ mod tests {
             page: String::new(),
             notes: String::new(),
             assets: vec![
-                asset("Yapfast-0.4.1-x86_64.AppImage"),
-                asset("Yapfast-0.4.1-x86_64.AppImage.zsync"),
-                asset("Yapfast-0.4.1-windows-x64-setup.exe"),
-                asset("Yapfast-0.4.1-windows-x64.zip"),
+                asset("ReCore-0.4.1-x86_64.AppImage"),
+                asset("ReCore-0.4.1-x86_64.AppImage.zsync"),
+                asset("ReCore-0.4.1-windows-x64-setup.exe"),
+                asset("ReCore-0.4.1-windows-x64.zip"),
                 asset("SHA256SUMS.txt"),
                 asset("SHA256SUMS.txt.minisig"),
             ],
@@ -557,8 +557,8 @@ mod tests {
     #[test]
     fn only_the_installs_that_own_their_files_are_updated() {
         let folder = tempfile::tempdir().unwrap();
-        let app = folder.path().join("Yapfast.AppImage");
-        let program = folder.path().join("yapfast.exe");
+        let app = folder.path().join("ReCore.AppImage");
+        let program = folder.path().join("recore.exe");
         let release = release();
         let reason = |source| {
             target_for(&release, source, &program, Some(&app), "").expect_err("not updated here")
@@ -570,8 +570,8 @@ mod tests {
         }
         // An AppImage in a folder that can be written to.
         let target = target_for(&release, Source::AppImage, &program, Some(&app), "").unwrap();
-        assert_eq!(target.asset().name, "Yapfast-0.4.1-x86_64.AppImage");
-        assert_eq!(target.part(), folder.path().join(".yapfast-update.part"));
+        assert_eq!(target.asset().name, "ReCore-0.4.1-x86_64.AppImage");
+        assert_eq!(target.part(), folder.path().join(".recore-update.part"));
         assert!(
             target_for(&release, Source::AppImage, &program, None, "")
                 .unwrap_err()
@@ -584,31 +584,31 @@ mod tests {
         );
         std::fs::write(folder.path().join("unins000.exe"), b"").unwrap();
         let target = target_for(&release, Source::Installer, &program, None, "").unwrap();
-        assert_eq!(target.asset().name, "Yapfast-0.4.1-windows-x64-setup.exe");
+        assert_eq!(target.asset().name, "ReCore-0.4.1-windows-x64-setup.exe");
         assert!(
             target
                 .part()
-                .ends_with("yapfast-update/Yapfast-0.4.1-windows-x64-setup.exe")
+                .ends_with("recore-update/ReCore-0.4.1-windows-x64-setup.exe")
                 || target
                     .part()
-                    .ends_with(r"yapfast-update\Yapfast-0.4.1-windows-x64-setup.exe")
+                    .ends_with(r"recore-update\ReCore-0.4.1-windows-x64-setup.exe")
         );
     }
 
     #[test]
     fn each_flavour_installs_its_own_file_whatever_the_order() {
         let folder = tempfile::tempdir().unwrap();
-        let app = folder.path().join("Yapfast.AppImage");
-        let program = folder.path().join("yapfast.exe");
+        let app = folder.path().join("ReCore.AppImage");
+        let program = folder.path().join("recore.exe");
         std::fs::write(folder.path().join("unins000.exe"), b"").unwrap();
         if !cfg!(target_arch = "x86_64") {
             return;
         }
         let names = [
-            "Yapfast-0.4.1-full-preview-x86_64.AppImage",
-            "Yapfast-0.4.1-x86_64.AppImage",
-            "Yapfast-0.4.1-full-preview-windows-x64-setup.exe",
-            "Yapfast-0.4.1-windows-x64-setup.exe",
+            "ReCore-0.4.1-full-preview-x86_64.AppImage",
+            "ReCore-0.4.1-x86_64.AppImage",
+            "ReCore-0.4.1-full-preview-windows-x64-setup.exe",
+            "ReCore-0.4.1-windows-x64-setup.exe",
             "SHA256SUMS.txt",
             "SHA256SUMS.txt.minisig",
         ];
@@ -624,19 +624,19 @@ mod tests {
             };
             assert_eq!(
                 file(Source::AppImage, "").unwrap(),
-                "Yapfast-0.4.1-x86_64.AppImage"
+                "ReCore-0.4.1-x86_64.AppImage"
             );
             assert_eq!(
                 file(Source::AppImage, "-full-preview").unwrap(),
-                "Yapfast-0.4.1-full-preview-x86_64.AppImage"
+                "ReCore-0.4.1-full-preview-x86_64.AppImage"
             );
             assert_eq!(
                 file(Source::Installer, "").unwrap(),
-                "Yapfast-0.4.1-windows-x64-setup.exe"
+                "ReCore-0.4.1-windows-x64-setup.exe"
             );
             assert_eq!(
                 file(Source::Installer, "-full-preview").unwrap(),
-                "Yapfast-0.4.1-full-preview-windows-x64-setup.exe"
+                "ReCore-0.4.1-full-preview-windows-x64-setup.exe"
             );
         }
         // The release alone, as every release before the previews.
@@ -657,8 +657,8 @@ mod tests {
     #[test]
     fn a_release_without_its_file_sums_or_signature_is_not_installed() {
         let folder = tempfile::tempdir().unwrap();
-        let app = folder.path().join("Yapfast.AppImage");
-        let program = folder.path().join("yapfast.exe");
+        let app = folder.path().join("ReCore.AppImage");
+        let program = folder.path().join("recore.exe");
         std::fs::write(folder.path().join("unins000.exe"), b"").unwrap();
         if !cfg!(target_arch = "x86_64") {
             return;
@@ -694,30 +694,30 @@ mod tests {
     fn sums_are_read_as_sha256sum_writes_them() {
         let hash = "a".repeat(64);
         let text = format!(
-            "{hash}  Yapfast-1.AppImage\n{hash} *binary.exe\nnot a sum line\n{} short\n{} nothex.bin\n",
+            "{hash}  ReCore-1.AppImage\n{hash} *binary.exe\nnot a sum line\n{} short\n{} nothex.bin\n",
             "b".repeat(8),
             "z".repeat(64),
         );
         let sums = parse_sums(&text);
         assert_eq!(sums.len(), 2);
-        assert_eq!(sums["Yapfast-1.AppImage"], hash);
+        assert_eq!(sums["ReCore-1.AppImage"], hash);
         assert_eq!(sums["binary.exe"], hash);
     }
 
     #[test]
     fn the_windows_command_quotes_every_path_and_refuses_odd_ones() {
         let line = windows_command(
-            Path::new(r"C:\Temp\yapfast-update\Setup.exe"),
-            Path::new(r"C:\Users\Jörg Müller\AppData\Local\Programs\Yapfast\yapfast.exe"),
+            Path::new(r"C:\Temp\recore-update\Setup.exe"),
+            Path::new(r"C:\Users\Jörg Müller\AppData\Local\Programs\ReCore\recore.exe"),
             &[],
-            Path::new(r"C:\Temp\yapfast-update\Setup.log"),
+            Path::new(r"C:\Temp\recore-update\Setup.log"),
         )
         .unwrap();
         assert_eq!(
             line,
-            "start \"\" /wait \"C:\\Temp\\yapfast-update\\Setup.exe\" /SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /LOG=\"C:\\Temp\\yapfast-update\\Setup.log\" & start \"\" \"C:\\Users\\Jörg Müller\\AppData\\Local\\Programs\\Yapfast\\yapfast.exe\" & del /q \"C:\\Temp\\yapfast-update\\Setup.exe\""
+            "start \"\" /wait \"C:\\Temp\\recore-update\\Setup.exe\" /SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /LOG=\"C:\\Temp\\recore-update\\Setup.log\" & start \"\" \"C:\\Users\\Jörg Müller\\AppData\\Local\\Programs\\ReCore\\recore.exe\" & del /q \"C:\\Temp\\recore-update\\Setup.exe\""
         );
-        for odd in [r"C:\100%\yapfast.exe", "C:\\a\"b\\yapfast.exe"] {
+        for odd in [r"C:\100%\recore.exe", "C:\\a\"b\\recore.exe"] {
             assert_eq!(
                 windows_command(Path::new("s.exe"), Path::new(odd), &[], Path::new("s.log")),
                 None
@@ -813,7 +813,7 @@ mod tests {
         let runtime = BackgroundRuntime::new().unwrap();
         runtime.block_on(async {
             let new = b"#!/bin/sh\nexit 0\n".to_vec();
-            let name = "Yapfast-0.4.1-windows-x64-setup.exe";
+            let name = "ReCore-0.4.1-windows-x64-setup.exe";
             let sums = format!("{}  {name}\n", sha(&new)).into_bytes();
             for (signature, error) in [
                 (Some(b"".to_vec()), "doesn't check out"),
@@ -831,7 +831,7 @@ mod tests {
                         .find(|asset| asset.name == name)
                         .unwrap()
                         .clone(),
-                    program: folder.path().join("yapfast.exe"),
+                    program: folder.path().join("recore.exe"),
                 };
                 let progress = Arc::new(Progress::default());
                 let result = prepare(&runtime, &client(), &release, &target, progress.clone())
@@ -862,16 +862,16 @@ mod tests {
 
     async fn matching_download(runtime: &BackgroundRuntime) {
         let new = b"#!/bin/sh\nexit 0\n".to_vec();
-        let name = "Yapfast-0.4.1-windows-x64-setup.exe";
+        let name = "ReCore-0.4.1-windows-x64-setup.exe";
         let sums = format!("{}  {name}\n", sha(&new)).into_bytes();
         let base = serve(vec![
-            ("Yapfast-0.4.1-windows-x64-setup.exe", new.clone()),
+            ("ReCore-0.4.1-windows-x64-setup.exe", new.clone()),
             ("SHA256SUMS.txt", sums),
             ("SHA256SUMS.txt.minisig", signed("installer")),
         ]);
         let release = served_release(&base);
         let folder = tempfile::tempdir().unwrap();
-        let program = folder.path().join("yapfast.exe");
+        let program = folder.path().join("recore.exe");
         let target = Target::Installer {
             asset: release
                 .assets
@@ -903,11 +903,11 @@ mod tests {
     }
 
     async fn mismatched_download(runtime: &BackgroundRuntime) {
-        let name = "Yapfast-0.4.1-windows-x64-setup.exe";
+        let name = "ReCore-0.4.1-windows-x64-setup.exe";
         let sums = format!("{}  {name}\n", sha(b"what was published")).into_bytes();
         let base = serve(vec![
             (
-                "Yapfast-0.4.1-windows-x64-setup.exe",
+                "ReCore-0.4.1-windows-x64-setup.exe",
                 b"something else".to_vec(),
             ),
             ("SHA256SUMS.txt", sums),
@@ -922,7 +922,7 @@ mod tests {
                 .find(|a| a.name == name)
                 .unwrap()
                 .clone(),
-            program: folder.path().join("yapfast.exe"),
+            program: folder.path().join("recore.exe"),
         };
         let error = prepare(
             runtime,
@@ -937,7 +937,7 @@ mod tests {
         assert!(!target.part().exists());
         // A release that publishes no sum for the file isn't trusted either.
         let base = serve(vec![
-            ("Yapfast-0.4.1-windows-x64-setup.exe", b"x".to_vec()),
+            ("ReCore-0.4.1-windows-x64-setup.exe", b"x".to_vec()),
             ("SHA256SUMS.txt", b"".to_vec()),
             ("SHA256SUMS.txt.minisig", signed("empty")),
         ]);
@@ -967,9 +967,9 @@ mod tests {
         if !cfg!(target_arch = "x86_64") {
             return;
         }
-        let name = "Yapfast-0.4.1-x86_64.AppImage";
+        let name = "ReCore-0.4.1-x86_64.AppImage";
         let folder = tempfile::tempdir().unwrap();
-        let current = folder.path().join("Yapfast.AppImage");
+        let current = folder.path().join("ReCore.AppImage");
         std::fs::write(&current, b"old").unwrap();
         for (script, works, signature) in [
             (&b"#!/bin/sh\nexit 0\n"[..], true, "appimage-works"),
@@ -977,7 +977,7 @@ mod tests {
         ] {
             let sums = format!("{}  {name}\n", sha(script)).into_bytes();
             let base = serve(vec![
-                ("Yapfast-0.4.1-x86_64.AppImage", script.to_vec()),
+                ("ReCore-0.4.1-x86_64.AppImage", script.to_vec()),
                 ("SHA256SUMS.txt", sums),
                 ("SHA256SUMS.txt.minisig", signed(signature)),
             ]);

@@ -1,4 +1,4 @@
-# Yapfast's Discord-only build, as the releases ship it, for the flake at the
+# ReCore's Discord-only build, as the releases ship it, for the flake at the
 # repository's root. `pkgs` carries rust-overlay, for the pinned toolchain.
 # `commit` and `date` name what it's built from, which its build script can't
 # ask Git for in the sandbox, and `release` makes it call itself a stable
@@ -10,7 +10,7 @@ let
   native = import ./native.nix { inherit pkgs; };
   toolchain = pkgs.rust-bin.fromRustupToolchainFile ../rust-toolchain.toml;
   rustPlatform = pkgs.makeRustPlatform { cargo = toolchain; rustc = toolchain; };
-  id = "io.github.yapfast.Yapfast";
+  id = "io.github.leriart.ReCore";
   deepFilterHash = "sha256-JxvK5/PX29o23Pq9cNpTSyuAB7j9HszzDGHC2fOw74Y=";
   # deep_filter embeds a model from its repository's models/ folder, outside
   # the crate, which vendoring leaves out; this is the commit Cargo.lock pins.
@@ -26,7 +26,7 @@ let
     };
 in
 rustPlatform.buildRustPackage {
-  pname = "yapfast";
+  pname = "recore";
   inherit ((lib.importTOML ../Cargo.toml).package) version;
   # Only what the build reads, so a change to the docs or tests rebuilds nothing.
   src = lib.fileset.toSource {
@@ -62,9 +62,9 @@ rustPlatform.buildRustPackage {
     PROTOC = "${pkgs.protobuf}/bin/protoc";
     LK_CUSTOM_WEBRTC = "${native.webrtc}";
   }
-  // lib.optionalAttrs (commit != "") { YAPFAST_COMMIT = commit; }
-  // lib.optionalAttrs (date != "") { YAPFAST_COMMIT_DATE = date; }
-  // lib.optionalAttrs release { YAPFAST_RELEASE = "1"; };
+  // lib.optionalAttrs (commit != "") { RECORE_COMMIT = commit; }
+  // lib.optionalAttrs (date != "") { RECORE_COMMIT_DATE = date; }
+  // lib.optionalAttrs release { RECORE_RELEASE = "1"; };
   preBuild = ''
     chmod u+w "$NIX_BUILD_TOP/cargo-vendor-dir"
     install -Dm644 ${deepFilter}/models/DeepFilterNet3_onnx.tar.gz -t "$NIX_BUILD_TOP/cargo-vendor-dir/models"
@@ -81,15 +81,15 @@ rustPlatform.buildRustPackage {
     install -Dm644 packaging/linux/${id}.metainfo.xml -t "$out/share/metainfo"
     # The GPU, audio and screen capture libraries are loaded at runtime, and
     # NixOS keeps the GPU driver's in /run/opengl-driver.
-    wrapProgram "$out/bin/yapfast" \
+    wrapProgram "$out/bin/recore" \
       --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath native.runtimeLibraries} \
       --suffix LD_LIBRARY_PATH : /run/opengl-driver/lib
   '';
   meta = {
     description = "Native Discord client that stays light on memory";
-    homepage = "https://github.com/yapfast/yapfast";
+    homepage = "https://github.com/leriart/ReCore";
     license = lib.licenses.gpl3Plus;
-    mainProgram = "yapfast";
+    mainProgram = "recore";
     platforms = [ "x86_64-linux" ];
   };
 }

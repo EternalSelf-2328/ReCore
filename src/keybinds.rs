@@ -2,10 +2,10 @@
 //! such as push to talk or toggling mute. One [`Watcher`] watches them all:
 //! through the GlobalShortcuts portal on Wayland, XInput 2's raw key events on
 //! X11, and low-level keyboard and mouse hooks on Windows. Where none of these
-//! works, they work while Yapfast's window has the focus, and settings say so.
+//! works, they work while ReCore's window has the focus, and settings say so.
 //!
 //! Holding keybinds (push to talk, push to mute) set
-//! [`yapfast_core::push_to_talk`]'s atomics from the thread that hears the
+//! [`recore_core::push_to_talk`]'s atomics from the thread that hears the
 //! key, so the microphone never waits on the window; the others go to the
 //! window's event loop through [`Toggled`].
 use std::sync::{
@@ -13,8 +13,8 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-pub use yapfast_core::keybinds::*;
-use yapfast_core::runtime::BackgroundRuntime;
+pub use recore_core::keybinds::*;
+use recore_core::runtime::BackgroundRuntime;
 
 /// Hears toggling keybinds, from any thread; see [`Action`].
 pub type Toggled = Arc<dyn Fn(Action) + Send + Sync>;
@@ -29,8 +29,8 @@ impl Sink {
     fn act(&self, action: Action, down: bool) {
         match action {
             Action::Unassigned => {}
-            Action::PushToTalk => yapfast_core::push_to_talk::hold(down),
-            Action::PushToMute => yapfast_core::push_to_talk::hold_mute(down),
+            Action::PushToTalk => recore_core::push_to_talk::hold(down),
+            Action::PushToMute => recore_core::push_to_talk::hold_mute(down),
             toggles if down => (self.toggled)(toggles),
             _ => {}
         }
@@ -350,7 +350,7 @@ impl Watcher {
         {
             let _ = (runtime, sink);
             report(Status {
-                reach: Reach::Focused("Yapfast can't watch keys in other apps on this system yet"),
+                reach: Reach::Focused("ReCore can't watch keys in other apps on this system yet"),
                 given: HashMap::new(),
             });
         }
@@ -371,8 +371,8 @@ impl Drop for Watcher {
         if let Some((mut matcher, sink)) = taken {
             matcher.release_all(&mut |action, down| sink.act(action, down));
         }
-        yapfast_core::push_to_talk::hold(false);
-        yapfast_core::push_to_talk::hold_mute(false);
+        recore_core::push_to_talk::hold(false);
+        recore_core::push_to_talk::hold_mute(false);
     }
 }
 
@@ -388,6 +388,7 @@ mod linux {
 
     use anyhow::{Context, Result, anyhow, bail};
     use futures_util::StreamExt;
+    use recore_core::runtime::{BackgroundRuntime, BackgroundTask};
     use x11rb::{
         connection::Connection as _,
         protocol::{
@@ -397,7 +398,6 @@ mod linux {
         },
         rust_connection::RustConnection,
     };
-    use yapfast_core::runtime::{BackgroundRuntime, BackgroundTask};
     use zbus::{
         Connection, MessageStream,
         zvariant::{ObjectPath, OwnedObjectPath, OwnedValue, Value},
@@ -412,7 +412,7 @@ mod linux {
     }
 
     /// A shortcut to bind through the portal: its id, what settings call
-    /// it, and the keys Yapfast would like for it.
+    /// it, and the keys ReCore would like for it.
     pub(super) struct Wanted {
         pub id: String,
         pub description: &'static str,
@@ -453,7 +453,7 @@ mod linux {
                             );
                             report(Status {
                                 reach: Reach::Focused(
-                                    "Your desktop doesn't offer Yapfast global shortcuts",
+                                    "Your desktop doesn't offer ReCore global shortcuts",
                                 ),
                                 given: HashMap::new(),
                             });
@@ -472,7 +472,7 @@ mod linux {
                 Err(error) => {
                     tracing::info!(error = format!("{error:#}"), "no global keybinds on X11");
                     report(Status {
-                        reach: Reach::Focused("Yapfast couldn't watch keys in other apps"),
+                        reach: Reach::Focused("ReCore couldn't watch keys in other apps"),
                         given: HashMap::new(),
                     });
                     None
@@ -495,7 +495,7 @@ mod linux {
         report: &Report,
     ) -> Result<()> {
         let connection = Connection::session().await?;
-        // Names Yapfast to the portal, which outside a sandbox can't tell
+        // Names ReCore to the portal, which outside a sandbox can't tell
         // the app otherwise; older portals don't have it.
         let _ = connection
             .call_method(
@@ -516,7 +516,7 @@ mod linux {
             .context("no name on the session bus")?
             .trim_start_matches(':')
             .replace('.', "_");
-        let token = format!("yapfast_{}", std::process::id());
+        let token = format!("recore_{}", std::process::id());
         let request = |step: &str| format!("{PATH}/request/{sender}/{token}_{step}");
 
         let options = HashMap::from([
@@ -700,7 +700,7 @@ mod linux {
             let stop = Arc::new(AtomicBool::new(false));
             let (waiting, stopped) = (connection.clone(), stop.clone());
             std::thread::Builder::new()
-                .name("yapfast-keybinds".into())
+                .name("recore-keybinds".into())
                 .spawn(move || {
                     let out = &mut |action, down| sink.act(action, down);
                     while !stopped.load(Ordering::Relaxed) {
@@ -716,7 +716,7 @@ mod linux {
                             Err(error) => {
                                 tracing::warn!(%error, "lost the X server's keys");
                                 report(Status {
-                                    reach: Reach::Focused("Yapfast lost the X server's keys"),
+                                    reach: Reach::Focused("ReCore lost the X server's keys"),
                                     given: HashMap::new(),
                                 });
                                 break;
@@ -760,7 +760,7 @@ mod linux {
         /// Waits up to two seconds for push to talk to be `held` or not.
         fn wait_held(held: bool) {
             let until = Instant::now() + Duration::from_secs(2);
-            while yapfast_core::push_to_talk::held() != held {
+            while recore_core::push_to_talk::held() != held {
                 assert!(Instant::now() < until, "the key wasn't held: {held}");
                 std::thread::sleep(Duration::from_millis(10));
             }
@@ -817,7 +817,7 @@ mod linux {
             // Another key leaves it alone.
             xdotool(&["key", "b"]);
             std::thread::sleep(Duration::from_millis(100));
-            assert!(!yapfast_core::push_to_talk::held());
+            assert!(!recore_core::push_to_talk::held());
             // The right Ctrl holds the combination as well as the left.
             xdotool(&["key", "Control_R+m"]);
             xdotool(&["key", "m"]);
@@ -992,7 +992,7 @@ mod linux {
             let _task =
                 runtime.spawn(async move { portal(wanted, &mut matcher, &sink, &report).await });
             let until = Instant::now() + Duration::from_secs(5);
-            while !yapfast_core::push_to_talk::held() {
+            while !recore_core::push_to_talk::held() {
                 assert!(
                     Instant::now() < until,
                     "the shortcut wasn't held: {:?}",
@@ -1109,7 +1109,7 @@ mod windows {
                 .collect();
             let (started, thread) = mpsc::sync_channel(1);
             let spawned = std::thread::Builder::new()
-                .name("yapfast-keybinds".into())
+                .name("recore-keybinds".into())
                 .spawn(move || {
                     HOOKED.set(Some(Hooked {
                         matcher,
@@ -1176,9 +1176,7 @@ mod windows {
                 None => {
                     tracing::warn!("Windows didn't install the keybind hooks");
                     report(Status {
-                        reach: Reach::Focused(
-                            "Windows didn't let Yapfast watch keys in other apps",
-                        ),
+                        reach: Reach::Focused("Windows didn't let ReCore watch keys in other apps"),
                         given: HashMap::new(),
                     });
                     None
@@ -1501,7 +1499,7 @@ mod windows {
 
         fn wait_held(held: bool) {
             let until = Instant::now() + Duration::from_secs(2);
-            while yapfast_core::push_to_talk::held() != held {
+            while recore_core::push_to_talk::held() != held {
                 assert!(Instant::now() < until, "the key wasn't held: {held}");
                 std::thread::sleep(Duration::from_millis(10));
             }
@@ -1536,18 +1534,18 @@ mod windows {
                 Matcher::new(&[watched(Action::PushToTalk, &[0x2F])]),
                 sink().0,
             ); // V
-            yapfast_core::push_to_talk::hold(false);
+            recore_core::push_to_talk::hold(false);
             key(WM_KEYDOWN, 0, 0x56, LLKHF_INJECTED); // VK_V
-            assert!(yapfast_core::push_to_talk::held());
+            assert!(recore_core::push_to_talk::held());
             key(WM_KEYUP, 0, 0x56, LLKHF_INJECTED);
-            assert!(!yapfast_core::push_to_talk::held());
+            assert!(!recore_core::push_to_talk::held());
             // The made-up Left Ctrl of AltGr holds nothing.
             hooked_here(
                 Matcher::new(&[watched(Action::PushToTalk, &[0x1D])]),
                 sink().0,
             );
             key(WM_KEYDOWN, 0x21D, 0xA2, 0);
-            assert!(!yapfast_core::push_to_talk::held());
+            assert!(!recore_core::push_to_talk::held());
             HOOKED.take();
         }
 
@@ -1560,14 +1558,14 @@ mod windows {
                 Matcher::new(&[watched(Action::PushToTalk, &[0xE01D])]),
                 sink().0,
             ); // Right Ctrl
-            yapfast_core::push_to_talk::hold(false);
+            recore_core::push_to_talk::hold(false);
             key(WM_KEYDOWN, 0x1D, 0xA2, 0);
-            assert!(!yapfast_core::push_to_talk::held(), "Left Ctrl");
+            assert!(!recore_core::push_to_talk::held(), "Left Ctrl");
             key(WM_KEYUP, 0x1D, 0xA2, 0);
             key(WM_KEYDOWN, 0x1D, 0xA3, LLKHF_EXTENDED);
-            assert!(yapfast_core::push_to_talk::held());
+            assert!(recore_core::push_to_talk::held());
             key(WM_KEYUP, 0x1D, 0xA3, LLKHF_EXTENDED);
-            assert!(!yapfast_core::push_to_talk::held());
+            assert!(!recore_core::push_to_talk::held());
             HOOKED.take();
         }
 
@@ -1591,28 +1589,28 @@ mod windows {
                 }
             }
 
-            yapfast_core::push_to_talk::hold(false);
+            recore_core::push_to_talk::hold(false);
             hooked_here(
                 Matcher::new(&[watched(Action::PushToTalk, &[MOUSE_4])]),
                 sink().0,
             );
             event(WM_XBUTTONDOWN, XBUTTON2);
-            assert!(!yapfast_core::push_to_talk::held());
+            assert!(!recore_core::push_to_talk::held());
             event(WM_XBUTTONDOWN, XBUTTON1);
-            assert!(yapfast_core::push_to_talk::held());
+            assert!(recore_core::push_to_talk::held());
             event(WM_XBUTTONUP, XBUTTON2);
-            assert!(yapfast_core::push_to_talk::held());
+            assert!(recore_core::push_to_talk::held());
             event(WM_XBUTTONUP, XBUTTON1);
-            assert!(!yapfast_core::push_to_talk::held());
+            assert!(!recore_core::push_to_talk::held());
 
             hooked_here(
                 Matcher::new(&[watched(Action::PushToTalk, &[MOUSE_5])]),
                 sink().0,
             );
             event(WM_XBUTTONDOWN, XBUTTON2);
-            assert!(yapfast_core::push_to_talk::held());
+            assert!(recore_core::push_to_talk::held());
             event(WM_XBUTTONUP, XBUTTON2);
-            assert!(!yapfast_core::push_to_talk::held());
+            assert!(!recore_core::push_to_talk::held());
             HOOKED.take();
         }
 
@@ -1637,7 +1635,7 @@ mod windows {
             send_mouse(XBUTTON2, false);
             send_mouse(XBUTTON2, true);
             std::thread::sleep(Duration::from_millis(100));
-            assert!(!yapfast_core::push_to_talk::held());
+            assert!(!recore_core::push_to_talk::held());
             drop(hook);
         }
 
@@ -1667,7 +1665,7 @@ mod windows {
             send(0x30, false); // B
             send(0x30, true);
             std::thread::sleep(Duration::from_millis(100));
-            assert!(!yapfast_core::push_to_talk::held());
+            assert!(!recore_core::push_to_talk::held());
             send(0x1D, false);
             send(0x32, false);
             send(0x32, false); // a repeat

@@ -1,6 +1,6 @@
 // Matrix sync's encrypted-event futures exceed rustc's default trait depth.
 #![recursion_limit = "256"]
-// Opened from Explorer, Yapfast opens no console window beside its own; see
+// Opened from Explorer, ReCore opens no console window beside its own; see
 // `has_console`.
 #![cfg_attr(all(windows, feature = "desktop"), windows_subsystem = "windows")]
 
@@ -31,7 +31,7 @@ mod protocol;
 /// The window's app ID on Linux, and the name of its desktop entry and
 /// icon; keybinds' portal session goes by it too.
 #[cfg(feature = "desktop")]
-pub const APP_ID: &str = "io.github.yapfast.Yapfast";
+pub const APP_ID: &str = "io.github.leriart.ReCore";
 #[cfg(feature = "desktop")]
 mod tray;
 #[cfg(feature = "desktop")]
@@ -40,14 +40,14 @@ mod update;
 mod window_place;
 
 use anyhow::{Context, Result, bail};
-use yapfast_core::{cli, logging, runtime::BackgroundRuntime};
+use recore_core::{cli, logging, runtime::BackgroundRuntime};
 #[cfg(feature = "matrix")]
-use yapfast_core::{experiment, voice_demo};
+use recore_core::{experiment, voice_demo};
 
 /// glibc maps a block of 128 KiB or more on its own and unmaps it when freed,
 /// but each such free raises that threshold to the block's size, up to 32 MiB:
 /// after the first decoded picture, every later one stayed in the heap. With a
-/// fixed threshold and glibc's own count of arenas, Yapfast held 9.3 MiB less in
+/// fixed threshold and glibc's own count of arenas, ReCore held 9.3 MiB less in
 /// a call than with two arenas, and 5.1 MiB less after it; see
 /// docs/measurements/README.md. The environment's own setting wins.
 fn fix_mmap_threshold() {
@@ -60,7 +60,7 @@ fn fix_mmap_threshold() {
         unsafe extern "C" {
             fn mallopt(parameter: std::ffi::c_int, value: std::ffi::c_int) -> std::ffi::c_int;
         }
-        // SAFETY: this runs first in main, before Yapfast starts any other thread.
+        // SAFETY: this runs first in main, before ReCore starts any other thread.
         unsafe { mallopt(M_MMAP_THRESHOLD, 128 * 1024) };
     }
 }
@@ -69,9 +69,9 @@ fn main() -> Result<()> {
     fix_mmap_threshold();
     // A stream worker starts nothing else: no UI, runtime or TLS.
     #[cfg(feature = "discord")]
-    if std::env::args().nth(1).as_deref() == Some(yapfast_core::stream_worker::ARGUMENT) {
+    if std::env::args().nth(1).as_deref() == Some(recore_core::stream_worker::ARGUMENT) {
         logging::init_to_stderr();
-        return yapfast_core::stream_worker::run();
+        return recore_core::stream_worker::run();
     }
     let mut arguments: Vec<_> = std::env::args().skip(1).collect();
     // First, so nothing a desktop handed over with the link is read as an option.
@@ -91,7 +91,7 @@ fn main() -> Result<()> {
 
     #[cfg(all(windows, feature = "desktop"))]
     match data_directory(&arguments) {
-        Some(directory) if !has_console() => logging::init_to_file(&directory.join("yapfast.log")),
+        Some(directory) if !has_console() => logging::init_to_file(&directory.join("recore.log")),
         _ => logging::init(),
     }
     #[cfg(not(all(windows, feature = "desktop")))]
@@ -105,11 +105,11 @@ fn main() -> Result<()> {
     let open_link = links.pop().and_then(|link| {
         let written = written_link(&link);
         if written.is_none() {
-            tracing::info!("Yapfast has no place for the link it was handed; starting without it");
+            tracing::info!("ReCore has no place for the link it was handed; starting without it");
         }
         written
     });
-    yapfast_core::init_tls()?;
+    recore_core::init_tls()?;
 
     let runtime = BackgroundRuntime::new().context("could not start background workers")?;
     #[cfg(feature = "matrix")]
@@ -126,9 +126,9 @@ fn main() -> Result<()> {
         open_link,
     };
     match arguments.as_slice() {
-        [] => launch(runtime, yapfast_core::default_directory()?, false, start),
+        [] => launch(runtime, recore_core::default_directory()?, false, start),
         [argument] if argument == "--preview" => {
-            launch(runtime, yapfast_core::default_directory()?, true, start)
+            launch(runtime, recore_core::default_directory()?, true, start)
         }
         [argument, path] if argument == "--data-dir" => launch(runtime, path.into(), false, start),
         [preview, argument, path] if preview == "--preview" && argument == "--data-dir" => {
@@ -136,13 +136,13 @@ fn main() -> Result<()> {
         }
         #[cfg(feature = "desktop")]
         [argument] if argument == RELEASE_DISCORD_LINKS => {
-            protocol::set_discord_enabled(&yapfast_core::default_directory()?, false)
+            protocol::set_discord_enabled(&recore_core::default_directory()?, false)
                 .context("could not give Discord links back")
         }
         [argument] if argument == "--smoke-test" => {
-            runtime.block_on(runtime.spawn(yapfast_core::check_build()))?;
+            runtime.block_on(runtime.spawn(recore_core::check_build()))?;
             println!(
-                "Yapfast {}: Tokio, LiveKit{}{} build check passed.",
+                "ReCore {}: Tokio, LiveKit{}{} build check passed.",
                 env!("CARGO_PKG_VERSION"),
                 if cfg!(feature = "matrix") {
                     ", Matrix SDK, MatrixRTC"
@@ -176,11 +176,11 @@ fn main() -> Result<()> {
             println!("{}", help());
             Ok(())
         }
-        _ => bail!("unknown argument; run yapfast --help"),
+        _ => bail!("unknown argument; run recore --help"),
     }
 }
 
-/// Whether Yapfast's output reaches someone: a file or pipe it was given, or
+/// Whether ReCore's output reaches someone: a file or pipe it was given, or
 /// the console it was started from, which it joins. A Windows program
 /// without a console of its own gets neither when opened from Explorer.
 #[cfg(all(windows, feature = "desktop"))]
@@ -189,7 +189,7 @@ fn has_console() -> bool {
         Foundation::INVALID_HANDLE_VALUE,
         System::Console::{ATTACH_PARENT_PROCESS, AttachConsole, GetStdHandle, STD_OUTPUT_HANDLE},
     };
-    // SAFETY: neither call takes a pointer; Yapfast's other threads haven't started.
+    // SAFETY: neither call takes a pointer; ReCore's other threads haven't started.
     unsafe {
         let output = GetStdHandle(STD_OUTPUT_HANDLE);
         (!output.is_null() && output != INVALID_HANDLE_VALUE)
@@ -197,7 +197,7 @@ fn has_console() -> bool {
     }
 }
 
-/// The folder Yapfast keeps its files in, which holds the log without a console.
+/// The folder ReCore keeps its files in, which holds the log without a console.
 #[cfg(all(windows, feature = "desktop"))]
 fn data_directory(arguments: &[String]) -> Option<std::path::PathBuf> {
     match arguments
@@ -205,7 +205,7 @@ fn data_directory(arguments: &[String]) -> Option<std::path::PathBuf> {
         .position(|argument| argument == "--data-dir")
     {
         Some(index) => arguments.get(index + 1).map(Into::into),
-        None => yapfast_core::default_directory().ok(),
+        None => recore_core::default_directory().ok(),
     }
 }
 
@@ -213,11 +213,11 @@ fn data_directory(arguments: &[String]) -> Option<std::path::PathBuf> {
 /// in this build's window.
 fn help() -> String {
     let window = if cfg!(feature = "desktop") {
-        "Without arguments, opens Yapfast's window and restores a saved session.\n\
+        "Without arguments, opens ReCore's window and restores a saved session.\n\
          --renderer selects tiny-skia (software) or wgpu (gpu) for this start, over the setting.\n\
-         If wgpu fails to start, Yapfast restarts with tiny-skia.\n\
+         If wgpu fails to start, ReCore restarts with tiny-skia.\n\
          --background starts in the system tray with a saved session, as starting at sign-in does.\n\
-         LINK opens a Discord server, channel, message, profile or invite link in Yapfast.\n\
+         LINK opens a Discord server, channel, message, profile or invite link in ReCore.\n\
          --release-discord-links gives discord:// links back to the app that had them, as uninstalling does.\n"
     } else {
         "This build has no window; only the commands below that need none run.\n"
@@ -228,14 +228,14 @@ fn help() -> String {
         ""
     };
     format!(
-        "Usage: yapfast [--preview] [--data-dir PATH] [--renderer gpu|software] [--background] [LINK]\n\
-         \x20      yapfast [--smoke-test | --version | --help{links}]\n\
-         \x20      yapfast --call-experiment [--resume PATH]\n\
-         \x20      yapfast [--voice-demo | --audio-devices]\n\
-         \x20      yapfast session login --homeserver URL --user USER --password-stdin [--data-dir PATH]\n\
-         \x20      yapfast session status [--data-dir PATH]\n\
-         \x20      yapfast session recover --key-stdin [--data-dir PATH]\n\
-         \x20      yapfast session logout [--data-dir PATH]\n\
+        "Usage: recore [--preview] [--data-dir PATH] [--renderer gpu|software] [--background] [LINK]\n\
+         \x20      recore [--smoke-test | --version | --help{links}]\n\
+         \x20      recore --call-experiment [--resume PATH]\n\
+         \x20      recore [--voice-demo | --audio-devices]\n\
+         \x20      recore session login --homeserver URL --user USER --password-stdin [--data-dir PATH]\n\
+         \x20      recore session status [--data-dir PATH]\n\
+         \x20      recore session recover --key-stdin [--data-dir PATH]\n\
+         \x20      recore session logout [--data-dir PATH]\n\
          \n\
          {window}\
          --preview opens local sample conversations without connecting to Matrix.\n\
@@ -250,9 +250,9 @@ fn help() -> String {
 
 /// Set only for a process that replaces a failed GPU start.
 #[cfg(feature = "desktop")]
-const GPU_FALLBACK_REASON: &str = "YAPFAST_GPU_FALLBACK_REASON";
+const GPU_FALLBACK_REASON: &str = "RECORE_GPU_FALLBACK_REASON";
 
-/// How Yapfast starts its window, besides its folder and the preview.
+/// How ReCore starts its window, besides its folder and the preview.
 #[cfg_attr(
     not(feature = "desktop"),
     allow(dead_code, reason = "only the window uses it")
@@ -294,7 +294,7 @@ fn finish_update(prepared: update::install::Prepared, arguments: &[String]) -> R
 /// so a restart follows the setting, nor `--background`: the window shows.
 #[cfg(feature = "desktop")]
 fn relaunch(arguments: &[String], gpu_failure: Option<&str>, link: Option<&str>) -> Result<()> {
-    let program = std::env::current_exe().context("could not find Yapfast to restart it")?;
+    let program = std::env::current_exe().context("could not find ReCore to restart it")?;
     relaunch_program(&program, arguments, gpu_failure, link)
 }
 
@@ -322,19 +322,19 @@ fn relaunch_program(
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        Err(command.exec()).context("could not restart Yapfast")
+        Err(command.exec()).context("could not restart ReCore")
     }
     #[cfg(not(unix))]
     {
         // Waiting for the replacement would keep this process and its stopped
         // window alive until the new client closes.
-        command.spawn().context("could not restart Yapfast")?;
+        command.spawn().context("could not restart ReCore")?;
         std::process::exit(0);
     }
 }
 
 /// Opens the window (docs/client/window.md) with the desktop around it
-/// (`desktop`): one Yapfast for each data folder, the desktop entry,
+/// (`desktop`): one ReCore for each data folder, the desktop entry,
 /// starting at sign-in and Discord's links kept up to date.
 #[cfg(feature = "desktop")]
 fn launch(
@@ -367,13 +367,13 @@ fn launch(
         }
         autostart::refresh();
     }
-    yapfast_core::keep_discord_files(&root);
+    recore_core::keep_discord_files(&root);
     let runtime = std::sync::Arc::new(runtime);
     let shell = desktop::Shell::new(runtime.clone(), preview, instance);
-    let ran = yapfast_iced::run(
+    let ran = recore_iced::run(
         runtime,
         root,
-        yapfast_iced::Options {
+        recore_iced::Options {
             preview,
             renderer: start.renderer.map(|renderer| renderer == "gpu"),
             gpu_failure: std::env::var(GPU_FALLBACK_REASON).ok(),
@@ -382,7 +382,7 @@ fn launch(
             desktop: shell.clone(),
             build: {
                 let build = build_info::current();
-                yapfast_iced::Build {
+                recore_iced::Build {
                     headline: build.headline(),
                     channel: build.channel().label().to_owned(),
                     details: build.details(),
@@ -395,20 +395,20 @@ fn launch(
     );
     shell.closed();
     match ran? {
-        yapfast_iced::Exit::Closed => Ok(()),
-        yapfast_iced::Exit::Update => match shell.take_prepared() {
+        recore_iced::Exit::Closed => Ok(()),
+        recore_iced::Exit::Update => match shell.take_prepared() {
             Some(prepared) => finish_update(prepared, start.arguments),
             None => Ok(()),
         },
         // The GPU failed before anything opened the link: the next start does.
-        yapfast_iced::Exit::UseSoftware(reason) => {
+        recore_iced::Exit::UseSoftware(reason) => {
             relaunch(start.arguments, Some(&reason), start.open_link.as_deref())
         }
-        yapfast_iced::Exit::Restart => relaunch(start.arguments, None, None),
+        recore_iced::Exit::Restart => relaunch(start.arguments, None, None),
     }
 }
 
-/// Whether Settings → Advanced allows more than one Yapfast on a folder, as
+/// Whether Settings → Advanced allows more than one ReCore on a folder, as
 /// `layout.json` keeps it.
 #[cfg(feature = "desktop")]
 fn multiple_windows(root: &std::path::Path) -> bool {
@@ -433,8 +433,8 @@ fn flag_argument(arguments: &mut Vec<String>, flag: &str) -> bool {
     arguments.len() != before
 }
 
-/// Comes before the link a desktop hands Yapfast, as its registrations
-/// write it: `yapfast --open-link LINK`.
+/// Comes before the link a desktop hands ReCore, as its registrations
+/// write it: `recore --open-link LINK`.
 const OPEN_LINK: &str = "--open-link";
 
 /// Gives `discord:` back to the app that had it; the uninstaller runs it.
@@ -460,22 +460,22 @@ fn handed_link(arguments: &mut Vec<String>) -> Result<Option<String>, usize> {
 }
 
 /// Links given as arguments, taking them out of `arguments`: anything
-/// under `discord:` or `yapfast:`, whether or not Yapfast has a place for
+/// under `discord:` or `recore:`, whether or not ReCore has a place for
 /// it, and Discord's web links that it has.
 fn link_arguments(arguments: &mut Vec<String>) -> Vec<String> {
     arguments
         .extract_if(.., |argument| {
             argument.split_once(':').is_some_and(|(scheme, _)| {
-                scheme.eq_ignore_ascii_case("discord") || scheme.eq_ignore_ascii_case("yapfast")
+                scheme.eq_ignore_ascii_case("discord") || scheme.eq_ignore_ascii_case("recore")
             }) || written_link(argument).is_some()
         })
         .collect()
 }
 
-/// A link as one word, when it names a place this Yapfast can open.
+/// A link as one word, when it names a place this ReCore can open.
 fn written_link(link: &str) -> Option<String> {
     #[cfg(feature = "desktop")]
-    return yapfast_core::discord::discord_link(link);
+    return recore_core::discord::discord_link(link);
     #[cfg(not(feature = "desktop"))]
     {
         let _ = link;
@@ -520,7 +520,7 @@ mod tests {
         assert_eq!(handed_link(&mut arguments), Ok(Some("--preview".into())));
         assert_eq!(arguments, ["--data-dir", "folder"]);
         // `discord://-/channels/1/2" --data-dir "\\host\share`, put
-        // into `"yapfast.exe" --open-link "%1"` as Windows does.
+        // into `"recore.exe" --open-link "%1"` as Windows does.
         let mut arguments = strings(&[
             OPEN_LINK,
             "discord://-/channels/1/2",
@@ -540,12 +540,12 @@ mod tests {
             "--data-dir",
             "folder",
             "discord://-/library",
-            "YAPFAST://channels/@me",
+            "RECORE://channels/@me",
             "https://example.com/channels/10/11",
         ]);
         assert_eq!(
             link_arguments(&mut arguments),
-            ["discord://-/library", "YAPFAST://channels/@me"]
+            ["discord://-/library", "RECORE://channels/@me"]
         );
         assert_eq!(
             arguments,

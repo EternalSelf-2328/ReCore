@@ -117,7 +117,7 @@ one they set whether the next call starts unmuted or deafened. The carets
 beside the mic and headphones open the input and output menus. Settings
 open on the section they last showed (`Window::settings_section`), My
 Account at first. While
-Yapfast is offline (not in the preview), Reconnect stands before Settings
+ReCore is offline (not in the preview), Reconnect stands before Settings
 and connects again at once (`Action::RetrySync`), greyed while a sync
 runs. The call's
 dock sits above the card while this account is in a call (see
@@ -139,7 +139,7 @@ signing out forgets them. Each change
 sets its one key in the file as
 it's kept in memory, and a thread of its own writes it a second after the
 changes stop (reading it, and the window ending, write what waits first),
-through a file beside it renamed over it (`yapfast_core::layout_file`).
+through a file beside it renamed over it (`recore_core::layout_file`).
 A key that doesn't read loses
 only itself, and a file that isn't a layout is kept aside as
 `layout.json.unread` rather than overwritten.
