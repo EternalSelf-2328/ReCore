@@ -743,14 +743,15 @@ pub fn colour_card<'a, M: Clone + 'a>(
     code: text_input::TextInput<'a, M>,
 ) -> Element<'a, M> {
     let (raised, edge) = (theme.raised, theme.edge);
+    let square = theme.square;
     iced::widget::opaque(
         container(column![pad, code.size(14).padding([12, 12])].spacing(14))
             .padding(10)
             .width(Length::Fill)
             .style(move |_| container::Style {
-                border: crate::style::edge(edge, 12.0),
+                border: crate::style::edge(edge, if square { 0.0 } else { 12.0 }),
                 shadow: crate::style::card_shadow(),
-                ..rounded(raised, 12)
+                ..rounded(raised, if square { 0.0 } else { 12.0 })
             }),
     )
 }
@@ -813,10 +814,11 @@ pub fn colour_row<'a, M: Clone + 'a>(
 /// round corners.
 pub fn card<'a, M: Clone + 'a>(theme: &Theme, body: impl Into<Element<'a, M>>) -> Element<'a, M> {
     let ground = theme.sidebar;
+    let radius = if theme.square { 0.0 } else { 8.0 };
     container(body)
         .padding(16)
         .width(Length::Fill)
-        .style(move |_| rounded(ground, 8))
+        .style(move |_| rounded(ground, radius))
         .into()
 }
 

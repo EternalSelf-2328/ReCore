@@ -119,12 +119,13 @@ pub fn dialog<'a, M: Clone + 'a>(
     on_outside: M,
 ) -> Element<'a, M> {
     let (ground, edge) = (theme.raised, theme.edge);
+    let square = theme.square;
     let card = opaque(
         container(body)
             .width(width)
             .style(move |_| container::Style {
                 background: Some(ground.into()),
-                border: crate::style::edge(edge, 12.0),
+                border: crate::style::edge(edge, if square { 0.0 } else { 12.0 }),
                 shadow: card_shadow(),
                 ..Default::default()
             }),
@@ -160,9 +161,10 @@ pub fn panel<'a, M: Clone + 'a>(
     on_outside: M,
 ) -> Element<'a, M> {
     let ground = theme.chat;
+    let radius = if theme.square { 0.0 } else { 8.0 };
     let mut card = container(body)
         .width(width)
-        .style(move |_| crate::style::rounded(ground, 8));
+        .style(move |_| crate::style::rounded(ground, radius));
     if let Some(height) = height {
         card = card.height(height);
     }

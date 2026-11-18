@@ -309,16 +309,27 @@ pub fn field_style(
         theme.accent,
         theme.selection,
     );
+    let square = theme.square;
+    let line = theme.line;
+    let void = theme.chat;
     move |_, status| text_input::Style {
-        background: ground.into(),
+        background: (if square { void } else { ground }).into(),
         border: Border {
-            color: Color { a: 0.8, ..accent },
-            width: if matches!(status, text_input::Status::Focused { .. }) {
+            color: if square {
+                if matches!(status, text_input::Status::Focused { .. }) {
+                    accent
+                } else {
+                    line
+                }
+            } else {
+                Color { a: 0.8, ..accent }
+            },
+            width: if square || matches!(status, text_input::Status::Focused { .. }) {
                 1.0
             } else {
                 0.0
             },
-            radius: 6.0.into(),
+            radius: if square { 0.0.into() } else { 6.0.into() },
         },
         icon: ink,
         placeholder: if enabled { hint } else { faint },
