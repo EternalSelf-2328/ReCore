@@ -74,9 +74,30 @@ const INTRO_CHANNEL: f32 = 203.0;
 const UNREAD_BAR: f32 = 32.0;
 const PRESENT_BAR: f32 = 36.0;
 /// A message that calls on this account: marigold, deeper under the
-/// pointer, with a 2 px edge.
+/// pointer, with a 2 px edge. ReCord tints it with the signal instead.
 const MENTIONED: Color = Color::from_rgba8(0xf8, 0xa5, 0x00, 0x1f as f32 / 255.0);
 const MENTIONED_HOVER: Color = Color::from_rgba8(0xf8, 0xa5, 0x00, 0x29 as f32 / 255.0);
+/// ReCord's mention wash: signal at 16%, 22% under the pointer.
+pub(super) fn mentioned(theme: &crate::theme::Theme) -> Color {
+    if theme.square {
+        Color {
+            a: 0.16,
+            ..theme.accent
+        }
+    } else {
+        MENTIONED
+    }
+}
+pub(super) fn mentioned_hover(theme: &crate::theme::Theme) -> Color {
+    if theme.square {
+        Color {
+            a: 0.22,
+            ..theme.accent
+        }
+    } else {
+        MENTIONED_HOVER
+    }
+}
 const MENTION_EDGE: f32 = 2.0;
 /// The marigold edge down the message the keys are stepping on.
 const KEYED_EDGE: f32 = 3.0;

@@ -8,8 +8,10 @@
 //! row (`edit.rs`), in a field of its own beside the draft.
 
 use iced::{
-    Alignment, Element, Length, Padding, Task, keyboard,
-    widget::{Id, Space, button, column, container, operation, row, text, tooltip},
+    Alignment, Color, Element, Length, Padding, Rectangle, Size, Task,
+    advanced::{Layout, layout, mouse, renderer, widget::Tree},
+    keyboard,
+    widget::{Id, Space, button, column, container, operation, row, stack, text, tooltip},
 };
 use recore_core::{
     application::{Action, Compose},
@@ -27,6 +29,8 @@ use crate::{
     popover::{Popover, Side},
     style::{corners, faded, rounded},
 };
+
+type Renderer = iced::Renderer;
 
 /// The composer's field and the inline edit's, for the app's focus tasks.
 pub const COMPOSER: &str = "composer";
@@ -769,6 +773,7 @@ pub fn composer_button(
     } else {
         faded(tint, 0.45)
     };
+    let enabled = message.is_some();
     let face = ctx.look.glyph(icon, glyph, tint).boxed(32);
     let face = button(face)
         .padding(0)
@@ -776,13 +781,22 @@ pub fn composer_button(
         .height(32)
         .on_press_maybe(message)
         .style(lit_style(None, ctx.look.theme.wash(0.1), 6.0));
-    tooltip(
+    let face = tooltip(
         face,
         controls::tip(ctx.look.theme, label),
         tooltip::Position::Top,
     )
-    .gap(6)
-    .into()
+    .gap(6);
+    // ReCord's composer tools tick under the pointer.
+    if enabled {
+        iced::widget::mouse_area(face)
+            .on_enter(Message::Interface(
+                recore_core::sounds::InterfaceSound::Hover,
+            ))
+            .into()
+    } else {
+        face.into()
+    }
 }
 
 pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
@@ -937,7 +951,7 @@ fn composer_box<'a>(ctx: crate::ctx::Ctx<'a>, look: &Look) -> Element<'a, Messag
         .padding(Padding::ZERO.left(10).right(8));
     let square = ctx.themes.square_avatars();
     let ground = if square {
-        theme.chat
+        theme.field
     } else if look.enabled {
         theme.composer
     } else {
@@ -966,15 +980,103 @@ fn composer_box<'a>(ctx: crate::ctx::Ctx<'a>, look: &Look) -> Element<'a, Messag
     if let Some(tray) = crate::uploads::tray(ctx) {
         inside = inside.push(tray);
     }
+    let lit = square && ctx.composer.focused;
     let frame = container(inside.push(line))
         .width(Length::Fill)
-        .style(move |_| crate::style::outlined(ground, edge, radius));
+        .style(move |_| {
+            let mut style = crate::style::outlined(ground, edge, radius);
+            if lit {
+                // ReCord's focus: a signal ring and a soft outer glow.
+                style.shadow = iced::Shadow {
+                    color: Color {
+                        a: 0.07,
+                        ..theme.accent
+                    },
+                    offset: iced::Vector::new(0.0, 0.0),
+                    blur_radius: 24.0,
+                };
+            }
+            style
+        });
+    // ReCord's dithered strip along the composer's top edge.
+    let frame: Element<'a, Message> = if square {
+        let strip = container(iced::Element::new(Dither {
+            color: Color {
+                a: 0.28,
+                ..theme.accent
+            },
+        }))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_y(Alignment::Start);
+        stack![frame, strip].into()
+    } else {
+        frame.into()
+    };
     Popover::new(
         frame,
         crate::suggest::suggestions_view(ctx, Writing::Draft),
         Side::Above,
     )
     .into()
+}
+
+/// ReCord's dithered strip: a two-pixel checkerboard of the signal along
+/// the composer's top edge, what the theme's `::before` paints. It takes
+/// no events and holds no state.
+struct Dither {
+    color: Color,
+}
+
+impl<M> iced::advanced::Widget<M, iced::Theme, iced::Renderer> for Dither {
+    fn size(&self) -> Size<Length> {
+        Size::new(Length::Fill, Length::Fixed(2.0))
+    }
+
+    fn layout(
+        &mut self,
+        _tree: &mut Tree,
+        _renderer: &Renderer,
+        limits: &layout::Limits,
+    ) -> layout::Node {
+        layout::Node::new(Size::new(limits.max().width, 2.0))
+    }
+
+    fn draw(
+        &self,
+        _tree: &Tree,
+        renderer: &mut Renderer,
+        _theme: &iced::Theme,
+        _style: &renderer::Style,
+        layout: Layout<'_>,
+        _cursor: mouse::Cursor,
+        _viewport: &Rectangle,
+    ) {
+        use iced::advanced::Renderer as _;
+        let bounds = layout.bounds();
+        let mut row = 0;
+        let mut y = bounds.y;
+        while y < bounds.y + bounds.height {
+            let mut column = 0;
+            let mut x = bounds.x;
+            while x < bounds.x + bounds.width {
+                // Filled top-right and bottom-left, as the conic dither.
+                if (row + column) % 2 == 1 {
+                    renderer.fill_quad(
+                        renderer::Quad {
+                            bounds: Rectangle::new(iced::Point::new(x, y), Size::new(2.0, 2.0)),
+                            ..Default::default()
+                        },
+                        iced::Background::Color(self.color),
+                    );
+                }
+                x += 2.0;
+                column += 1;
+            }
+            y += 2.0;
+            row += 1;
+        }
+    }
 }
 
 /// The bar over the field while replying: who to, the mention's toggle,

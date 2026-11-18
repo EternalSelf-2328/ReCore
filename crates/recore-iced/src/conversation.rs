@@ -3,8 +3,8 @@
 //! (search, the thread, the member list, the profile panel).
 
 use iced::{
-    Element, Length,
-    widget::{column, row},
+    Background, Color, Element, Length, gradient,
+    widget::{Space, column, container, row, stack},
 };
 
 use crate::{
@@ -60,6 +60,30 @@ pub fn conversation(app: &App) -> Element<'_, Message> {
         None => chat
             .push(crate::timeline::view::timeline(app.ctx()))
             .push(crate::composer::view(app.ctx())),
+    };
+    // ReCord's chat tint: the signal at 4.5% fading over the first 240 px
+    // of the chat, above the messages. A plain container takes no events,
+    // so the rows under it still see the pointer.
+    let chat: Element<'_, Message> = if app.themes.square_avatars() {
+        let accent = app.theme.accent;
+        let tint = container(Space::new())
+            .width(Length::Fill)
+            .height(240.0)
+            .style(move |_| container::Style {
+                background: Some(Background::Gradient(
+                    gradient::Linear::new(0.0)
+                        .add_stop(0.0, Color { a: 0.045, ..accent })
+                        .add_stop(1.0, Color::TRANSPARENT)
+                        .into(),
+                )),
+                ..Default::default()
+            });
+        stack![chat, tint]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
+    } else {
+        chat.into()
     };
     let mut body = row![chat];
     if let Some(search) = crate::search::view(&app.searching, app.ctx()) {

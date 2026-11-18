@@ -74,7 +74,7 @@ impl Default for RecoreOptions {
             flicker: false,
             avatar_filter: true,
             background: None,
-            background_dim: 0.5,
+            background_dim: 0.7,
             panel_opacity: 0.75,
             font: "pixel".into(),
             motion: Motion::Full,
@@ -105,7 +105,7 @@ impl RecoreOptions {
             flicker: layout.recore_flicker.unwrap_or(false),
             avatar_filter: layout.recore_avatar_filter.unwrap_or(true),
             background: layout.recore_background.as_deref().map(PathBuf::from),
-            background_dim: percent(layout.recore_background_dim, 0.5),
+            background_dim: percent(layout.recore_background_dim, 0.7),
             panel_opacity: percent(layout.recore_panel_opacity, 0.75),
             font: layout.recore_font.clone().unwrap_or_else(|| "pixel".into()),
             motion: match layout.recore_motion.as_deref() {

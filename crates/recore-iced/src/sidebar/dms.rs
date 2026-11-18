@@ -125,6 +125,7 @@ impl<'a> super::View<'a> {
                 face.into(),
                 DM_ROW,
                 room.selected,
+                true,
                 select,
                 Some(room.id.clone()),
             );

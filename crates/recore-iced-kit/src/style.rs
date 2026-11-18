@@ -178,10 +178,16 @@ pub fn hover_bar_shadow() -> iced::Shadow {
     }
 }
 
-/// A list's scroll bar's inks: faint on a dark theme, darker on a light
-/// one, and plainer under the pointer.
+/// A list's scroll bar's inks. ReCord's is the theme's line at rest and
+/// the dimmed signal under the pointer; other themes keep the generic
+/// dark or light thumb.
 pub fn scrollbar(theme: &Theme) -> crate::widgets::Scroller {
-    if theme.dark {
+    if theme.square {
+        crate::widgets::Scroller {
+            rest: theme.line,
+            pointed: crate::theme::mix(theme.accent, Color::from_rgb(0.0, 0.0, 0.0), 0.76),
+        }
+    } else if theme.dark {
         crate::widgets::Scroller::DARK
     } else {
         crate::widgets::Scroller::LIGHT

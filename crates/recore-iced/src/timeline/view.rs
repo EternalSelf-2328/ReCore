@@ -21,8 +21,8 @@ use crate::{
 };
 
 use super::{
-    ASIDE, DIVIDER, EDGE, Edge, Event, Intro, KEYED_EDGE, MENTION_EDGE, MENTIONED, MENTIONED_HOVER,
-    PRESENT_BAR, ROW_GAP, RowLook, TAIL, TIMELINE, UNREAD_BAR, top_space,
+    ASIDE, DIVIDER, EDGE, Edge, Event, Intro, KEYED_EDGE, MENTION_EDGE, PRESENT_BAR, ROW_GAP,
+    RowLook, TAIL, TIMELINE, UNREAD_BAR, mentioned, mentioned_hover, top_space,
 };
 
 /// What the unread bar says: how many new messages (more when the window
@@ -167,9 +167,22 @@ pub fn timeline_row<'a>(ctx: crate::ctx::Ctx<'a>, index: usize) -> Element<'a, M
             ..theme.accent
         })
     } else if look.highlighted {
-        Some(if pointed { MENTIONED_HOVER } else { MENTIONED })
+        Some(if pointed {
+            mentioned_hover(theme)
+        } else {
+            mentioned(theme)
+        })
     } else if pointed {
-        Some(theme.row_hover)
+        // ReCord washes a hovered message with the signal at 4.5% over
+        // the chat; other themes keep their solid row hover.
+        Some(if ctx.themes.square_avatars() {
+            Color {
+                a: 0.045,
+                ..theme.accent
+            }
+        } else {
+            theme.row_hover
+        })
     } else {
         None
     };
@@ -187,6 +200,17 @@ pub fn timeline_row<'a>(ctx: crate::ctx::Ctx<'a>, index: usize) -> Element<'a, M
     let mut content = stack![content];
     if look.highlighted {
         content = content.push(bar(theme.accent, MENTION_EDGE, Length::Fill));
+    }
+    // ReCord's hover edge: signal at 28% down the message's left.
+    if pointed && ctx.themes.square_avatars() {
+        content = content.push(bar(
+            Color {
+                a: 0.28,
+                ..theme.accent
+            },
+            MENTION_EDGE,
+            Length::Fill,
+        ));
     }
     if ctx.lanes.keyed == Some(message.item.as_str()) {
         content = content.push(bar(theme.accent, KEYED_EDGE, Length::Fill));

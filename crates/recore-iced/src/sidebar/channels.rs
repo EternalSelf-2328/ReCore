@@ -20,11 +20,13 @@ use super::{
     CHAT_BUTTON, Event, GAP, HEADING, INSET, ROW, ROW_RADIUS, Room, SideRow, VOICE_CARD_GAP,
 };
 
-/// ReCord's selected-channel wash: signal at 19% on the left, fading to
-/// 5% before the right edge, or its hover wash at 6.5%.
+/// ReCord's selected-row wash: a 14% signal base with a stronger gradient
+/// at its left (22% for a DM, 20% for a channel), fading to the base wash
+/// before the right edge; hover is signal at 8% (DM) or 6.5% (channel).
 pub(super) fn row_background(
     theme: &crate::theme::Theme,
     square: bool,
+    dm: bool,
     selected: bool,
     pointed: bool,
 ) -> Background {
@@ -39,16 +41,17 @@ pub(super) fn row_background(
     }
     if selected {
         let accent = theme.accent;
+        let peak = if dm { 0.36 } else { 0.34 };
         Background::Gradient(
             gradient::Linear::new(0.0)
-                .add_stop(0.0, Color { a: 0.19, ..accent })
-                .add_stop(0.72, Color { a: 0.05, ..accent })
-                .add_stop(1.0, Color::TRANSPARENT)
+                .add_stop(0.0, Color { a: peak, ..accent })
+                .add_stop(0.72, Color { a: 0.14, ..accent })
+                .add_stop(1.0, Color { a: 0.14, ..accent })
                 .into(),
         )
     } else if pointed {
         Color {
-            a: 0.065,
+            a: if dm { 0.08 } else { 0.065 },
             ..theme.accent
         }
         .into()
@@ -398,7 +401,15 @@ impl<'a> super::View<'a> {
                 self.cx.themes.square_avatars(),
             ));
         }
-        self.row_face(id.into(), face.into(), ROW, selected, Some(message), None)
+        self.row_face(
+            id.into(),
+            face.into(),
+            ROW,
+            selected,
+            false,
+            Some(message),
+            None,
+        )
     }
 
     /// A row's face: lit while selected or pointed at, a press (unless a
@@ -409,6 +420,7 @@ impl<'a> super::View<'a> {
         face: Element<'a, Message>,
         height: f32,
         selected: bool,
+        dm: bool,
         message: Option<Message>,
         menu: Option<String>,
     ) -> Element<'a, Message> {
@@ -428,7 +440,7 @@ impl<'a> super::View<'a> {
         };
         let square = self.cx.themes.square_avatars();
         let ground = if square {
-            row_background(theme, true, selected, pointed)
+            row_background(theme, true, dm, selected, pointed)
         } else if selected {
             if flash > 0.0 {
                 crate::theme::mix(theme.active, theme.accent, 0.22 * flash).into()
@@ -653,6 +665,7 @@ impl<'a> super::View<'a> {
             face.into(),
             room.row_height(),
             room.selected,
+            false,
             (!dragged).then_some(message),
             Some(room.id.clone()),
         );
