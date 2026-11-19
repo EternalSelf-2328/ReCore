@@ -160,6 +160,9 @@ pub enum Drop {
     Camera,
     Entrance,
     Start,
+    /// The language a message is written in, and the one it's sent in.
+    TranslateSource,
+    TranslateTarget,
     /// A keybind's action, by its row.
     Keybind(usize),
 }

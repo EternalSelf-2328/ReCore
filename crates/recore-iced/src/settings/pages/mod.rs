@@ -45,7 +45,9 @@ pub enum Pref {
     ShareTyping(bool),
     PlainFolders(bool),
     GifFavoritesFirst(bool),
+    TranslateSource(usize),
     TranslateTarget(usize),
+    TranslateSend(bool),
     ReplyPing(bool),
     StripTracking(bool),
     Notifications(bool),
@@ -218,6 +220,17 @@ impl Settings {
                 prefs.gif_favorites_first = Some(on);
                 cx.keep("gif_favorites_first", on);
             }
+            Pref::TranslateSource(index) => {
+                let code = (index > 0)
+                    .then(|| {
+                        crate::translate::LANGUAGES
+                            .get(index - 1)
+                            .map(|(code, _)| *code)
+                    })
+                    .flatten();
+                prefs.translate_source = code.map(str::to_owned);
+                cx.keep("translate_source", code);
+            }
             Pref::TranslateTarget(index) => {
                 let (code, _) = crate::translate::LANGUAGES
                     .get(index)
@@ -225,6 +238,10 @@ impl Settings {
                     .unwrap_or(crate::translate::LANGUAGES[1]);
                 prefs.translate_target = Some(code.to_owned());
                 cx.keep("translate_target", code);
+            }
+            Pref::TranslateSend(on) => {
+                prefs.translate_send = Some(on);
+                cx.keep("translate_send", on);
             }
             Pref::ReplyPing(on) => {
                 prefs.reply_ping = Some(on);

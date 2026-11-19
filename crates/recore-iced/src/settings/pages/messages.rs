@@ -6,7 +6,7 @@ use iced::{
 };
 
 use super::{ANIMATES, Pref, message_size, pref};
-use crate::settings::Page;
+use crate::settings::{Drop, Event as SettingsEvent, Page};
 use crate::{
     app::Message,
     controls::choices,
@@ -106,27 +106,71 @@ impl<'a> Page<'a> {
                 ),
             ]),
             form::group([
-                form::heading(theme, "TRANSLATE"),
-                choices(
-                    theme,
-                    &crate::translate::LANGUAGES
-                        .iter()
-                        .map(|(_, name)| *name)
-                        .collect::<Vec<_>>(),
-                    prefs
-                        .translate_target
-                        .as_deref()
-                        .and_then(|target| {
+                form::heading(theme, "LANGUAGE YOU WRITE IN"),
+                form::dropdown(
+                    std::iter::once("Detect automatically".to_owned())
+                        .chain(
                             crate::translate::LANGUAGES
                                 .iter()
-                                .position(|(code, _)| code.eq_ignore_ascii_case(target))
-                        })
-                        .unwrap_or(1),
-                    |index| pref(Pref::TranslateTarget(index)),
-                ),
+                                .map(|(_, name)| (*name).to_owned()),
+                        )
+                        .collect(),
+                    Some(
+                        prefs
+                            .translate_source
+                            .as_deref()
+                            .and_then(|source| {
+                                crate::translate::LANGUAGES
+                                    .iter()
+                                    .position(|(code, _)| code.eq_ignore_ascii_case(source))
+                            })
+                            .map_or(0, |index| index + 1),
+                    ),
+                    self.s.open == Some(Drop::TranslateSource),
+                    Message::Settings(SettingsEvent::Drop(Drop::TranslateSource)),
+                    |index| pref(Pref::TranslateSource(index)),
+                )
+                .view(self.cx.look),
                 form::note(
                     theme,
-                    "A message's menu → Translate sends its text to Google Translate, once, and shows the answer in ReCore. Nothing is translated on its own.",
+                    "The language your messages are written in. Detect automatically lets Google tell it for each message.",
+                ),
+            ]),
+            form::group([
+                form::heading(theme, "LANGUAGE TO SEND IN"),
+                form::dropdown(
+                    crate::translate::LANGUAGES
+                        .iter()
+                        .map(|(_, name)| (*name).to_owned())
+                        .collect(),
+                    Some(
+                        prefs
+                            .translate_target
+                            .as_deref()
+                            .and_then(|target| {
+                                crate::translate::LANGUAGES
+                                    .iter()
+                                    .position(|(code, _)| code.eq_ignore_ascii_case(target))
+                            })
+                            .unwrap_or(1),
+                    ),
+                    self.s.open == Some(Drop::TranslateTarget),
+                    Message::Settings(SettingsEvent::Drop(Drop::TranslateTarget)),
+                    |index| pref(Pref::TranslateTarget(index)),
+                )
+                .view(self.cx.look),
+                switch(
+                    "Translate messages before sending",
+                    prefs.translate_send.unwrap_or(false),
+                    Some(pref(Pref::TranslateSend(!prefs.translate_send.unwrap_or(false)))),
+                )
+                .description(
+                    "Each message goes to Google Translate from the language above into this one before it's sent.",
+                )
+                .view(self.cx.look),
+                form::note(
+                    theme,
+                    "A message's menu → Translate still sends its text to Google Translate once, when asked, and shows the answer in ReCore.",
                 ),
             ]),
             form::rule(theme),

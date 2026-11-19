@@ -586,7 +586,8 @@ pub(crate) fn toggle_silent(text: &str) -> String {
 }
 
 /// Enter: the draft sent. The core empties the draft once the message is
-/// sent; `sync` follows it.
+/// sent; `sync` follows it. With Translate messages before sending on, the
+/// draft goes to Google first and [`send_text`] sends what comes back.
 fn send(app: &mut App) -> Task<Message> {
     if app.client.state().selected.is_none() {
         return Task::none();
@@ -595,9 +596,25 @@ fn send(app: &mut App) -> Task<Message> {
         return task;
     }
     let commanding = app.client.state().command_draft().is_some();
+    let draft = app.composer.draft.text();
+    if !commanding && app.layout.prefs.translate_send.unwrap_or(false) && !draft.trim().is_empty() {
+        return crate::translate::send_out(app, draft);
+    }
+    send_draft(app, draft, commanding)
+}
+
+/// Sends `text` as the room's draft, as Enter does once a translation has
+/// come back.
+pub(crate) fn send_text(app: &mut App, text: String) -> Task<Message> {
+    send_draft(app, text, false)
+}
+
+fn send_draft(app: &mut App, text: String, commanding: bool) -> Task<Message> {
+    if app.client.state().selected.is_none() {
+        return Task::none();
+    }
     if !commanding {
-        app.client
-            .dispatch(Action::SetDraft(app.composer.draft.text()));
+        app.client.dispatch(Action::SetDraft(text));
     }
     // Sending goes to the newest message, as Discord does, so the sent
     // one shows; from a window of older messages, once the newest have

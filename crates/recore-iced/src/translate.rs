@@ -52,6 +52,8 @@ const WAIT: Duration = Duration::from_secs(15);
 pub struct Translate {
     pub shown: Option<Shown>,
     request: u64,
+    /// The send waiting for its text to be translated, by its request.
+    sending: Option<u64>,
 }
 
 /// One message's translation, from the request to its answer.
@@ -72,6 +74,8 @@ pub enum State {
 pub enum Event {
     Close,
     Done(u64, Result<Fetched, ()>),
+    /// A draft came back translated, or not: it's sent either way.
+    SendDone(u64, Result<Fetched, ()>, String),
 }
 
 #[derive(Clone, Debug)]
@@ -115,9 +119,46 @@ pub fn open(app: &mut App, item: &str) -> Task<Message> {
         state: State::Waiting,
         request,
     });
-    Task::perform(fetch(body, target), move |answer| {
+    Task::perform(fetch(body, None, target), move |answer| {
         Message::Translate(Event::Done(request, answer))
     })
+}
+
+/// Translates `text` from the language Settings says it's written in (or
+/// lets Google tell it) into the one messages are sent in, then sends it.
+/// A failed translation sends the text as it was written, so a message is
+/// never lost; a press while a send is translating waits for it.
+pub fn send_out(app: &mut App, text: String) -> Task<Message> {
+    if app.translate.sending.is_some() {
+        return Task::none();
+    }
+    let target = app
+        .layout
+        .prefs
+        .translate_target
+        .clone()
+        .unwrap_or_else(|| "es".to_owned());
+    let source = app
+        .layout
+        .prefs
+        .translate_source
+        .clone()
+        .filter(|code| !code.is_empty());
+    app.translate.request = app.translate.request.wrapping_add(1);
+    let request = app.translate.request;
+    app.translate.sending = Some(request);
+    // Enter's draft leaves the field at once, as a sent message does;
+    // what's typed while the answer comes is a new message.
+    app.client
+        .dispatch(recore_core::application::Action::SetDraft(String::new()));
+    app.composer.suggest.clear(&mut app.client);
+    let original = text.clone();
+    Task::batch([
+        app.sync(),
+        Task::perform(fetch(text, source, target), move |answer| {
+            Message::Translate(Event::SendDone(request, answer, original.clone()))
+        }),
+    ])
 }
 
 pub fn update(app: &mut App, event: Event) -> Task<Message> {
@@ -138,13 +179,28 @@ pub fn update(app: &mut App, event: Event) -> Task<Message> {
                 Err(()) => shown.state = State::Failed,
             }
         }
+        Event::SendDone(request, answer, original) => {
+            if app.translate.sending != Some(request) {
+                return Task::none();
+            }
+            app.translate.sending = None;
+            // A translation that failed sends the words as they were
+            // written: the message matters more than the language.
+            let text = answer.map_or(original, |fetched| fetched.text);
+            return crate::composer::send_text(app, text);
+        }
     }
     Task::none()
 }
 
-async fn fetch(text: String, target: String) -> Result<Fetched, ()> {
+async fn fetch(text: String, source: Option<String>, target: String) -> Result<Fetched, ()> {
+    let source = source
+        .as_deref()
+        .filter(|code| !code.is_empty())
+        .unwrap_or("auto");
     let url = format!(
-        "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl={}&dt=t&q={}",
+        "https://translate.googleapis.com/translate_a/single?client=gtx&sl={}&tl={}&dt=t&q={}",
+        source,
         target,
         escaped(&text)
     );
