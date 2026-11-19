@@ -229,6 +229,7 @@ pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
         (32.0, 20.0, 5.0)
     };
     let state = ctx.state;
+    let streamer = ctx.layout.prefs.streamer_mode.unwrap_or(false);
     let decoration = state
         .cosmetics
         .decoration(state.account_decoration.as_deref());
@@ -242,7 +243,7 @@ pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
             ),
     );
     let face = ring_and_dot(ctx, account, face);
-    let second: Element<'a, Message> = if pointed && !account.username.is_empty() {
+    let second: Element<'a, Message> = if !streamer && pointed && !account.username.is_empty() {
         elide(account.username.as_str())
             .size(13)
             .color(theme.muted)
@@ -257,10 +258,14 @@ pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
     let names = mouse_area(
         container(
             column![
-                elide(account.name.as_str())
-                    .size(15)
-                    .font(BOLD())
-                    .color(theme.text),
+                elide(if streamer {
+                    "Streamer"
+                } else {
+                    account.name.as_str()
+                })
+                .size(15)
+                .font(BOLD())
+                .color(theme.text),
                 second
             ]
             .width(Length::Fill),

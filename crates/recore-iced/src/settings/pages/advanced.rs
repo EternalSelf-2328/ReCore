@@ -68,6 +68,12 @@ impl<'a> Page<'a> {
                 Pref::GpuEncoding,
             ),
             self.flip(
+                "Streamer mode",
+                "Silences interface sounds and notifications, and hides this account's name and tag, so a stream doesn't show or sound them.",
+                prefs.streamer_mode.unwrap_or(false),
+                Pref::StreamerMode,
+            ),
+            self.flip(
                 "Developer Mode",
                 "Menus offer Copy ID for servers, channels and people, which helps when you write apps that use the Discord API.",
                 self.cx.layout.developer_mode,

@@ -222,6 +222,8 @@ pub struct Prefs {
     pub translate_source: Option<String>,
     pub translate_target: Option<String>,
     pub translate_send: Option<bool>,
+    /// Streamer mode: no sounds, no notifications, and no personal details.
+    pub streamer_mode: Option<bool>,
     /// Appearance's profile switches, and nameplates.
     pub nameplates: Option<bool>,
     pub profile_effects: Option<bool>,

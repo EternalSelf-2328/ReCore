@@ -144,6 +144,8 @@ pub enum Message {
     Status(crate::status::Event),
     /// A message's translation (`translate.rs`).
     Translate(crate::translate::Event),
+    /// A notification's toast over the window (`toast.rs`).
+    Toast(crate::toast::Event),
     Switcher(crate::switcher::Event),
     /// A message's picture large, or its attachment saved
     /// (`image_viewer.rs`).

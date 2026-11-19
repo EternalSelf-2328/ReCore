@@ -67,6 +67,8 @@ pub enum Presence {
     Online,
     /// Online, and only on a phone.
     Mobile,
+    /// Online, and only on the web.
+    Web,
     Idle,
     DoNotDisturb,
     /// Offline or invisible.
@@ -76,7 +78,8 @@ pub enum Presence {
 
 impl Presence {
     /// Reads a presence object: its status, and from `client_status` whether
-    /// they're online only on a phone, which Discord marks with a phone.
+    /// they're online only on a phone or on the web, which Discord marks
+    /// with a phone or a globe.
     pub fn parse(presence: &Value) -> Self {
         let clients = &presence["client_status"];
         match presence["status"].as_str() {
@@ -86,6 +89,13 @@ impl Presence {
                     && clients["web"] != "online" =>
             {
                 Self::Mobile
+            }
+            Some("online")
+                if clients["web"] == "online"
+                    && clients["desktop"] != "online"
+                    && clients["mobile"] != "online" =>
+            {
+                Self::Web
             }
             Some("online") => Self::Online,
             Some("idle") => Self::Idle,

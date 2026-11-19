@@ -120,6 +120,7 @@ mod themes;
 mod thread;
 use recore_iced_kit::tile;
 mod timeline;
+mod toast;
 mod translate;
 mod typing;
 mod updates;

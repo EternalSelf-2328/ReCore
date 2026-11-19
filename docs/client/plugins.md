@@ -33,11 +33,14 @@ its own shape:
 | Plugin | In ReCore |
 | --- | --- |
 | BetterGifPicker | Settings → Messages → Open GIFs in Favorites. |
+| PlatformIndicators | Discord's phone and globe marks replace the presence dot for someone online only on a phone or only on the web. |
 | CharacterCounter | The composer's `used/2000` count, red past Discord's limit. |
 | PlainFolderIcon | Settings → Messages → Plain folder icons. |
 | ReverseImageSearch | A picture's menu → Search Image → Google Lens, Yandex Images or TinEye. |
+| ImageZoom | Wheel zooms and a drag moves a picture in its viewer, kept inside its box; each picture starts unzoomed. |
 | SilentMessageToggle | The bell in the composer puts Discord's `@silent` at the start, and takes it off. |
-| Translate | A message's menu → Translate; Settings → Messages picks the language. Google Translate's answer shows in a card, once, and is never fetched on its own. |
+| StreamerMode | Settings → Advanced silences interface sounds and notifications and hides this account's name and tag. |
+| Translate | A message's menu → Translate shows Google's answer in a card; Settings → Messages picks the languages written in and sent in, the composer's globe turns translation before sending on and off, and a failed translation sends the words as written. |
 
 The settings are kept in `layout.json` like the rest (`plain_folders`,
 `gif_favorites_first`). `@silent` is Discord's own: the core strips it from
@@ -64,8 +67,8 @@ the sent message and sends with no notification.
   message content), `ExpressionManager` (cloning emoji and stickers),
   `ViewIcons` (a profile picture or banner at full size), `CustomRPC` (an
   activity typed in by hand), `SpotifyControls` (play, pause and skip from
-  the account panel), `MessageLinkEmbeds`, `ImageZoom`, `WhoReacted`,
-  `ImageFilename` and `HideMedia`.
+  the account panel), `MessageLinkEmbeds`, `ImageFilename` and
+  `HideMedia`.
 
 A plugin is added like any other feature: the core's state and protocol in
 `recore-core`/`recore-discord`, then its rows or controls in

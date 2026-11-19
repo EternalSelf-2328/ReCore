@@ -76,6 +76,8 @@ pub struct Shell {
     pub pending_link: Option<String>,
     /// The activation token the window being made takes the focus with.
     pub token: Option<String>,
+    /// A notification's toast over the window, while it shows.
+    pub toast: Option<crate::toast::Toast>,
     /// How far the whole window is zoomed, as one of `zoom::LEVELS`, and the
     /// level's note while it shows, by its count.
     pub zoom: f32,
@@ -675,10 +677,12 @@ impl App {
     /// conversation in front (a call rings instead); while ReCore isn't in
     /// front, the taskbar flashes and a notification shows, as the settings
     /// allow.
-    fn alert(&self, alert: Alert) -> Task<Message> {
+    fn alert(&mut self, alert: Alert) -> Task<Message> {
         let focused = self.shell.focused;
         let reading = focused && self.client.state().selected.as_ref() == Some(&alert.room);
-        if !alert.call && !reading {
+        let streamer = self.layout.prefs.streamer_mode.unwrap_or(false);
+        let mut task = Task::none();
+        if !alert.call && !reading && !streamer {
             crate::call::play(
                 self,
                 if alert.mention {
@@ -687,9 +691,11 @@ impl App {
                     Sound::Message
                 },
             );
+            // What sounded shows over the window, too, so it can be read
+            // without leaving the room in front.
+            task = Task::batch([task, crate::toast::show(self, alert.clone())]);
         }
         let prefs = &self.layout.prefs;
-        let mut task = Task::none();
         if !focused
             && !alert.call
             && prefs.flash_taskbar.unwrap_or(true)
@@ -699,6 +705,7 @@ impl App {
         }
         if prefs.notifications.unwrap_or(true)
             && !focused
+            && !streamer
             && let Some(notifier) = &self.shell.notifier
         {
             notifier.show(alert, prefs.notification_text.unwrap_or(true));
