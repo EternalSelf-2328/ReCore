@@ -421,6 +421,24 @@ pub fn media_act(app: &mut App, act: MenuAct, item: String, index: usize) -> Tas
             crate::browser::open(&link);
             focus
         }
+        MenuAct::SearchImageLens => {
+            crate::browser::open(&format!(
+                "https://lens.google.com/uploadbyurl?url={}",
+                escaped(&link)
+            ));
+            focus
+        }
+        MenuAct::SearchImageYandex => {
+            crate::browser::open(&format!(
+                "https://yandex.com/images/search?rpt=imageview&url={}",
+                escaped(&link)
+            ));
+            focus
+        }
+        MenuAct::SearchImageTinEye => {
+            crate::browser::open(&format!("https://tineye.com/search?url={}", escaped(&link)));
+            focus
+        }
         _ => focus,
     }
 }
@@ -445,8 +463,37 @@ pub fn media_rows(index: usize, video: bool, preview: bool, link: bool) -> Vec<M
     if link {
         rows.push(row(MenuAct::CopyMediaLink, "Copy Link", Icon::Chain));
         rows.push(row(MenuAct::OpenMediaLink, "Open Link", Icon::Link));
+        if !video {
+            let search = MenuRow {
+                submenu: vec![
+                    MenuRow::new(MenuAct::SearchImageLens, "Google Lens", Icon::Search)
+                        .key(key.clone()),
+                    MenuRow::new(MenuAct::SearchImageYandex, "Yandex Images", Icon::Search)
+                        .key(key.clone()),
+                    MenuRow::new(MenuAct::SearchImageTinEye, "TinEye", Icon::Search)
+                        .key(key.clone()),
+                ],
+                ..MenuRow::new(MenuAct::SearchImageLens, "Search Image", Icon::Search)
+                    .key(key.clone())
+            };
+            rows.push(search);
+        }
     }
     rows
+}
+
+/// A web address as a query value.
+fn escaped(url: &str) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::with_capacity(url.len());
+    for byte in url.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            out.push(char::from(byte));
+        } else {
+            let _ = write!(out, "%{byte:02X}");
+        }
+    }
+    out
 }
 
 /// A picture's full size where it's known, else the size its full picture
@@ -525,7 +572,13 @@ mod tests {
         };
         assert_eq!(
             labels(media_rows(0, false, false, true)),
-            ["Copy Image", "Save Image", "Copy Link", "Open Link"]
+            [
+                "Copy Image",
+                "Save Image",
+                "Copy Link",
+                "Open Link",
+                "Search Image"
+            ]
         );
         assert_eq!(
             labels(media_rows(0, true, false, true)),
@@ -534,7 +587,15 @@ mod tests {
         assert_eq!(labels(media_rows(0, false, false, false)), ["Save Image"]);
         assert_eq!(
             labels(media_rows(0, false, true, true)),
-            ["Copy Link", "Open Link"]
+            ["Copy Link", "Open Link", "Search Image"]
+        );
+    }
+
+    #[test]
+    fn a_search_address_is_a_query_value() {
+        assert_eq!(
+            escaped("https://a b.example/x?y=1&z=~"),
+            "https%3A%2F%2Fa%20b.example%2Fx%3Fy%3D1%26z%3D~"
         );
     }
 }

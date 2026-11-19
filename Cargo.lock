@@ -7326,6 +7326,7 @@ dependencies = [
  "recore-core",
  "recore-css",
  "recore-iced-kit",
+ "reqwest 0.13.5",
  "rfd",
  "serde",
  "serde_json",

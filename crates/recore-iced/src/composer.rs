@@ -102,6 +102,8 @@ pub enum Event {
     Retry(String),
     CancelSend(String),
     Dismiss(String),
+    /// The silent-message toggle: Discord's `@silent` at the start.
+    Silent,
     /// Files to go with the message.
     Uploads(crate::uploads::Event),
     /// An app command's pill clicked: its option, or a file option's file;
@@ -128,6 +130,10 @@ pub struct Look {
     pub attach: bool,
     /// The + opens a menu (threads or polls can start here).
     pub plus: bool,
+    /// A Discord room takes a silent message.
+    pub discord: bool,
+    /// The draft starts with Discord's `@silent`.
+    pub silent: bool,
 }
 
 /// A reply's bar over a composer: "Replying to" its author and its first
@@ -205,6 +211,12 @@ pub fn update(app: &mut App, event: Event) -> Task<Message> {
         Event::Answer(accept) => {
             app.client.dispatch(Action::AnswerRequest(accept));
             Task::batch([app.sync(), refocus(app)])
+        }
+        Event::Silent => {
+            let text = toggle_silent(&app.composer.draft.text());
+            app.composer.draft.reset(&text);
+            app.client.dispatch(Action::SetDraft(text));
+            Task::batch([app.sync(), operation::focus(COMPOSER)])
         }
         Event::Plus => plus(app),
         Event::CancelEdit => {
@@ -563,6 +575,16 @@ fn plus(app: &mut App) -> Task<Message> {
     operation::focus(NOBODY)
 }
 
+/// The draft with Discord's `@silent` at its start taken off, or put on.
+pub(crate) fn toggle_silent(text: &str) -> String {
+    match text.strip_prefix("@silent") {
+        Some(rest) if rest.is_empty() || rest.starts_with(char::is_whitespace) => {
+            rest.trim_start().to_owned()
+        }
+        _ => format!("@silent {text}"),
+    }
+}
+
 /// Enter: the draft sent. The core empties the draft once the message is
 /// sent; `sync` follows it.
 fn send(app: &mut App) -> Task<Message> {
@@ -748,6 +770,7 @@ pub fn composer_look(ctx: crate::ctx::Ctx<'_>) -> Look {
         "Unencrypted room. Reading only in this build."
     }
     .to_owned();
+    let draft = ctx.composer.draft.text();
     Look {
         enabled,
         locked,
@@ -756,6 +779,11 @@ pub fn composer_look(ctx: crate::ctx::Ctx<'_>) -> Look {
         request,
         attach: state.can_attach(),
         plus: ctx.app.can_start_threads() || ctx.app.can_create_polls(),
+        discord,
+        silent: draft.starts_with("@silent")
+            && draft
+                .strip_prefix("@silent")
+                .is_none_or(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace)),
     }
 }
 
@@ -935,6 +963,37 @@ fn composer_box<'a>(ctx: crate::ctx::Ctx<'a>, look: &Look) -> Element<'a, Messag
             22,
             tint(Tab::Stickers),
             opens(Tab::Stickers),
+        )));
+    }
+    let count = ctx.composer.draft.text().chars().count();
+    if look.discord && count > 0 {
+        let ink = if count > 2000 {
+            theme.danger
+        } else {
+            theme.muted
+        };
+        buttons = buttons.push(text(format!("{count}/2000")).size(11).color(ink));
+    }
+    if look.discord && look.enabled {
+        buttons = buttons.push(lift(composer_button(
+            ctx,
+            if look.silent {
+                Icon::BellOff
+            } else {
+                Icon::Bell
+            },
+            if look.silent {
+                "Send with notifications"
+            } else {
+                "Send silently"
+            },
+            22,
+            if look.silent {
+                theme.accent
+            } else {
+                theme.secondary
+            },
+            Some(Message::Write(Event::Silent)),
         )));
     }
     let emoji = buttons.push(lift(composer_button(
@@ -1219,5 +1278,18 @@ pub fn writing<'a>(ctx: crate::ctx::Ctx<'a>, which: Writing) -> &'a field::Draft
         Writing::Aside => &ctx.drafts.aside,
         Writing::NewThread => &ctx.drafts.first,
         Writing::NewPost => &ctx.forum_post.body,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::toggle_silent;
+
+    #[test]
+    fn the_silent_toggle_takes_the_prefix_on_and_off() {
+        assert_eq!(toggle_silent("hello"), "@silent hello");
+        assert_eq!(toggle_silent("@silent hello"), "hello");
+        assert_eq!(toggle_silent("@silent"), "");
+        assert_eq!(toggle_silent("@silentish"), "@silent @silentish");
     }
 }

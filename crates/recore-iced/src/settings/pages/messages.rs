@@ -105,6 +105,30 @@ impl<'a> Page<'a> {
                     |index| pref(Pref::Animate(index)),
                 ),
             ]),
+            form::group([
+                form::heading(theme, "TRANSLATE"),
+                choices(
+                    theme,
+                    &crate::translate::LANGUAGES
+                        .iter()
+                        .map(|(_, name)| *name)
+                        .collect::<Vec<_>>(),
+                    prefs
+                        .translate_target
+                        .as_deref()
+                        .and_then(|target| {
+                            crate::translate::LANGUAGES
+                                .iter()
+                                .position(|(code, _)| code.eq_ignore_ascii_case(target))
+                        })
+                        .unwrap_or(1),
+                    |index| pref(Pref::TranslateTarget(index)),
+                ),
+                form::note(
+                    theme,
+                    "A message's menu → Translate sends its text to Google Translate, once, and shows the answer in ReCore. Nothing is translated on its own.",
+                ),
+            ]),
             form::rule(theme),
             self.flip(
                 "Show link previews",
@@ -133,6 +157,18 @@ impl<'a> Page<'a> {
                 "{networks} \"typing...\" while you write. Others still show here when they type."
             ))
             .view(self.cx.look),
+            self.flip(
+                "Plain folder icons",
+                "A folder shows a folder, not the faces of its first four servers.",
+                prefs.plain_folders.unwrap_or(false),
+                Pref::PlainFolders,
+            ),
+            self.flip(
+                "Open GIFs in Favorites",
+                "The GIF picker starts on the GIFs you starred, rather than its home.",
+                prefs.gif_favorites_first.unwrap_or(false),
+                Pref::GifFavoritesFirst,
+            ),
             self.flip(
                 "Mention people you reply to",
                 "They get notified of your reply. Switch it for one reply with @ On on the reply bar.",

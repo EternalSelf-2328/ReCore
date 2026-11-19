@@ -142,6 +142,8 @@ pub enum Message {
     LinkDialog(crate::link_dialogs::Event),
     ChannelSettings(crate::channel_settings::Event),
     Status(crate::status::Event),
+    /// A message's translation (`translate.rs`).
+    Translate(crate::translate::Event),
     Switcher(crate::switcher::Event),
     /// A message's picture large, or its attachment saved
     /// (`image_viewer.rs`).

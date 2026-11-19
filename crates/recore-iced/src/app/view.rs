@@ -302,6 +302,9 @@ impl App {
         if let Some(modal) = crate::bot_modal::view(&self.modal, self.ctx()) {
             layers = layers.push(modal);
         }
+        if let Some(translation) = crate::translate::view(self) {
+            layers = layers.push(translation);
+        }
         if let Some(viewer) = crate::image_viewer::view(&self.viewer, self.ctx()) {
             layers = layers.push(viewer);
         }

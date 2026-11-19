@@ -68,7 +68,8 @@ recording. Each change is kept at once in
   previews are off." where a card was the whole message), long messages
   folding, boost gems in the member list, sharing that this account types
   (off, the core's typing commands go nowhere), mentioning those replied
-  to and tracking taken out of links.
+  to, tracking taken out of links, plain folder icons, GIFs opening in
+  Favorites, and the language Translate puts a message in.
 - Notifications, Sounds (the set, which plays a sound when chosen, the
   volume, and each sound's own with its play button) and Advanced.
   Advanced holds Start when you sign in, Open Discord

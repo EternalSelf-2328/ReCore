@@ -22,6 +22,7 @@ How it works, one doc per part:
 | [Settings](settings.md) | The account's settings |
 | [Server and channel settings](server-settings.md) | A server's and a channel's settings |
 | [Dialogs](dialogs.md) | Questions, forms and their frames |
+| [Vencord and Vesktop plugins](plugins.md) | Which plugins ReCore has natively, which it adds, and which don't fit |
 
 How it's made:
 

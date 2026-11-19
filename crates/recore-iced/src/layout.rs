@@ -210,6 +210,12 @@ pub struct Prefs {
     pub strip_tracking: Option<bool>,
     pub share_typing: Option<bool>,
     pub animate: Animate,
+    /// The rail's folders show a plain folder instead of their servers'
+    /// pictures, and the GIF picker opens in Favorites.
+    pub plain_folders: Option<bool>,
+    pub gif_favorites_first: Option<bool>,
+    /// The language Translate puts a message in, as Google names it.
+    pub translate_target: Option<String>,
     /// Appearance's profile switches, and nameplates.
     pub nameplates: Option<bool>,
     pub profile_effects: Option<bool>,
