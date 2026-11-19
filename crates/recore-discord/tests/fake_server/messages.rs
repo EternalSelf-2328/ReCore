@@ -8,6 +8,7 @@ async fn attachment_privacy_sanitizes_the_bytes_received_by_the_server() {
     use recore_discord::attachment_privacy::AttachmentPrivacy;
 
     let Fixture {
+        _fake,
         discord,
         guild,
         general,
