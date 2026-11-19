@@ -104,6 +104,8 @@ pub enum Event {
     Dismiss(String),
     /// The silent-message toggle: Discord's `@silent` at the start.
     Silent,
+    /// Translate messages before sending, turned on or off.
+    ToggleTranslate,
     /// Files to go with the message.
     Uploads(crate::uploads::Event),
     /// An app command's pill clicked: its option, or a file option's file;
@@ -217,6 +219,13 @@ pub fn update(app: &mut App, event: Event) -> Task<Message> {
             app.composer.draft.reset(&text);
             app.client.dispatch(Action::SetDraft(text));
             Task::batch([app.sync(), operation::focus(COMPOSER)])
+        }
+        Event::ToggleTranslate => {
+            let on = !app.layout.prefs.translate_send.unwrap_or(false);
+            app.layout.prefs.translate_send = Some(on);
+            crate::layout::store(app.client.root(), "translate_send", on);
+            app.interface_sound(recore_core::sounds::InterfaceSound::Toggle);
+            operation::focus(COMPOSER)
         }
         Event::Plus => plus(app),
         Event::CancelEdit => {
@@ -1013,14 +1022,35 @@ fn composer_box<'a>(ctx: crate::ctx::Ctx<'a>, look: &Look) -> Element<'a, Messag
             Some(Message::Write(Event::Silent)),
         )));
     }
-    let emoji = buttons.push(lift(composer_button(
-        ctx,
-        Icon::Smile,
-        "Add an emoji",
-        22,
-        tint(Tab::Emoji),
-        opens(Tab::Emoji),
-    )));
+    let translate = ctx.layout.prefs.translate_send.unwrap_or(false);
+    let emoji = buttons
+        .push(lift(composer_button(
+            ctx,
+            Icon::Smile,
+            "Add an emoji",
+            22,
+            tint(Tab::Emoji),
+            opens(Tab::Emoji),
+        )))
+        // ReCord's translation, at hand: lit while messages are sent
+        // translated, and a press turns it on or off.
+        .push(lift(composer_button(
+            ctx,
+            Icon::Translate,
+            if translate {
+                "Stop translating messages"
+            } else {
+                "Translate messages before sending"
+            },
+            22,
+            if translate {
+                theme.accent
+            } else {
+                theme.secondary
+            },
+            (look.enabled && ctx.state.selected.is_some())
+                .then_some(Message::Write(Event::ToggleTranslate)),
+        )));
     let line = row![lift(plus), field, emoji]
         .spacing(6)
         .align_y(Alignment::End)
