@@ -54,10 +54,14 @@ pub struct Translate {
     request: u64,
     /// The send waiting for its text to be translated, by its request.
     sending: Option<u64>,
+    /// The card's language list is open.
+    pub open: bool,
 }
 
 /// One message's translation, from the request to its answer.
 pub struct Shown {
+    /// The message translated, so another language can be asked for it.
+    pub item: String,
     pub target: String,
     pub source: Option<String>,
     pub state: State,
@@ -73,6 +77,9 @@ pub enum State {
 #[derive(Clone, Debug)]
 pub enum Event {
     Close,
+    /// The card's language list, opened or closed, and the language chosen.
+    TogglePicker,
+    PickTarget(usize),
     Done(u64, Result<Fetched, ()>),
     /// A draft came back translated, or not: it's sent either way.
     SendDone(u64, Result<Fetched, ()>, String),
@@ -111,9 +118,11 @@ pub fn open(app: &mut App, item: &str) -> Task<Message> {
         .translate_target
         .clone()
         .unwrap_or_else(|| "es".to_owned());
+    app.translate.open = false;
     app.translate.request = app.translate.request.wrapping_add(1);
     let request = app.translate.request;
     app.translate.shown = Some(Shown {
+        item: item.to_owned(),
         target: target.clone(),
         source: None,
         state: State::Waiting,
@@ -163,7 +172,23 @@ pub fn send_out(app: &mut App, text: String) -> Task<Message> {
 
 pub fn update(app: &mut App, event: Event) -> Task<Message> {
     match event {
-        Event::Close => app.translate.shown = None,
+        Event::Close => {
+            app.translate.shown = None;
+            app.translate.open = false;
+        }
+        Event::TogglePicker => app.translate.open = !app.translate.open,
+        Event::PickTarget(index) => {
+            app.translate.open = false;
+            let Some((code, _)) = LANGUAGES.get(index).copied() else {
+                return Task::none();
+            };
+            app.layout.prefs.translate_target = Some(code.to_owned());
+            crate::layout::store(app.client.root(), "translate_target", code);
+            let Some(item) = app.translate.shown.as_ref().map(|shown| shown.item.clone()) else {
+                return Task::none();
+            };
+            return open(app, &item);
+        }
         Event::Done(request, answer) => {
             let Some(shown) = app.translate.shown.as_mut() else {
                 return Task::none();
@@ -280,15 +305,30 @@ pub fn view(app: &App) -> Option<Element<'_, Message>> {
     ]
     .spacing(12)
     .padding(20);
-    let from = shown
-        .source
-        .as_deref()
-        .map_or_else(|| "Detected language".to_owned(), language_name);
+    let target = LANGUAGES
+        .iter()
+        .position(|(code, _)| code.eq_ignore_ascii_case(&shown.target))
+        .unwrap_or(1);
     body = body.push(
-        text(format!("{from} → {}", language_name(&shown.target)))
-            .size(12)
-            .color(theme.muted),
+        crate::form::dropdown(
+            LANGUAGES
+                .iter()
+                .map(|(_, name)| (*name).to_owned())
+                .collect(),
+            Some(target),
+            app.translate.open,
+            Message::Translate(Event::TogglePicker),
+            |index| Message::Translate(Event::PickTarget(index)),
+        )
+        .view(app.ctx().look),
     );
+    if let Some(source) = shown.source.as_deref() {
+        body = body.push(
+            text(format!("Detected: {}", language_name(source)))
+                .size(12)
+                .color(theme.muted),
+        );
+    }
     match &shown.state {
         State::Waiting => {
             body = body.push(text("Translating...").size(15).color(theme.secondary));

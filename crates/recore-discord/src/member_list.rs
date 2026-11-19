@@ -497,7 +497,7 @@ mod tests {
     }
 
     #[test]
-    fn marks_who_is_online_only_on_a_phone() {
+    fn marks_who_is_online_only_on_a_phone_or_the_web() {
         let parse = |status: &str, clients: Value| {
             Presence::parse(&json!({"status": status, "client_status": clients}))
         };
@@ -518,7 +518,18 @@ mod tests {
             parse("online", json!({"mobile": "online", "web": "online"})),
             Presence::Online
         );
+        assert_eq!(
+            parse("online", json!({"web": "online"})),
+            Presence::Web,
+            "the web alone"
+        );
+        assert_eq!(
+            parse("online", json!({"web": "online", "desktop": "online"})),
+            Presence::Online,
+            "the desktop covers it"
+        );
         assert_eq!(parse("idle", json!({"mobile": "idle"})), Presence::Idle);
+        assert_eq!(parse("idle", json!({"web": "idle"})), Presence::Idle);
         assert_eq!(
             Presence::parse(&json!({"status": "online"})),
             Presence::Online

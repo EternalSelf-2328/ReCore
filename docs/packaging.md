@@ -178,15 +178,17 @@ page in the browser, and Skip this version, which hides that release until a
 newer one comes. It also links to the website, the GitHub project and the
 Discord server, each button with its mark.
 
-The look is off until a person turns on Check for updates, so a fresh install
-makes no request to GitHub. On, ReCore looks when it starts and every six
-hours while it runs, with one request for the list of releases
-(`api.github.com/repos/leriart/ReCore/releases`) that carries only
+Check for updates is on unless a person turns it off. On, ReCore looks when it
+starts and every six hours while it runs, with one request for the list of
+releases (`api.github.com/repos/leriart/ReCore/releases`) that carries only
 `ReCore/VERSION` as its user agent and no account or identifier. A look nobody
-asked for tells of a newer release in a notification, once for each release
-(`announced_update` in `layout.json`), unless notifications are off or the
-release was skipped; clicking it opens About. Check now looks once, whatever
-the switch says, and doesn't notify. Nightlies count as newer only with
+asked for tells of a newer release in a notification and in a toast over the
+window, once for each release (`announced_update` in `layout.json`), unless
+notifications are off, streamer mode is on or the release was skipped;
+clicking either opens About. Check now looks once, whatever the switch says,
+and doesn't notify. Install updates automatically, off by default, presses
+Update and restart itself when a newer release is found, so ReCore downloads
+it and comes back on the new version. Nightlies count as newer only with
 Include nightly builds, so a stable install isn't offered one. A build from
 source is never offered an update: its version is that of the release it grew
 from, so every later release would look new. A nightly is offered the stable
@@ -197,8 +199,8 @@ what to offer, in functions the tests call without a network;
 `src/desktop.rs` keeps the last list for the session (its `Updates`), and
 `crates/recore-iced/src/updates.rs` asks for a look on its timer and shows
 what was found, which About draws (`settings/updates.rs`). The saved choices
-are `check_for_updates`,
-`update_nightlies` and `skipped_update` in `layout.json`.
+are `check_for_updates`, `install_updates`, `update_nightlies` and
+`skipped_update` in `layout.json`.
 
 It also works out how ReCore was installed, from the program's path and the
 `APPIMAGE` and `FLATPAK_ID` variables: Scoop, Chocolatey, WinGet, the Microsoft
@@ -219,9 +221,9 @@ page has the rest.
 ### Updating itself
 
 Update and restart is shown only when this copy can replace itself, and
-installs only what a person asked for: there is no automatic install, and
-About's "Install updates automatically" switch stays greyed out and off.
-`src/update/install.rs` does the work, for two installs:
+installs when a person asks for it, or on its own with Settings' Install
+updates automatically on. `src/update/install.rs` does the work, for two
+installs:
 
 - **A Linux AppImage** that the person can write to. The release's AppImage
   streams to `.recore-update.part` beside the old one, hashed as it arrives.
@@ -283,9 +285,12 @@ a page. Remove an entry once its release is old.
 
 Every release publishes `SHA256SUMS.txt.minisig`, a
 [minisign](https://jedisct1.github.io/minisign/) signature of its sums, and
-Update and restart installs nothing without it. The app carries the public
-keys, `packaging/keys/*.pub`, and checks with the `minisign-verify` crate. Two
-kinds of key sign, and the app takes each only for its own releases:
+Update and restart checks it when it's there. A release without one still
+installs from this repository: its `SHA256SUMS.txt`, served by GitHub over
+HTTPS, is checked against the download, but no key vouches for the sums, and
+About says so beside Update and restart. The app carries the public keys,
+`packaging/keys/*.pub`, and checks with the `minisign-verify` crate. Two kinds
+of key sign, and the app takes each only for its own releases:
 
 - **Stable**, `stable.pub`, for every version that isn't a nightly. Its secret
   key is in `~/.minisign/recore-stable.key` on the maintainer's machine,

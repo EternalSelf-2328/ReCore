@@ -9,6 +9,22 @@ use recore_core::{
 };
 
 use super::{Event, Page, Settings};
+
+/// The interface sizes Appearance offers, and their names: levels of
+/// `zoom::LEVELS`, so the window lays out at the size it settles on.
+pub(in crate::settings) const ZOOM_SIZES: [(f32, &str); 11] = [
+    (0.5, "50%"),
+    (0.6, "60%"),
+    (0.75, "75%"),
+    (0.9, "90%"),
+    (1.0, "100%"),
+    (1.1, "110%"),
+    (1.25, "125%"),
+    (1.5, "150%"),
+    (1.6, "160%"),
+    (1.8, "180%"),
+    (2.0, "200%"),
+];
 use crate::{
     app::Message,
     ctx::{Cx, Pref as Shown, Request},
@@ -68,6 +84,8 @@ pub enum Pref {
     GpuRendering(bool),
     GpuEncoding(bool),
     StreamerMode(bool),
+    WordSuggestions(bool),
+    Zoom(usize),
     CloseToTray(bool),
     MultipleWindows(bool),
     DeveloperMode(bool),
@@ -76,6 +94,7 @@ pub enum Pref {
     ShowIdle(bool),
     HideBlocked(bool),
     CheckUpdates(bool),
+    InstallUpdates(bool),
     Nightlies(bool),
     StartOnSignIn(bool),
     DiscordLinks(bool),
@@ -111,6 +130,7 @@ impl Pref {
                 | Self::GpuRendering(_)
                 | Self::GpuEncoding(_)
                 | Self::StreamerMode(_)
+                | Self::WordSuggestions(_)
                 | Self::CloseToTray(_)
                 | Self::MultipleWindows(_)
                 | Self::DeveloperMode(_)
@@ -119,6 +139,7 @@ impl Pref {
                 | Self::ShowIdle(_)
                 | Self::HideBlocked(_)
                 | Self::CheckUpdates(_)
+                | Self::InstallUpdates(_)
                 | Self::Nightlies(_)
                 | Self::StartOnSignIn(_)
                 | Self::DiscordLinks(_)
@@ -380,6 +401,18 @@ impl Settings {
                 prefs.streamer_mode = Some(on);
                 cx.keep("streamer_mode", on);
             }
+            Pref::WordSuggestions(on) => {
+                prefs.word_suggestions = Some(on);
+                cx.keep("word_suggestions", on);
+            }
+            Pref::Zoom(index) => {
+                let Some((level, _)) = ZOOM_SIZES.get(index) else {
+                    return;
+                };
+                cx.layout.zoom = Some(*level);
+                cx.keep("zoom", *level);
+                cx.request(Request::Zoom(*level));
+            }
             Pref::ShowHiddenChannels(on) => {
                 prefs.show_hidden_channels = on;
                 cx.keep("show_hidden_channels", on);
@@ -401,11 +434,15 @@ impl Settings {
                 cx.dispatch(Action::HideBlocked(on));
             }
             Pref::CheckUpdates(on) => {
-                prefs.check_for_updates = on;
+                prefs.check_for_updates = Some(on);
                 cx.keep("check_for_updates", on);
                 if on {
                     cx.request(Request::LookForUpdates(true));
                 }
+            }
+            Pref::InstallUpdates(on) => {
+                prefs.install_updates = Some(on);
+                cx.keep("install_updates", on);
             }
             Pref::Nightlies(on) => {
                 prefs.update_nightlies = on;
@@ -481,6 +518,8 @@ pub fn message_size(text_size: Option<i32>) -> f32 {
     match text_size {
         Some(0) => 14.0,
         Some(2) => 18.0,
+        Some(3) => 20.0,
+        Some(4) => 22.0,
         _ => 15.0,
     }
 }

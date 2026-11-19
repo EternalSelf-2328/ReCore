@@ -224,6 +224,8 @@ pub struct Prefs {
     pub translate_send: Option<bool>,
     /// Streamer mode: no sounds, no notifications, and no personal details.
     pub streamer_mode: Option<bool>,
+    /// Words missing their accents are offered under the composer.
+    pub word_suggestions: Option<bool>,
     /// Appearance's profile switches, and nameplates.
     pub nameplates: Option<bool>,
     pub profile_effects: Option<bool>,
@@ -251,8 +253,11 @@ pub struct Prefs {
     pub game_executables: Vec<(String, String)>,
     /// About: looking for releases, nightlies among them, the release
     /// skipped, and the last told of in a notification.
-    pub check_for_updates: bool,
+    /// Checks the releases on GitHub, on unless turned off.
+    pub check_for_updates: Option<bool>,
     pub update_nightlies: bool,
+    /// Downloads a newer release and restarts into it as it's found.
+    pub install_updates: Option<bool>,
     pub skipped_update: Option<String>,
     pub announced_update: Option<String>,
     /// ReCord's interface sounds, and their master volume as a percentage.

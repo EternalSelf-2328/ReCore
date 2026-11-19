@@ -163,6 +163,8 @@ pub enum Drop {
     /// The language a message is written in, and the one it's sent in.
     TranslateSource,
     TranslateTarget,
+    /// The whole window's size.
+    Zoom,
     /// A keybind's action, by its row.
     Keybind(usize),
 }

@@ -54,7 +54,7 @@ impl<'a> Page<'a> {
             border: crate::style::edge(edge, 8.0),
             ..Default::default()
         });
-        let text_size = prefs.text_size.unwrap_or(1).clamp(0, 2) as usize;
+        let text_size = prefs.text_size.unwrap_or(1).clamp(0, 4) as usize;
         let date = prefs
             .date_format
             .and_then(|index| usize::try_from(index).ok())
@@ -74,10 +74,17 @@ impl<'a> Page<'a> {
             form::title(theme, "Messages"),
             preview.into(),
             form::group([
-                form::heading(theme, "TEXT SIZE"),
-                choices(theme, &["Small", "Default", "Large"], text_size, |index| {
-                    pref(Pref::TextSize(index))
-                }),
+                form::heading(theme, "FONT SIZE"),
+                choices(
+                    theme,
+                    &["Small", "Default", "Large", "Larger", "Huge"],
+                    text_size,
+                    |index| pref(Pref::TextSize(index)),
+                ),
+                form::note(
+                    theme,
+                    "The messages' own type size, in the timeline and the composer. The interface size in Appearance grows every label and picture with it.",
+                ),
             ]),
             form::group([
                 form::heading(theme, "CLOCK"),
@@ -104,6 +111,20 @@ impl<'a> Page<'a> {
                     animate,
                     |index| pref(Pref::Animate(index)),
                 ),
+            ]),
+            form::group([
+                form::heading(theme, "WRITING"),
+                switch(
+                    "Suggest accented words",
+                    prefs.word_suggestions.unwrap_or(true),
+                    Some(pref(Pref::WordSuggestions(
+                        !prefs.word_suggestions.unwrap_or(true),
+                    ))),
+                )
+                .description(
+                    "While you write, a word missing its accents is offered under the composer; Tab takes it, and nothing changes on its own.",
+                )
+                .view(self.cx.look),
             ]),
             form::group([
                 form::heading(theme, "LANGUAGE YOU WRITE IN"),

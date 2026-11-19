@@ -44,6 +44,8 @@ pub struct Ctx<'a> {
     pub keybinds: &'a Keybinds,
     /// The window's motion clock, in 50 ms ticks.
     pub motion: u32,
+    /// How far the whole window is zoomed, as one of `zoom::LEVELS`.
+    pub zoom: f32,
     /// When the open room last changed, for a selected row's flash.
     pub switched: Option<std::time::Instant>,
     /// ReCore draws the window's title bar itself.
@@ -132,6 +134,8 @@ pub enum Request {
     Focus(Focus),
     /// A preference changed that others show: each screen hears of it.
     Changed(Pref),
+    /// The whole window's zoom, as Settings' interface size chooses it.
+    Zoom(f32),
     /// The window's title bar: the system's, or ReCore's own.
     TitleBar(bool),
     /// A look at the releases, telling of a newer one if `true`.

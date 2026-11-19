@@ -125,7 +125,6 @@ pub fn target_for(
         })?
         .clone();
     sums_of(release).ok_or("This release doesn't publish SHA256SUMS.txt.")?;
-    signature_of(release).ok_or(UNSIGNED)?;
     match source {
         Source::AppImage => {
             let current = appimage
@@ -200,8 +199,12 @@ fn signature_of(release: &Release) -> Option<&Asset> {
         .find(|asset| asset.name == signature::FILE)
 }
 
-/// Why a release without a signature isn't installed.
-const UNSIGNED: &str = "This release isn't signed, so it can't be installed from here.";
+/// Whether the release publishes the signature of its sums. One without is
+/// still installed from ReCore's own repository: its checksum is checked,
+/// from the files GitHub serves over HTTPS, but no key vouches for them.
+pub fn signed(release: &Release) -> bool {
+    signature_of(release).is_some()
+}
 
 /// Reads `sha256sum`'s output: a hash, then the file's name, which a `*`
 /// marks as read in binary mode.
@@ -406,10 +409,16 @@ async fn prepare_in(
     let asset = target.asset();
     progress.stage(Stage::Starting);
     let sums = sums_of(release).ok_or("This release doesn't publish SHA256SUMS.txt.")?;
-    let signed = signature_of(release).ok_or(UNSIGNED)?;
     let sums = fetch_small(client, &sums.url, 1 << 20).await?;
-    let signed = fetch_small(client, &signed.url, signature::LIMIT).await?;
-    signature::verify(&signature::KEYS, sums.as_bytes(), &signed, release)?;
+    if let Some(signed) = signature_of(release) {
+        let signed = fetch_small(client, &signed.url, signature::LIMIT).await?;
+        signature::verify(&signature::KEYS, sums.as_bytes(), &signed, release)?;
+    } else {
+        tracing::warn!(
+            tag = %release.tag,
+            "the release isn't signed; its checksum is still checked"
+        );
+    }
     let sums = parse_sums(&sums);
     let expected = sums.get(&asset.name).ok_or_else(|| {
         format!(
@@ -655,7 +664,7 @@ mod tests {
     }
 
     #[test]
-    fn a_release_without_its_file_sums_or_signature_is_not_installed() {
+    fn a_release_without_its_file_sums_is_not_installed() {
         let folder = tempfile::tempdir().unwrap();
         let app = folder.path().join("ReCore.AppImage");
         let program = folder.path().join("recore.exe");
@@ -676,9 +685,8 @@ mod tests {
             .assets
             .retain(|asset| asset.name != "SHA256SUMS.txt.minisig");
         assert!(
-            target_for(&release, Source::AppImage, &program, Some(&app), "")
-                .unwrap_err()
-                .contains("isn't signed")
+            target_for(&release, Source::AppImage, &program, Some(&app), "").is_ok(),
+            "an unsigned release installs with its checksum"
         );
         release
             .assets
@@ -853,6 +861,16 @@ mod tests {
         release
     }
 
+    /// The same release without a signature, as ReCore's own test releases
+    /// are: installed with its checksum.
+    fn served_unsigned_release(base: &str) -> Release {
+        let mut release = served_release(base);
+        release
+            .assets
+            .retain(|asset| asset.name != "SHA256SUMS.txt.minisig");
+        release
+    }
+
     #[test]
     fn a_download_that_matches_its_sum_is_installed() {
         let _turn = INSTALLER_FOLDER.lock().unwrap_or_else(|e| e.into_inner());
@@ -867,9 +885,8 @@ mod tests {
         let base = serve(vec![
             ("ReCore-0.4.1-windows-x64-setup.exe", new.clone()),
             ("SHA256SUMS.txt", sums),
-            ("SHA256SUMS.txt.minisig", signed("installer")),
         ]);
-        let release = served_release(&base);
+        let release = served_unsigned_release(&base);
         let folder = tempfile::tempdir().unwrap();
         let program = folder.path().join("recore.exe");
         let target = Target::Installer {
@@ -911,9 +928,8 @@ mod tests {
                 b"something else".to_vec(),
             ),
             ("SHA256SUMS.txt", sums),
-            ("SHA256SUMS.txt.minisig", signed("mismatched")),
         ]);
-        let release = served_release(&base);
+        let release = served_unsigned_release(&base);
         let folder = tempfile::tempdir().unwrap();
         let target = Target::Installer {
             asset: release
@@ -971,17 +987,16 @@ mod tests {
         let folder = tempfile::tempdir().unwrap();
         let current = folder.path().join("ReCore.AppImage");
         std::fs::write(&current, b"old").unwrap();
-        for (script, works, signature) in [
-            (&b"#!/bin/sh\nexit 0\n"[..], true, "appimage-works"),
-            (&b"#!/bin/sh\nexit 3\n"[..], false, "appimage-fails"),
+        for (script, works) in [
+            (&b"#!/bin/sh\nexit 0\n"[..], true),
+            (&b"#!/bin/sh\nexit 3\n"[..], false),
         ] {
             let sums = format!("{}  {name}\n", sha(script)).into_bytes();
             let base = serve(vec![
                 ("ReCore-0.4.1-x86_64.AppImage", script.to_vec()),
                 ("SHA256SUMS.txt", sums),
-                ("SHA256SUMS.txt.minisig", signed(signature)),
             ]);
-            let release = served_release(&base);
+            let release = served_unsigned_release(&base);
             let target = Target::AppImage {
                 asset: release
                     .assets

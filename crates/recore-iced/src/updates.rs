@@ -75,29 +75,45 @@ pub fn updates_heard(app: &mut App) -> Task<Message> {
         return app.quit();
     }
     let choices = update_choices(app);
-    if app.announce_updates && updates.shown(&choices).status != UpdateStatus::Checking {
+    let shown = updates.shown(&choices);
+    let mut task = Task::none();
+    if app.announce_updates && shown.status != UpdateStatus::Checking {
         app.announce_updates = false;
-        announce_update(app, updates.offered(&choices));
+        task = announce_update(app, updates.offered(&choices));
     }
-    Task::none()
+    // Install updates automatically: a release offered as the look ends
+    // goes at once. A failed download isn't tried again until the next
+    // look, so a broken release doesn't restart in a loop.
+    if app.layout.prefs.install_updates.unwrap_or(false)
+        && shown.status == UpdateStatus::Available
+        && shown.install_error.is_empty()
+    {
+        updates.install(&choices);
+    }
+    task
 }
 
-/// Tells of the newest release in a notification, once for each release,
-/// unless notifications are off or the person skipped it.
-fn announce_update(app: &mut App, offered: Option<desktop::Offered>) {
+/// Tells of the newest release in a notification and a toast, once for
+/// each release, unless notifications are off or the person skipped it.
+fn announce_update(app: &mut App, offered: Option<desktop::Offered>) -> Task<Message> {
     let Some(offered) = offered.filter(|offered| !offered.skipped) else {
-        return;
+        return Task::none();
     };
     let prefs = &mut app.layout.prefs;
     if prefs.announced_update.as_deref() == Some(offered.tag.as_str()) {
-        return;
+        return Task::none();
     }
     prefs.announced_update = Some(offered.tag.clone());
     crate::layout::store(app.client.root(), "announced_update", &offered.tag);
-    if !app.layout.prefs.notifications.unwrap_or(true) {
-        return;
+    // A toast in the window too, which opens About, so the release shows
+    // without the desktop's notifier.
+    let mut task = Task::none();
+    if !app.layout.prefs.streamer_mode.unwrap_or(false) {
+        task = crate::toast::update_available(app, &offered.tag);
     }
-    if let Some(notifier) = &app.shell.notifier {
+    if app.layout.prefs.notifications.unwrap_or(true)
+        && let Some(notifier) = &app.shell.notifier
+    {
         notifier.show(
             recore_core::chat::Alert {
                 room: ABOUT.into(),
@@ -110,6 +126,7 @@ fn announce_update(app: &mut App, offered: Option<desktop::Offered>) {
             true,
         );
     }
+    task
 }
 
 pub fn update(app: &mut App, event: Event) -> Task<Message> {
@@ -119,7 +136,7 @@ pub fn update(app: &mut App, event: Event) -> Task<Message> {
     let choices = update_choices(app);
     match event {
         Event::Due => {
-            if app.layout.prefs.check_for_updates {
+            if app.layout.prefs.check_for_updates.unwrap_or(true) {
                 look_for_updates(app, true);
             }
         }

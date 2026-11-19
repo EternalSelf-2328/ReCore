@@ -70,13 +70,14 @@ impl<'a> Page<'a> {
         );
         let mut parts = vec![form::title(theme, "About"), card];
         parts.extend(self.updates_part());
+        let checks = prefs.check_for_updates.unwrap_or(true);
         parts.push(
             switch(
                 "Check for updates",
-                prefs.check_for_updates,
-                Some(pref(Pref::CheckUpdates(!prefs.check_for_updates))),
+                checks,
+                Some(pref(Pref::CheckUpdates(!checks))),
             )
-            .description("Checks for new versions every 6 hours.")
+            .description("Looks the releases up on GitHub at start and every 6 hours.")
             .fresh(self.fresh("check-updates"))
             .view(self.cx.look),
         );
@@ -84,18 +85,27 @@ impl<'a> Page<'a> {
             switch(
                 "Include nightly builds",
                 prefs.update_nightlies,
-                prefs
-                    .check_for_updates
-                    .then(|| pref(Pref::Nightlies(!prefs.update_nightlies))),
+                checks.then(|| pref(Pref::Nightlies(!prefs.update_nightlies))),
             )
             .description("Get the newest features before release. Expect some bugs.")
             .fresh(self.fresh("update-nightlies"))
             .view(self.cx.look),
         );
         parts.push(
-            switch("Install updates automatically", false, None)
-                .description("Not available yet.")
-                .view(self.cx.look),
+            switch(
+                "Install updates automatically",
+                prefs.install_updates.unwrap_or(false),
+                checks.then(|| {
+                    pref(Pref::InstallUpdates(
+                        !prefs.install_updates.unwrap_or(false),
+                    ))
+                }),
+            )
+            .description(
+                "A newer release downloads and ReCore restarts into it as it's found. Off, About asks first.",
+            )
+            .fresh(self.fresh("install-updates"))
+            .view(self.cx.look),
         );
         parts.push(form::heading(theme, "LINKS"));
         let ink = crate::theme::rgb(theme.text);
