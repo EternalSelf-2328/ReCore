@@ -159,6 +159,91 @@ fn position(text: &str, at: usize) -> Position {
     Position { line, column }
 }
 
+/// A dead accent a keyboard sent before its letter, and the letter: the one
+/// letter they make, or the accent alone dropped when they make none. `None`
+/// when there's nothing to join, and `Some(None)` when the accent goes and
+/// the letter stays as typed.
+fn joined_before(editor: &Editor, typed: char) -> Option<Option<char>> {
+    let text = whole(editor);
+    let caret = offset(editor, editor.cursor().position);
+    let before = text[..caret].chars().next_back()?;
+    // A combining mark typed after the letter it belongs to.
+    if combining(typed) {
+        return before
+            .is_alphabetic()
+            .then(|| composed(typed, before))
+            .flatten()
+            .map(Some);
+    }
+    if !dead(before) || !typed.is_alphabetic() {
+        return None;
+    }
+    if let Some(joined) = composed(before, typed) {
+        return Some(Some(joined));
+    }
+    // The letter already carries its own accent: the dead one is spare.
+    if !typed.is_ascii() {
+        return Some(Some(typed));
+    }
+    // A dead accent typed before a letter it can't accent goes, except the
+    // backtick, which code spans and blocks use.
+    (before != '`').then_some(None)
+}
+
+/// Whether `c` is a spacing accent a keyboard uses as a dead key.
+fn dead(c: char) -> bool {
+    matches!(c, '´' | '`' | '^' | '¨' | '~')
+}
+
+/// Whether `c` is a combining diacritic.
+fn combining(c: char) -> bool {
+    matches!(c, '\u{300}' | '\u{301}' | '\u{302}' | '\u{303}' | '\u{308}')
+}
+
+/// The letter `accent` and `letter` make, as one character.
+fn composed(accent: char, letter: char) -> Option<char> {
+    let mark = match accent {
+        '´' | '\u{301}' => '\u{301}',
+        '`' | '\u{300}' => '\u{300}',
+        '^' | '\u{302}' => '\u{302}',
+        '¨' | '\u{308}' => '\u{308}',
+        '~' | '\u{303}' => '\u{303}',
+        _ => return None,
+    };
+    let lower = letter.to_ascii_lowercase();
+    let one = match (mark, lower) {
+        ('\u{301}', 'a') => 'á',
+        ('\u{301}', 'e') => 'é',
+        ('\u{301}', 'i') => 'í',
+        ('\u{301}', 'o') => 'ó',
+        ('\u{301}', 'u') => 'ú',
+        ('\u{300}', 'a') => 'à',
+        ('\u{300}', 'e') => 'è',
+        ('\u{300}', 'i') => 'ì',
+        ('\u{300}', 'o') => 'ò',
+        ('\u{300}', 'u') => 'ù',
+        ('\u{302}', 'a') => 'â',
+        ('\u{302}', 'e') => 'ê',
+        ('\u{302}', 'i') => 'î',
+        ('\u{302}', 'o') => 'ô',
+        ('\u{302}', 'u') => 'û',
+        ('\u{308}', 'a') => 'ä',
+        ('\u{308}', 'e') => 'ë',
+        ('\u{308}', 'i') => 'ï',
+        ('\u{308}', 'o') => 'ö',
+        ('\u{308}', 'u') => 'ü',
+        ('\u{303}', 'a') => 'ã',
+        ('\u{303}', 'o') => 'õ',
+        ('\u{303}', 'n') => 'ñ',
+        _ => return None,
+    };
+    Some(if letter.is_ascii_uppercase() {
+        one.to_uppercase().next().unwrap_or(one)
+    } else {
+        one
+    })
+}
+
 impl Draft {
     /// The text, without any preedit.
     pub fn text(&self) -> String {
@@ -362,6 +447,8 @@ pub struct Field<'a, M> {
     placeholder: String,
     /// Mention suggestions show: the arrows, Tab, Enter and Escape go to them.
     suggesting: bool,
+    /// A spelling suggestion shows: Tab takes it.
+    spelling: bool,
     font: Font,
     size: f32,
     line: f32,
@@ -406,6 +493,7 @@ impl<'a, M: Clone> Field<'a, M> {
             id,
             placeholder,
             suggesting: false,
+            spelling: false,
             font: REGULAR(),
             size: 16.0,
             line: 24.0,
@@ -431,6 +519,12 @@ impl<'a, M: Clone> Field<'a, M> {
     /// Ctrl+V asks the app, which may find files or a picture to attach.
     pub fn pastes(mut self) -> Self {
         self.pastes = true;
+        self
+    }
+
+    /// A spelling suggestion shows: Tab takes it.
+    pub fn spelling(mut self, spelling: bool) -> Self {
+        self.spelling = spelling;
         self
     }
 
@@ -927,6 +1021,10 @@ impl<M: Clone> Widget<M, Theme, Renderer> for Field<'_, M> {
                         _ => {}
                     }
                 }
+                if self.spelling && named == Some(key::Named::Tab) && !modifiers.shift() && !command
+                {
+                    return publish(shell, Event::Choose);
+                }
                 let latin = key.to_latin(*physical_key);
                 let edit = |inner: &mut Inner, kind: Kind, action: Action| {
                     inner.remember(kind);
@@ -1044,6 +1142,18 @@ impl<M: Clone> Widget<M, Theme, Renderer> for Field<'_, M> {
                             inner.last = None;
                         }
                         for c in typed {
+                            // A dead accent the keyboard sent on its own,
+                            // then its letter: one letter, as Windows does
+                            // when it doesn't compose them.
+                            if inner.editor.copy().is_none()
+                                && let Some(joined) = joined_before(&inner.editor, c)
+                            {
+                                edit(&mut inner, kind, Action::Edit(Edit::Backspace));
+                                inner
+                                    .editor
+                                    .perform(Action::Edit(Edit::Insert(joined.unwrap_or(c))));
+                                continue;
+                            }
                             edit(&mut inner, kind, Action::Edit(Edit::Insert(c)));
                         }
                         self.edited(&inner, shell);
