@@ -303,6 +303,10 @@ impl App {
         layout.prefs.apply_clock();
         recore_core::discord::set_custom_games(&layout.prefs.game_executables);
         client.share_typing = layout.prefs.share_typing.unwrap_or(true);
+        client.set_attachment_privacy(
+            layout.prefs.strip_image_metadata.unwrap_or(false),
+            layout.prefs.anonymize_attachment_names.unwrap_or(false),
+        );
         // The window opens at its size in the desktop's pixels whatever the
         // zoom, and its layout gets fewer.
         let zoom = recore_core::zoom::saved(layout.zoom);

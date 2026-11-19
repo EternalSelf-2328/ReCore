@@ -69,7 +69,9 @@ recording. Each change is kept at once in
   folding, boost gems in the member list, sharing that this account types
   (off, the core's typing commands go nowhere), mentioning those replied
   to, tracking taken out of links, plain folder icons, GIFs opening in
-  Favorites, and the language Translate puts a message in.
+  Favorites, and the language Translate puts a message in. Discord uploads
+  can have their names anonymized and JPEG, PNG and WebP metadata removed
+  before upload. See [Writing](writing.md).
 - Notifications, Sounds (the set, which plays a sound when chosen, the
   volume, and each sound's own with its play button) and Advanced.
   Advanced holds Start when you sign in, Open Discord

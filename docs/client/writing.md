@@ -46,6 +46,18 @@ let go with its file) or a file's icon, either under the SPOILER cover
 once marked, the name and size, the spoiler button where the room has
 spoilers, and the X.
 
+**Settings → Messages** has two optional privacy controls for Discord
+uploads. **Remove metadata from image attachments** removes optional metadata
+from JPEG, PNG and WebP before upload, preserving encoded pixels, ICC color
+profiles and the orientation needed to display the image. It handles animated
+PNG and WebP. A structurally damaged supported image fails locally before any
+attachment in the batch is uploaded. Other file formats keep their bytes.
+
+**Anonymize attachment names** replaces each uploaded name with a random
+identifier, keeping standard extensions and the spoiler prefix. Both controls
+also apply to forum posts and Discord command attachments. ReCore prepares the
+upload in the background and leaves the original files on disk.
+
 A message of one's own is edited in its row (`edit.rs`), tinted with
 Discord's edit tint: the text becomes a field of its own there, with the
 emoji button beside it and "escape to cancel • enter to save" under it,

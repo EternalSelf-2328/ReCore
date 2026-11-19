@@ -50,6 +50,8 @@ pub enum Pref {
     TranslateSend(bool),
     ReplyPing(bool),
     StripTracking(bool),
+    StripImageMetadata(bool),
+    AnonymizeAttachmentNames(bool),
     Notifications(bool),
     NotificationText(bool),
     FlashTaskbar(bool),
@@ -95,6 +97,8 @@ impl Pref {
                 | Self::GifFavoritesFirst(_)
                 | Self::ReplyPing(_)
                 | Self::StripTracking(_)
+                | Self::StripImageMetadata(_)
+                | Self::AnonymizeAttachmentNames(_)
                 | Self::Notifications(_)
                 | Self::NotificationText(_)
                 | Self::FlashTaskbar(_)
@@ -252,6 +256,18 @@ impl Settings {
                 prefs.strip_tracking = Some(on);
                 cx.keep("strip_tracking", on);
                 cx.dispatch(Action::StripTracking(on));
+            }
+            Pref::StripImageMetadata(on) => {
+                prefs.strip_image_metadata = Some(on);
+                cx.client
+                    .set_attachment_privacy(on, prefs.anonymize_attachment_names.unwrap_or(false));
+                cx.keep("strip_image_metadata", on);
+            }
+            Pref::AnonymizeAttachmentNames(on) => {
+                prefs.anonymize_attachment_names = Some(on);
+                cx.client
+                    .set_attachment_privacy(prefs.strip_image_metadata.unwrap_or(false), on);
+                cx.keep("anonymize_attachment_names", on);
             }
             Pref::Notifications(on) => {
                 prefs.notifications = Some(on);
