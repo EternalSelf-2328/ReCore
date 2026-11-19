@@ -807,7 +807,7 @@ impl<'a> View<'a> {
             && !marks.selected
             && !marks.pointed
             && self.cx.themes.motion() == crate::themes::Motion::Full
-            && (self.cx.motion / 24) % 2 == 1;
+            && self.cx.rail_pulse;
         let mut ink = if theme.square && (marks.unread || marks.selected) {
             theme.accent
         } else {

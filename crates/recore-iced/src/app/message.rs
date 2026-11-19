@@ -89,9 +89,12 @@ pub enum Message {
     FontsLoaded,
     /// A frame of the CRT beam or flicker.
     EffectsTick,
-    /// A frame of the window's stepped motion: the boot signal, badges,
-    /// presence and the screen-in.
+    /// A frame of the boot signal or a screen-in.
     MotionTick,
+    /// The unread rail indicators switch between bright and dim.
+    RailPulse,
+    /// The local speaking ring switches between bright and dim.
+    SpeakingPulse,
     /// One of ReCord's interface sounds.
     Interface(recore_core::sounds::InterfaceSound),
     /// Nothing to do: a click a backdrop takes.

@@ -423,12 +423,10 @@ impl App {
     fn switch_view(&self) -> Option<Element<'_, Message>> {
         let start = self.switched?;
         let elapsed = start.elapsed();
-        if elapsed >= std::time::Duration::from_millis(260)
-            || self.themes.motion() != crate::themes::Motion::Full
-        {
+        if elapsed >= super::ROOM_REVEAL || self.themes.motion() != crate::themes::Motion::Full {
             return None;
         }
-        let t = elapsed.as_secs_f32() / 0.260;
+        let t = elapsed.as_secs_f32() / super::ROOM_REVEAL.as_secs_f32();
         let step = (t * 5.0).floor() / 5.0;
         let alpha = if step < 0.3 {
             1.0 - step / 0.3

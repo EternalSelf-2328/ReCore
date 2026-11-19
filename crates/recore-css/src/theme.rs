@@ -1213,14 +1213,14 @@ fn look(
         ));
     }
     let motion = match vars
-        .resolve(vars.get("--rl-motion").unwrap_or("full"))
-        .unwrap_or_else(|| "full".into())
-        .to_ascii_lowercase()
-        .as_str()
+        .get("--rl-motion")
+        .and_then(|value| vars.resolve(value))
+        .map(|value| value.to_ascii_lowercase())
+        .as_deref()
     {
-        "off" => Motion::Off,
-        "subtle" => Motion::Subtle,
-        _ => Motion::Full,
+        Some("off") => Motion::Off,
+        Some("full") => Motion::Full,
+        _ => Motion::Subtle,
     };
     let effects = Effects {
         scanlines: fraction(vars, &["--rl-scanline-opacity"]).unwrap_or(0.0),
@@ -1514,6 +1514,7 @@ html.theme-light:not([data-rl-mode="dark"]) {
         assert_eq!(theme.palette.accent_hover, Rgba::rgb(0x47, 0x52, 0xc4));
         assert_eq!(theme.palette.text, Rgba::rgb(0xdb, 0xde, 0xe1));
         assert_eq!(theme.look.font_family.as_deref(), Some("gg sans"));
+        assert_eq!(theme.look.motion, Motion::Subtle);
         let light = load_str(css, None, &Options::with_mode(Mode::Light)).unwrap();
         assert_eq!(light.palette.chat, Rgba::rgb(0xff, 0xff, 0xff));
         assert_eq!(light.palette.text, Rgba::rgb(0x31, 0x33, 0x38));

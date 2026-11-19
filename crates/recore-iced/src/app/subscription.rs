@@ -77,20 +77,38 @@ impl App {
             crate::window_bar::history_keys(),
             Self::shell_subscription(),
         ];
-        // The CRT beam and flicker move on their own while the layer has
-        // them; the view reads the phase.
-        if self.themes.animates_effects() {
+        let shown = self.shell.window.is_some();
+        let focused = shown && self.shell.focused;
+        let full_motion = self.themes.motion() == crate::themes::Motion::Full;
+        // Animate the CRT beam and flicker only while the window has focus.
+        if focused && self.themes.animates_effects(&self.theme) {
             subscriptions
                 .push(iced::time::every(Duration::from_millis(100)).map(|_| Message::EffectsTick));
         }
-        // ReCord moves in steps: badges pulse, the boot line blinks and a
-        // new screen fades in while the motion level asks for it.
-        if self.boot.is_some()
-            || self.reveal.is_some()
-            || self.themes.motion() != crate::themes::Motion::Off
-        {
+        let room_revealing = full_motion
+            && self
+                .switched
+                .is_some_and(|start| start.elapsed() < super::ROOM_REVEAL);
+        if shown && (self.boot.is_some() || self.reveal.is_some() || room_revealing) {
             subscriptions
                 .push(iced::time::every(Duration::from_millis(50)).map(|_| Message::MotionTick));
+        }
+        if focused
+            && full_motion
+            && ((self.rail.home.unread && !self.rail.home.selected)
+                || self
+                    .rail
+                    .items
+                    .iter()
+                    .any(|item| item.unread && !item.selected))
+        {
+            subscriptions
+                .push(iced::time::every(Duration::from_millis(1200)).map(|_| Message::RailPulse));
+        }
+        if focused && full_motion && self.account.speaking {
+            subscriptions.push(
+                iced::time::every(Duration::from_millis(500)).map(|_| Message::SpeakingPulse),
+            );
         }
         // A look at the releases every six hours while the check is on.
         if self.layout.prefs.check_for_updates.unwrap_or(true) {
@@ -136,7 +154,6 @@ impl App {
             }));
         }
         // With the window closed to the tray, nothing shows.
-        let shown = self.shell.window.is_some();
         // Settings: the push-to-talk key while it's recorded.
         if self.recording_keybind() {
             subscriptions.push(crate::settings::keybinds::record_keys());

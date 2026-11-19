@@ -42,8 +42,10 @@ pub struct Ctx<'a> {
     pub scale: f32,
     /// The keybinds' watcher and what it said of where they work.
     pub keybinds: &'a Keybinds,
-    /// The window's motion clock, in 50 ms ticks.
-    pub motion: u32,
+    /// Whether the unread rail indicators are in the dim half of their pulse.
+    pub rail_pulse: bool,
+    /// Whether the local speaking ring is in the dim half of its pulse.
+    pub speaking_pulse: bool,
     /// How far the whole window is zoomed, as one of `zoom::LEVELS`.
     pub zoom: f32,
     /// When the open room last changed, for a selected row's flash.

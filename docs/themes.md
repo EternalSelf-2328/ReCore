@@ -98,6 +98,11 @@ tile with the CSS badge. A theme carries:
   `--rl-avatar-scanline`). The avatar filter and scanline grade the pictures
   the client draws.
 
+CSS themes without `--rl-motion` use subtle motion. They keep menu
+transitions and show room changes immediately. Full motion keeps the
+stepped room transition. The rail's unread indicators pulse at their own
+rate, and the animated CRT effects pause when the window loses focus.
+
 ReCord's own `--rl-*` palette is mapped exactly, so dropping
 [`themes/ReCord.theme.css`](../themes/ReCord.theme.css) in gives the built-in
 ReCore colours and its four Pixel Operator faces.

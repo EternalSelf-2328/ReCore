@@ -467,19 +467,17 @@ impl Themes {
 
     /// The chosen theme's motion level.
     pub fn motion(&self) -> Motion {
-        if matches!(self.chosen_id(), "recore" | "recore-light") {
-            return self.recore.motion;
-        }
         match self.chosen_css().map(|css| css.look.motion) {
             Some(recore_css::Motion::Off) => Motion::Off,
             Some(recore_css::Motion::Subtle) => Motion::Subtle,
-            _ => Motion::Full,
+            Some(recore_css::Motion::Full) => Motion::Full,
+            None => self.recore.motion,
         }
     }
 
     /// Whether the CRT layer has a beam or flicker that needs the clock.
-    pub fn animates_effects(&self) -> bool {
-        self.shade(&Theme::new("probe", true))
+    pub fn animates_effects(&self, theme: &Theme) -> bool {
+        self.shade(theme)
             .is_some_and(|shade| shade.beam > 0.0 || shade.flicker > 0.0)
     }
 

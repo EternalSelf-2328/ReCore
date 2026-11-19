@@ -472,8 +472,7 @@ fn ring_and_dot<'a>(
     let square = ctx.themes.square_avatars();
     let mut layers = stack![face];
     if account.speaking {
-        let pressed =
-            ctx.themes.motion() == crate::themes::Motion::Full && (ctx.motion / 10) % 2 == 1;
+        let pressed = ctx.themes.motion() == crate::themes::Motion::Full && ctx.speaking_pulse;
         let ring = if pressed {
             iced::Color {
                 a: theme.live.a * 0.72,

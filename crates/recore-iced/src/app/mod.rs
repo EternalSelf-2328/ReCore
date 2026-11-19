@@ -36,6 +36,7 @@ pub use self::message::{Message, Messages, batches};
 /// that follows it.
 pub const BOOT: Duration = Duration::from_millis(1600);
 pub const REVEAL: Duration = Duration::from_millis(280);
+pub const ROOM_REVEAL: Duration = Duration::from_millis(260);
 
 /// What's under the pointer in each part of the window that shows it, by
 /// id: set on entering, cleared on leaving ([`point`]).
@@ -75,9 +76,10 @@ pub struct App {
     pub announce_updates: bool,
     /// The CRT beam's or flicker's place in its cycle, in 100 ms ticks.
     pub effects_phase: u32,
-    /// The window's motion clock, in 50 ms ticks: pulsing badges, the
-    /// boot signal's blinking line and the screen-in.
-    pub motion_phase: u32,
+    /// Whether the unread rail indicators are in the dim half of their pulse.
+    pub rail_pulse: bool,
+    /// Whether the local speaking ring is in the dim half of its pulse.
+    pub speaking_pulse: bool,
     /// When the boot signal started, and the screen-in after it.
     pub boot: Option<Instant>,
     pub reveal: Option<Instant>,
@@ -329,7 +331,8 @@ impl App {
             bar_drag: Default::default(),
             announce_updates: false,
             effects_phase: 0,
-            motion_phase: 0,
+            rail_pulse: false,
+            speaking_pulse: false,
             boot: (!cfg!(test)).then(Instant::now),
             reveal: None,
             switched: None,
@@ -563,7 +566,6 @@ impl App {
                 Task::none()
             }
             Message::MotionTick => {
-                self.motion_phase = self.motion_phase.wrapping_add(1);
                 let now = Instant::now();
                 if self
                     .boot
@@ -578,6 +580,14 @@ impl App {
                 {
                     self.reveal = None;
                 }
+                Task::none()
+            }
+            Message::RailPulse => {
+                self.rail_pulse = !self.rail_pulse;
+                Task::none()
+            }
+            Message::SpeakingPulse => {
+                self.speaking_pulse = !self.speaking_pulse;
                 Task::none()
             }
             Message::Fitted(fitted) => {
