@@ -32,6 +32,7 @@ impl App {
             video: &self.video,
             scale: self.device_scale(),
             motion: self.motion_phase,
+            zoom: self.shell.zoom,
             switched: self.switched,
             keybinds: &self.keybinds,
             own_title_bar: self.shell.own_title_bar,
@@ -199,6 +200,7 @@ impl App {
                             heard.push(pref);
                         }
                     }
+                    Request::Zoom(level) => tasks.push(self.set_zoom(level)),
                     Request::TitleBar(system) => {
                         tasks.push(crate::window_bar::choose_title_bar(self, system));
                     }

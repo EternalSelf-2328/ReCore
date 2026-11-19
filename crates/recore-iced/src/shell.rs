@@ -130,6 +130,8 @@ pub enum Event {
     Zoom(keyboard::Key, key::Physical),
     /// Ctrl and the wheel.
     ZoomStep(zoom::Step),
+    /// A level chosen in Settings.
+    ZoomTo(f32),
 }
 
 impl App {
@@ -258,6 +260,7 @@ impl App {
             }
             Event::Zoom(key, physical) => self.zoom_key(&key, physical).unwrap_or_else(Task::none),
             Event::ZoomStep(step) => self.zoom_step(step),
+            Event::ZoomTo(level) => self.set_zoom(level),
         }
     }
 
@@ -815,6 +818,34 @@ impl App {
         };
         let step = zoom::key_step(text, place)?;
         Some(self.zoom_step(step))
+    }
+
+    /// Goes to `level`, snapped to a level of [`zoom::LEVELS`] the window's
+    /// room allows, and keeps it.
+    pub fn set_zoom(&mut self, level: f32) -> Task<Message> {
+        let current = self.shell.zoom;
+        let width = (self.shell.frame.width * current) as u32;
+        let height = (self.shell.frame.height * current) as u32;
+        let most = zoom::most(width, height, 1.0).max(zoom::LEVELS[0]);
+        let target = level.clamp(zoom::LEVELS[0], most);
+        let Some(next) = zoom::LEVELS.iter().copied().min_by(|a, b| {
+            (a - target)
+                .abs()
+                .partial_cmp(&(b - target).abs())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }) else {
+            return Task::none();
+        };
+        if (next - current).abs() >= f32::EPSILON {
+            self.shell.zoom = next;
+            // The layout gets fewer logical pixels to fill; the next resize
+            // says so exactly.
+            self.shell.frame = self.shell.frame * (current / next);
+            crate::window_bar::fit_window(self);
+            crate::call::stage::place_videos(self);
+            crate::layout::store(self.client.root(), "zoom", next);
+        }
+        Task::none()
     }
 
     /// Zooms a step, no further in than the window's room allows, keeps the

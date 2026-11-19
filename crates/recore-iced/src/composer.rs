@@ -923,6 +923,7 @@ fn composer_box<'a>(ctx: crate::ctx::Ctx<'a>, look: &Look) -> Element<'a, Messag
             selection: theme.selection,
         },
     )
+    .size(crate::settings::message_size(ctx.layout.prefs.text_size))
     .padding(Padding {
         // Under the pills, 10 px from them.
         top: if commanding { 10.0 } else { PAD },

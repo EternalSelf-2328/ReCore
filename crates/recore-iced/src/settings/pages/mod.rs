@@ -9,6 +9,22 @@ use recore_core::{
 };
 
 use super::{Event, Page, Settings};
+
+/// The interface sizes Appearance offers, and their names: levels of
+/// `zoom::LEVELS`, so the window lays out at the size it settles on.
+pub(in crate::settings) const ZOOM_SIZES: [(f32, &str); 11] = [
+    (0.5, "50%"),
+    (0.6, "60%"),
+    (0.75, "75%"),
+    (0.9, "90%"),
+    (1.0, "100%"),
+    (1.1, "110%"),
+    (1.25, "125%"),
+    (1.5, "150%"),
+    (1.6, "160%"),
+    (1.8, "180%"),
+    (2.0, "200%"),
+];
 use crate::{
     app::Message,
     ctx::{Cx, Pref as Shown, Request},
@@ -66,6 +82,7 @@ pub enum Pref {
     GpuRendering(bool),
     GpuEncoding(bool),
     StreamerMode(bool),
+    Zoom(usize),
     CloseToTray(bool),
     MultipleWindows(bool),
     DeveloperMode(bool),
@@ -364,6 +381,14 @@ impl Settings {
                 prefs.streamer_mode = Some(on);
                 cx.keep("streamer_mode", on);
             }
+            Pref::Zoom(index) => {
+                let Some((level, _)) = ZOOM_SIZES.get(index) else {
+                    return;
+                };
+                cx.layout.zoom = Some(*level);
+                cx.keep("zoom", *level);
+                cx.request(Request::Zoom(*level));
+            }
             Pref::ShowHiddenChannels(on) => {
                 prefs.show_hidden_channels = on;
                 cx.keep("show_hidden_channels", on);
@@ -465,6 +490,8 @@ pub fn message_size(text_size: Option<i32>) -> f32 {
     match text_size {
         Some(0) => 14.0,
         Some(2) => 18.0,
+        Some(3) => 20.0,
+        Some(4) => 22.0,
         _ => 15.0,
     }
 }
