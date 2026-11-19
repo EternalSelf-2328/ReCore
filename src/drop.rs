@@ -112,8 +112,9 @@ pub mod wayland {
     //! `text/uri-list` on a drop. There's a device for each seat, not for a
     //! window, so a window made again needs nothing new.
 
-    use std::io::Read;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::io::{Read, Write};
+    use std::sync::atomic::{AtomicU8, Ordering};
+    use std::time::Duration;
 
     use wayland_client::protocol::wl_data_device::{self, WlDataDevice};
     use wayland_client::protocol::wl_data_device_manager::{DndAction, WlDataDeviceManager};
@@ -125,6 +126,31 @@ pub mod wayland {
     use super::Drag;
 
     const URI_LIST: &str = "text/uri-list";
+    const IMAGES: [&str; 4] = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+    /// Which kinds an offer has: `text/uri-list` and the image types.
+    const URIS: u8 = 1;
+    /// The most a dropped or downloaded picture may be, in bytes.
+    const LARGEST: u64 = 25 * 1024 * 1024;
+
+    fn image_bit(index: usize) -> u8 {
+        1 << (index + 1)
+    }
+
+    fn image_mime(bits: u8) -> Option<&'static str> {
+        IMAGES
+            .iter()
+            .enumerate()
+            .find(|(index, _)| bits & image_bit(*index) != 0)
+            .map(|(_, mime)| *mime)
+    }
+
+    /// What a dropped offer holds: files, or a picture's bytes, and the
+    /// image to fall back to when a URI list yields no file.
+    #[derive(Clone, Copy)]
+    enum Choice {
+        Uris { image: Option<&'static str> },
+        Image(&'static str),
+    }
 
     /// Watches for files dragged over ReCore's windows on the connection whose
     /// `wl_display` this is, reporting each step to `report` from a thread.
@@ -177,17 +203,17 @@ pub mod wayland {
         manager: Option<WlDataDeviceManager>,
         /// Seats announced before the manager, waiting for it.
         seats: Vec<WlSeat>,
-        /// The offer over a window, and whether it holds files.
-        offer: Option<(WlDataOffer, bool)>,
+        /// The offer over a window, and what it holds.
+        offer: Option<(WlDataOffer, Choice)>,
         /// The offer a drag left with, kept until the next drag comes: Weston
         /// cancels a drag whose last offer is destroyed before another
         /// client's takes its place.
         left: Option<WlDataOffer>,
     }
 
-    /// Whether an offer holds files.
+    /// Which MIME types an offer has, as [`URIS`] and [`image_bit`] bits.
     #[derive(Default)]
-    struct Offered(AtomicBool);
+    struct Offered(AtomicU8);
 
     impl Dispatch<WlRegistry, ()> for State {
         fn event(
@@ -239,21 +265,34 @@ pub mod wayland {
                     id: Some(offer),
                     ..
                 } => {
-                    let files = offer
+                    let bits = offer
                         .data::<Offered>()
-                        .is_some_and(|offered| offered.0.load(Ordering::Relaxed));
-                    if files {
-                        offer.accept(serial, Some(URI_LIST.into()));
+                        .map_or(0, |offered| offered.0.load(Ordering::Relaxed));
+                    let choice = if bits & URIS != 0 {
+                        Some(Choice::Uris {
+                            image: image_mime(bits),
+                        })
+                    } else {
+                        image_mime(bits).map(Choice::Image)
+                    };
+                    let old = if let Some(choice) = choice {
+                        let mime = match choice {
+                            Choice::Uris { .. } => URI_LIST,
+                            Choice::Image(mime) => mime,
+                        };
+                        offer.accept(serial, Some(mime.into()));
                         if offer.version() >= 3 {
                             offer.set_actions(DndAction::Copy, DndAction::Copy);
                         }
                         // Where first, so the window shows the right place.
                         (state.report)(Drag::Moved { x, y });
                         (state.report)(Drag::Entered);
+                        state.offer.replace((offer, choice))
                     } else {
                         offer.accept(serial, None);
-                    }
-                    let old = state.offer.replace((offer, files));
+                        offer.destroy();
+                        None
+                    };
                     for old in [old.map(|(old, _)| old), state.left.take()]
                         .into_iter()
                         .flatten()
@@ -262,26 +301,24 @@ pub mod wayland {
                     }
                 }
                 wl_data_device::Event::Motion { x, y, .. } => {
-                    if state.offer.as_ref().is_some_and(|(_, files)| *files) {
+                    if state.offer.is_some() {
                         (state.report)(Drag::Moved { x, y });
                     }
                 }
                 wl_data_device::Event::Leave => {
-                    if let Some((offer, files)) = state.offer.take() {
+                    if let Some((offer, _choice)) = state.offer.take() {
                         state.left = Some(offer);
-                        if files {
-                            (state.report)(Drag::Left);
-                        }
+                        (state.report)(Drag::Left);
                     }
                 }
                 wl_data_device::Event::Drop => {
-                    if let Some((offer, files)) = state.offer.take() {
-                        let paths = files.then(|| state.receive(&offer));
-                        if files && offer.version() >= 3 {
+                    if let Some((offer, choice)) = state.offer.take() {
+                        let paths = state.receive(&offer, choice);
+                        if offer.version() >= 3 {
                             offer.finish();
                         }
                         offer.destroy();
-                        if let Some(paths) = paths {
+                        if !paths.is_empty() {
                             (state.report)(Drag::Dropped(paths));
                         }
                     }
@@ -298,26 +335,170 @@ pub mod wayland {
     }
 
     impl State {
-        /// The files a dropped offer lists. The source writes them to a pipe,
-        /// read here as the source sends them.
-        fn receive(&self, offer: &WlDataOffer) -> Vec<std::path::PathBuf> {
-            let Ok((mut reader, writer)) = std::io::pipe() else {
-                return Vec::new();
+        /// What a dropped offer holds, read as the source sends it. A URI
+        /// list gives this machine's files, and the pictures its addresses
+        /// lead to; an image type gives its bytes as a temporary file.
+        fn receive(&self, offer: &WlDataOffer, choice: Choice) -> Vec<std::path::PathBuf> {
+            match choice {
+                Choice::Uris { image } => {
+                    let list = self.receive_text(offer, URI_LIST);
+                    let mut files = crate::paste::files(&list);
+                    files.extend(downloaded(&list));
+                    if files.is_empty()
+                        && let Some(mime) = image
+                        && let Some(path) = self.receive_image(offer, mime)
+                    {
+                        files.push(path);
+                    }
+                    files
+                }
+                Choice::Image(mime) => self.receive_image(offer, mime).into_iter().collect(),
+            }
+        }
+
+        fn receive_text(&self, offer: &WlDataOffer, mime: &str) -> String {
+            let Some(mut reader) = self.ask(offer, mime) else {
+                return String::new();
             };
-            offer.receive(URI_LIST.into(), std::os::fd::AsFd::as_fd(&writer));
+            let mut text = String::new();
+            if let Err(error) = reader.read_to_string(&mut text) {
+                tracing::warn!(%error, "could not read what was dropped");
+            }
+            text
+        }
+
+        /// A picture's bytes, written to a temporary file the upload takes
+        /// over; the drop thread may block while the source sends them.
+        fn receive_image(&self, offer: &WlDataOffer, mime: &str) -> Option<std::path::PathBuf> {
+            let mut reader = self.ask(offer, mime)?;
+            let mut bytes = Vec::new();
+            if Read::by_ref(&mut reader)
+                .take(LARGEST + 1)
+                .read_to_end(&mut bytes)
+                .is_err()
+                || bytes.is_empty()
+                || bytes.len() as u64 > LARGEST
+            {
+                return None;
+            }
+            let extension = match mime {
+                "image/png" => "png",
+                "image/jpeg" => "jpg",
+                "image/gif" => "gif",
+                _ => "webp",
+            };
+            let file = tempfile::Builder::new()
+                .prefix("recore-drop-")
+                .suffix(&format!(".{extension}"))
+                .tempfile()
+                .ok()?;
+            let (mut file, path) = file.keep().ok()?;
+            file.write_all(&bytes).ok()?;
+            Some(path)
+        }
+
+        fn ask(&self, offer: &WlDataOffer, mime: &str) -> Option<std::io::PipeReader> {
+            let (reader, writer) = std::io::pipe().ok()?;
+            offer.receive(mime.into(), std::os::fd::AsFd::as_fd(&writer));
             drop(writer);
             if let Err(error) = self.connection.flush() {
-                tracing::warn!(%error, "could not ask for the dropped files");
-                return Vec::new();
+                tracing::warn!(%error, "could not ask for what was dropped");
+                return None;
             }
-            let mut list = String::new();
-            match reader.read_to_string(&mut list) {
-                Ok(_) => crate::paste::files(&list),
-                Err(error) => {
-                    tracing::warn!(%error, "could not read the dropped files");
-                    Vec::new()
-                }
+            Some(reader)
+        }
+    }
+
+    /// The pictures among a URI list's addresses, fetched and saved beside
+    /// the session's other dropped files.
+    fn downloaded(list: &str) -> Vec<std::path::PathBuf> {
+        let client = reqwest::blocking::Client::builder()
+            .user_agent("ReCore")
+            .timeout(Duration::from_secs(10))
+            .build();
+        let Ok(client) = client else {
+            return Vec::new();
+        };
+        let mut paths = Vec::new();
+        for address in list
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.starts_with('#'))
+            .filter(|line| line.starts_with("http://") || line.starts_with("https://"))
+        {
+            let Some(extension) = image_extension(address) else {
+                continue;
+            };
+            let Ok(mut response) = client.get(address).send() else {
+                continue;
+            };
+            if !response.status().is_success() {
+                continue;
             }
+            let picture = response
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| value.starts_with("image/"));
+            if !picture {
+                continue;
+            }
+            let mut bytes = Vec::new();
+            if Read::by_ref(&mut response)
+                .take(LARGEST + 1)
+                .read_to_end(&mut bytes)
+                .is_err()
+                || bytes.is_empty()
+                || bytes.len() as u64 > LARGEST
+            {
+                continue;
+            }
+            let Ok(file) = tempfile::Builder::new()
+                .prefix("recore-drop-")
+                .suffix(&format!(".{extension}"))
+                .tempfile()
+            else {
+                continue;
+            };
+            let Ok((mut file, path)) = file.keep() else {
+                continue;
+            };
+            if file.write_all(&bytes).is_ok() {
+                paths.push(path);
+            }
+        }
+        paths
+    }
+
+    fn image_extension(address: &str) -> Option<&'static str> {
+        let path = address.split(['?', '#']).next()?.to_ascii_lowercase();
+        if path.ends_with(".png") {
+            Some("png")
+        } else if path.ends_with(".jpg") || path.ends_with(".jpeg") {
+            Some("jpg")
+        } else if path.ends_with(".gif") {
+            Some("gif")
+        } else if path.ends_with(".webp") {
+            Some("webp")
+        } else {
+            None
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::image_extension;
+
+        #[test]
+        fn a_picture_address_names_its_type() {
+            assert_eq!(
+                image_extension("https://cdn.example/a.PNG?size=2"),
+                Some("png")
+            );
+            assert_eq!(image_extension("https://cdn.example/a.jpeg#x"), Some("jpg"));
+            assert_eq!(image_extension("https://cdn.example/a.gif"), Some("gif"));
+            assert_eq!(image_extension("https://cdn.example/a.webp"), Some("webp"));
+            assert_eq!(image_extension("https://cdn.example/a.html"), None);
         }
     }
 
@@ -330,10 +511,17 @@ pub mod wayland {
             _: &Connection,
             _: &QueueHandle<Self>,
         ) {
-            if let wl_data_offer::Event::Offer { mime_type } = event
-                && mime_type == URI_LIST
-            {
-                offered.0.store(true, Ordering::Relaxed);
+            if let wl_data_offer::Event::Offer { mime_type } = event {
+                let bit = if mime_type == URI_LIST {
+                    URIS
+                } else if let Some(index) = IMAGES.iter().position(|mime| *mime == mime_type) {
+                    image_bit(index)
+                } else {
+                    0
+                };
+                if bit != 0 {
+                    offered.0.fetch_or(bit, Ordering::Relaxed);
+                }
             }
         }
     }

@@ -72,7 +72,7 @@ tempfile = { workspace = true, optional = true }
 tracing.workspace = true
 # The About page's one request, for the list of releases; the same TLS as the
 # Discord connection, which is already in the tree.
-reqwest = { version = "0.13", default-features = false, features = ["http2", "rustls-no-provider"], optional = true }
+reqwest = { version = "0.13", default-features = false, features = ["http2", "rustls-no-provider", "blocking"], optional = true }
 rustls = { workspace = true, optional = true }
 # Checks a downloaded release against the SHA256SUMS.txt it was published with.
 sha2 = { version = "0.10", optional = true }
