@@ -93,7 +93,7 @@ impl App {
                 .push(iced::time::every(Duration::from_millis(50)).map(|_| Message::MotionTick));
         }
         // A look at the releases every six hours while the check is on.
-        if self.layout.prefs.check_for_updates {
+        if self.layout.prefs.check_for_updates.unwrap_or(true) {
             subscriptions.push(
                 iced::time::every(crate::updates::EVERY)
                     .map(|_| Message::Updates(crate::updates::Event::Due)),

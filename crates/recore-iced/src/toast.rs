@@ -25,10 +25,18 @@ static NEXT: AtomicU64 = AtomicU64::new(0);
 
 pub struct Toast {
     id: u64,
-    room: String,
+    /// Where a press goes.
+    action: Action,
     title: String,
     body: String,
     mention: bool,
+}
+
+enum Action {
+    /// A conversation of the core's, by room id.
+    Room(String),
+    /// Settings' About, where an update is installed.
+    About,
 }
 
 #[derive(Clone, Debug)]
@@ -50,10 +58,23 @@ pub fn show(app: &mut App, alert: Alert) -> Task<Message> {
     };
     app.shell.toast = Some(Toast {
         id,
-        room: alert.room,
+        action: Action::Room(alert.room),
         title: alert.title,
         body,
         mention: alert.mention,
+    });
+    crate::after(LINGER, Message::Toast(Event::Done(id)))
+}
+
+/// Shows a newer release's toast: a press opens About, where it's installed.
+pub fn update_available(app: &mut App, tag: &str) -> Task<Message> {
+    let id = NEXT.fetch_add(1, Ordering::Relaxed);
+    app.shell.toast = Some(Toast {
+        id,
+        action: Action::About,
+        title: format!("ReCore {tag} is available"),
+        body: "Open About to install it.".into(),
+        mention: true,
     });
     crate::after(LINGER, Message::Toast(Event::Done(id)))
 }
@@ -70,9 +91,14 @@ pub fn update(app: &mut App, event: Event) -> Task<Message> {
             let Some(toast) = app.shell.toast.take_if(|toast| toast.id == id) else {
                 return Task::none();
             };
-            app.client
-                .dispatch(recore_core::application::Action::SelectRoom(toast.room));
-            app.sync()
+            match toast.action {
+                Action::Room(room) => {
+                    app.client
+                        .dispatch(recore_core::application::Action::SelectRoom(room));
+                    app.sync()
+                }
+                Action::About => app.open_settings(crate::settings::Section::About),
+            }
         }
     }
 }

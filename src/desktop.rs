@@ -399,9 +399,14 @@ fn install_offer(release: &Release) -> (bool, String) {
     match install::target(release) {
         Ok(target) => {
             let megabytes = target.asset().size.div_ceil(1_000_000);
+            let signed = if install::signed(release) {
+                ""
+            } else {
+                " This release isn't signed; its checksum is still checked."
+            };
             (
                 true,
-                format!("{megabytes} MB. ReCore restarts when it's done."),
+                format!("{megabytes} MB. ReCore restarts when it's done.{signed}"),
             )
         }
         Err(_) if update::source().manager().is_some() => (false, String::new()),

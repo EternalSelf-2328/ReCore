@@ -84,7 +84,7 @@ impl<'a> Page<'a> {
             UpdateStatus::Source => {
                 "You're running a build from source, so there's nothing to update.".to_owned()
             }
-            UpdateStatus::Idle if prefs.check_for_updates => String::new(),
+            UpdateStatus::Idle if prefs.check_for_updates.unwrap_or(true) => String::new(),
             UpdateStatus::Idle => "Update checks are turned off.".to_owned(),
         };
         if !status.is_empty() {
