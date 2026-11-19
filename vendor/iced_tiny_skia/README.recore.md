@@ -150,5 +150,10 @@ marked `ReCore port` in the source and numbered there:
     window drawn by this renderer from pictures made for the other. iced's
     own choice between the two reads only `ICED_BACKEND`.
 
+27. `blit.rs` `gradient`, `engine.rs` `draw_quad`: a vertical rectangular
+    gradient interpolates its colour once per clipped scanline, including
+    the translucent tint over the chat. The draw keeps exact vertical
+    angles vertical when converting them to pixel coordinates.
+
 Unmarked lines are iced's. Updating iced means taking the new
 iced_tiny_skia and carrying each marked change over.
