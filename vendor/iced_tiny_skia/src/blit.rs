@@ -346,6 +346,33 @@ pub fn gradient(
     let bottom = bottom_left.max(bottom_right);
     let stride = pixels.width() as usize * 4;
     let target = pixels.data_mut();
+    // The chat's translucent vertical tint has one colour per scanline.
+    // Interpolate and choose the blend once for the whole clipped span.
+    if dx == 0.0 && radius == [0.0; 4] {
+        for row in y0..y1 {
+            let pixel = color(at(x0, row));
+            let from = row as usize * stride + x0 as usize * 4;
+            let to = from + (x1 - x0) as usize * 4;
+            let span = target[from..to].chunks_exact_mut(4);
+            match pixel >> 24 {
+                0 => {}
+                255 => {
+                    let bytes = pixel.to_le_bytes();
+                    for below in span {
+                        below.copy_from_slice(&bytes);
+                    }
+                }
+                alpha => {
+                    let keep = 255 - alpha;
+                    for below in span {
+                        let old = u32::from_le_bytes(below.try_into().expect("four bytes"));
+                        below.copy_from_slice(&(pixel + times_255ths(old, keep)).to_le_bytes());
+                    }
+                }
+            }
+        }
+        return;
+    }
     // A gradient along x has the same colours on every row: made once.
     let across = dy == 0.0;
     let mut colors: Vec<u32> = Vec::new();
@@ -474,6 +501,46 @@ mod tests {
                 ground
             };
             assert_eq!(value, expected, "at {x}, {y}");
+        }
+    }
+
+    #[test]
+    fn a_vertical_gradient_blends_one_colour_across_each_clipped_row() {
+        let ground = 0xff10_2030_u32;
+        let mut frame = vec![ground; 6 * 5];
+        let mut pixels =
+            tiny_skia::PixmapMut::from_bytes(bytemuck::cast_slice_mut(&mut frame), 6, 5)
+                .expect("pixmap");
+        gradient(
+            0,
+            0,
+            6,
+            5,
+            Rectangle {
+                x: 2.0,
+                y: 1.0,
+                width: 3.0,
+                height: 3.0,
+            },
+            [0.0; 4],
+            (3.0, 1.5),
+            (3.0, 3.5),
+            &[(0.0, [1.0, 0.0, 0.0, 0.5]), (1.0, [0.0, 0.0, 1.0, 0.0])],
+            &mut pixels,
+        );
+        assert_eq!(
+            frame.chunks_exact(6).map(|row| row[2]).collect::<Vec<_>>(),
+            [
+                ground,
+                over(0x8000_0080, ground),
+                over(0x4020_0020, ground),
+                ground,
+                ground,
+            ],
+        );
+        for row in frame.chunks_exact(6) {
+            assert_eq!(&row[2..5], &[row[2]; 3]);
+            assert_eq!([row[0], row[1], row[5]], [ground; 3]);
         }
     }
 }
