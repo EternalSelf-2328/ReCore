@@ -35,9 +35,15 @@ impl<'a> super::View<'a> {
             .width(VOICE_CARD_WIDTH);
         for person in people.iter().take(VOICE_CARD_PEOPLE) {
             let opacity = if person.elsewhere { 0.5 } else { 1.0 };
+            let radius = if theme.square { 0.0 } else { 10.0 };
             let mut line = row![
-                self.cx
-                    .avatar(person.avatar.as_deref(), &person.name, 20.0, 10.0, opacity),
+                self.cx.avatar(
+                    person.avatar.as_deref(),
+                    &person.name,
+                    20.0,
+                    radius,
+                    opacity,
+                ),
                 elide(person.name.as_str())
                     .size(14)
                     .font(MEDIUM())
@@ -90,9 +96,13 @@ impl<'a> super::View<'a> {
         } else {
             theme.secondary
         };
-        let avatar = self
-            .cx
-            .avatar(person.avatar.as_deref(), &person.name, 22.0, 11.0, opacity);
+        let avatar = self.cx.avatar(
+            person.avatar.as_deref(),
+            &person.name,
+            22.0,
+            if theme.square { 0.0 } else { 11.0 },
+            opacity,
+        );
         // The ring of someone speaking, round the avatar, outside it.
         let avatar: Element<'a, Message> =
             if speaking {
@@ -104,7 +114,7 @@ impl<'a> super::View<'a> {
                             border: iced::Border {
                                 color: ring,
                                 width: 2.0,
-                                radius: 14.0.into(),
+                                radius: (if theme.square { 0.0 } else { 14.0 }).into(),
                             },
                             ..Default::default()
                         }

@@ -153,6 +153,10 @@ pub struct SideHeader {
     /// How many scheduled events it has, while the events row shows: a
     /// Community server's always, another's while it has some.
     pub events: Option<usize>,
+    /// How many are in its voice channels, and how many of them share a
+    /// screen.
+    pub voice: usize,
+    pub live: usize,
 }
 
 /// The header, from the core's state.
@@ -163,16 +167,30 @@ pub fn side_header(app: &Application) -> SideHeader {
             .servers
             .iter()
             .find(|server| &server.id == id)
-            .map_or_else(SideHeader::default, |server| SideHeader {
-                server: Some(server.id.clone()),
-                name: server.name.clone(),
-                community: server.community,
-                verified: server.verified,
-                banner: server.banner.clone(),
-                invite: app.header_choices(id).contains(&MenuChoice::Invite),
-                boosts: server.boosts,
-                events: (server.community || !server.events.is_empty())
-                    .then_some(server.events.len()),
+            .map_or_else(SideHeader::default, |server| {
+                let (voice, live) = state
+                    .rooms
+                    .iter()
+                    .filter(|room| room.voice && server.channels.iter().any(|id| id == &room.id))
+                    .fold((0, 0), |(voice, live), room| {
+                        (
+                            voice + room.people.len(),
+                            live + room.people.iter().filter(|person| person.streaming).count(),
+                        )
+                    });
+                SideHeader {
+                    server: Some(server.id.clone()),
+                    name: server.name.clone(),
+                    community: server.community,
+                    verified: server.verified,
+                    banner: server.banner.clone(),
+                    invite: app.header_choices(id).contains(&MenuChoice::Invite),
+                    boosts: server.boosts,
+                    events: (server.community || !server.events.is_empty())
+                        .then_some(server.events.len()),
+                    voice,
+                    live,
+                }
             }),
         Navigation::DirectMessages => SideHeader::default(),
     }

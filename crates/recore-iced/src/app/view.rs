@@ -76,10 +76,12 @@ impl App {
         // panels opaque hides it, as ReCord's panel opacity does.
         let base: Element<'_, Message> = match &self.themes.background_picture {
             Some(picture) => {
+                // The window's picture keeps moving whenever it's asked to,
+                // even while nobody is using ReCore or the window is out of
+                // focus: it is the window's look, not a message's picture.
                 let animate = self.themes.recore.background_animate
                     && self.themes.motion() != crate::themes::Motion::Off
-                    && !self.themes.low_power
-                    && crate::pictures::plays(self);
+                    && !self.themes.low_power;
                 let picture: Element<'_, Message> = if animate {
                     let size = Size::new(self.window.width, self.window.height);
                     let at = Rectangle::with_size(size);

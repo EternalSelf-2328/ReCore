@@ -151,8 +151,10 @@ pub struct RailItem {
     pub unread: bool,
     /// Mentions, as the badge shows them ("3", "99+"); empty for none.
     pub badge: String,
-    /// This account is in a call in one of its voice channels.
+    /// Someone is in a call in one of its voice channels, or this account is.
     pub call: bool,
+    /// Someone there shares a screen.
+    pub live: bool,
     /// Out of reach in a Discord outage, shown faded.
     pub unavailable: bool,
 }
@@ -168,6 +170,7 @@ impl RailItem {
             unread,
             badge: count_badge(mentions),
             call: false,
+            live: false,
             unavailable: server.unavailable,
         }
     }
@@ -238,6 +241,7 @@ pub fn rail(state: &AppState, open_folders: &BTreeSet<String>) -> Vec<RailItem> 
             // unread messages apart from its mentions.
             badge: count_badge(room.mentions.max(room.unread)),
             call: false,
+            live: false,
             unavailable: false,
         })
         .collect();
@@ -250,6 +254,7 @@ pub fn rail(state: &AppState, open_folders: &BTreeSet<String>) -> Vec<RailItem> 
         unread: false,
         badge: String::new(),
         call: false,
+        live: false,
         unavailable: false,
     });
     // A server's channels: whether any is unread, and its mentions. One
@@ -283,11 +288,29 @@ pub fn rail(state: &AppState, open_folders: &BTreeSet<String>) -> Vec<RailItem> 
     let in_call = |server: &ChatServer| {
         call.is_some_and(|room| server.channels.iter().any(|channel| channel == room))
     };
+    // Whether anyone is in a voice channel of it, and whether anyone there
+    // shares a screen, known from the gateway without joining.
+    let presence = |server: &ChatServer| {
+        let mut call = false;
+        let mut live = false;
+        for room in server
+            .channels
+            .iter()
+            .filter_map(|channel| rooms.get(channel.as_str()))
+            .filter(|room| room.voice)
+        {
+            call |= !room.people.is_empty();
+            live |= room.people.iter().any(|person| person.streaming);
+        }
+        (call, live)
+    };
     let mut servers = state.servers.iter().peekable();
     while let Some(server) = servers.next() {
         let Some(folder) = &server.folder else {
+            let (call, live) = presence(server);
             items.push(RailItem {
-                call: in_call(server),
+                call: call || in_call(server),
+                live,
                 ..RailItem::server(server, selected(server), marks(server))
             });
             continue;
@@ -303,6 +326,15 @@ pub fn rail(state: &AppState, open_folders: &BTreeSet<String>) -> Vec<RailItem> 
             .map(|server| marks(server))
             .fold((false, 0), |(unread, mentions), (one, more)| {
                 (unread || one, mentions + more)
+            });
+        let (call, live) = inside
+            .iter()
+            .map(|server| {
+                let (call, live) = presence(server);
+                (call || in_call(server), live)
+            })
+            .fold((false, false), |(call, live), (one, more)| {
+                (call || one, live || more)
             });
         let name = folder.name.clone().unwrap_or_else(|| {
             let mut names: Vec<_> = inside
@@ -331,18 +363,21 @@ pub fn rail(state: &AppState, open_folders: &BTreeSet<String>) -> Vec<RailItem> 
             selected: inside.iter().any(|server| selected(server)),
             unread,
             badge: count_badge(mentions),
-            call: inside.iter().any(|server| in_call(server)),
+            call,
+            live,
             unavailable: false,
         });
         if open {
             let last = inside.len() - 1;
             for (index, server) in inside.into_iter().enumerate() {
+                let (call, live) = presence(server);
                 items.push(RailItem {
                     kind: Kind::Nested {
                         tint,
                         last: index == last,
                     },
-                    call: in_call(server),
+                    call: call || in_call(server),
+                    live,
                     ..RailItem::server(server, selected(server), marks(server))
                 });
             }
@@ -378,6 +413,7 @@ struct Marks<'a> {
     unread: bool,
     badge: &'a str,
     call: bool,
+    live: bool,
     pointed: bool,
     open_folder: bool,
     /// A right click on it opens its menu.
@@ -681,6 +717,7 @@ impl<'a> View<'a> {
             unread: item.unread,
             badge: if open_folder { "" } else { &item.badge },
             call: item.call && !open_folder,
+            live: item.live && !open_folder,
             pointed,
             open_folder,
             menu: true,
@@ -689,6 +726,10 @@ impl<'a> View<'a> {
         // fading.
         let tip = if item.unavailable {
             Cow::Owned(format!("{} (unavailable in a Discord outage)", item.name))
+        } else if item.live {
+            Cow::Owned(format!("{} (someone is streaming)", item.name))
+        } else if item.call {
+            Cow::Owned(format!("{} (a call is going on)", item.name))
         } else {
             Cow::Borrowed(item.name.as_str())
         };
@@ -797,9 +838,9 @@ impl<'a> View<'a> {
         };
         let tile = tooltip(tile, controls::tip(theme, tip), tooltip::Position::Right).gap(8);
         layers = layers.push(controls::placed(tile, left, above));
-        if marks.call {
+        if marks.call || marks.live {
             layers = layers.push(controls::placed(
-                self.call_bubble(),
+                self.presence_bubble(marks.live),
                 left + side + 3.0 - 20.0,
                 above - 3.0,
             ));
@@ -823,27 +864,38 @@ impl<'a> View<'a> {
         layers.width(WIDTH).height(above + side + BELOW).into()
     }
 
-    /// A call going on: a white speaker on green, on a ring of the rail's
+    /// A call or a stream going on in the server: a white speaker on green
+    /// for a call, a screen on red for a stream, on a ring of the rail's
     /// colour, with a dark copy a pixel lower as its shadow, which the light
-    /// green needs at this size.
-    fn call_bubble(self) -> Element<'a, Message> {
+    /// colours need at this size. Square in a square theme.
+    fn presence_bubble(self, live: bool) -> Element<'a, Message> {
         let theme = self.cx.look.theme;
-        let (rail, live) = (theme.rail, theme.live);
+        let (rail, ground) = (theme.rail, if live { theme.danger } else { theme.live });
+        let icon = if live {
+            Icon::ScreenShare
+        } else {
+            Icon::Speaker
+        };
+        let (outer, inner) = if self.cx.themes.square_avatars() {
+            (0.0, 0.0)
+        } else {
+            (10.0, 8.0)
+        };
         let shadow = Color {
             a: 0.45,
             ..Color::BLACK
         };
-        let speaker = stack![
-            controls::placed(self.cx.look.glyph(Icon::Speaker, 12, shadow), 0.0, 1.0),
-            self.cx.look.glyph(Icon::Speaker, 12, Color::WHITE),
+        let mark = stack![
+            controls::placed(self.cx.look.glyph(icon, 12, shadow), 0.0, 1.0),
+            self.cx.look.glyph(icon, 12, Color::WHITE),
         ];
         container(
-            container(speaker)
+            container(mark)
                 .center(16)
-                .style(move |_| rounded(live, 8)),
+                .style(move |_| rounded(ground, inner)),
         )
         .center(20)
-        .style(move |_| rounded(rail, 10))
+        .style(move |_| rounded(rail, outer))
         .into()
     }
 }

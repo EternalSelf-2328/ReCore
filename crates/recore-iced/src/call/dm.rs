@@ -97,11 +97,13 @@ fn call_invite<'a>(app: &'a App, room: &'a ChatRoom) -> Element<'a, Message> {
     let theme = &app.theme;
     let mut faces = row![].spacing(8);
     for person in &room.people {
-        faces =
-            faces.push(
-                app.ctx()
-                    .avatar(person.avatar.as_deref(), &person.name, 56.0, 28.0, 1.0),
-            );
+        faces = faces.push(app.ctx().avatar(
+            person.avatar.as_deref(),
+            &person.name,
+            56.0,
+            if theme.square { 0.0 } else { 28.0 },
+            1.0,
+        ));
     }
     let incoming = room.incoming;
     let note = match (incoming, room.people.is_empty()) {
@@ -158,13 +160,17 @@ pub fn incoming_view(app: &App) -> Option<Element<'_, Message>> {
     };
     // A ring that pulses while it rings.
     let ring = Pulse::new(
-        container(
-            app.ctx()
-                .avatar(room.avatar.as_deref(), &room.name, 72.0, 36.0, 1.0),
-        )
+        container(app.ctx().avatar(
+            room.avatar.as_deref(),
+            &room.name,
+            72.0,
+            if theme.square { 0.0 } else { 36.0 },
+            1.0,
+        ))
         .center(92),
         theme.live,
         3.0,
+        theme.square,
     );
     let answer = |accept: bool| Message::Call(Event::Answer(room.id.clone(), accept));
     let card = column![
@@ -214,7 +220,7 @@ pub fn incoming_view(app: &App) -> Option<Element<'_, Message>> {
             .width(INCOMING_WIDTH)
             .style(move |_| container::Style {
                 background: Some(ground.into()),
-                border: crate::style::edge(edge, 12.0),
+                border: crate::style::edge(edge, if theme.square { 0.0 } else { 12.0 }),
                 shadow: card_shadow(),
                 ..Default::default()
             }),
@@ -274,7 +280,7 @@ pub fn switch_view(app: &App) -> Option<Element<'_, Message>> {
     let soft = theme.accent_soft;
     let badge = container(app.look().glyph(Icon::Volume, 20, theme.accent))
         .center(40)
-        .style(move |_| rounded(soft, 20));
+        .style(move |_| rounded(soft, if theme.square { 0.0 } else { 20.0 }));
     let body = column![
         row![
             column![badge],
@@ -346,6 +352,7 @@ pub fn call_layers(app: &App) -> Vec<Element<'_, Message>> {
 pub struct Pulse {
     color: Color,
     width: f32,
+    square: bool,
 }
 
 impl Pulse {
@@ -353,8 +360,16 @@ impl Pulse {
         child: impl Into<Element<'a, Message>>,
         color: Color,
         width: f32,
+        square: bool,
     ) -> Wrap<'a, Self, Message> {
-        Wrap::new(child, Self { color, width })
+        Wrap::new(
+            child,
+            Self {
+                color,
+                width,
+                square,
+            },
+        )
     }
 }
 
@@ -416,7 +431,11 @@ impl Hooks<Message> for Pulse {
                         ..self.color
                     },
                     width: self.width,
-                    radius: (bounds.width.min(bounds.height) / 2.0).into(),
+                    radius: if self.square {
+                        0.0.into()
+                    } else {
+                        (bounds.width.min(bounds.height) / 2.0).into()
+                    },
                 },
                 ..Default::default()
             },

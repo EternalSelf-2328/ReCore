@@ -364,9 +364,10 @@ fn join_view(app: &App) -> Element<'_, Message> {
     let state = app.client.state();
     let id = state.selected.clone().unwrap_or_default();
     let raised = theme.raised;
+    let radius = if theme.square { 0.0 } else { 40.0 };
     let badge = container(app.look().glyph(Icon::Volume, 38, theme.secondary))
         .center(80)
-        .style(move |_| rounded(raised, 40));
+        .style(move |_| rounded(raised, radius));
     let mut panel = column![
         badge,
         text(app.header.name.as_str())
@@ -462,7 +463,12 @@ fn stage_tile(
     let voice = &app.client.state().voice;
     let size = bounds.size();
     let pointed = app.call.pointed == Some(place);
-    let corners = (!full).then(|| (tile::RADIUS as u32, rgb(theme.stage)));
+    let corners = (!full).then(|| {
+        (
+            if theme.square { 0 } else { tile::RADIUS as u32 },
+            rgb(theme.stage),
+        )
+    });
     let watch_user = voice
         .watching
         .as_ref()
@@ -487,13 +493,15 @@ fn stage_tile(
             viewers = sharing.and_then(|sharing| stream_viewers(app, &sharing.viewers, None));
             let content =
                 framed.unwrap_or_else(|| tile::note(app.look(), Some(Icon::ScreenShare), status));
-            Tile::new(size, content, Some(Color::BLACK)).chip(tile::chip(
-                app.look(),
-                Vec::new(),
-                "Your screen",
-                live,
-                note,
-            ))
+            Tile::new(size, content, Some(Color::BLACK))
+                .square_if(theme.square)
+                .chip(tile::chip(
+                    app.look(),
+                    Vec::new(),
+                    "Your screen",
+                    live,
+                    note,
+                ))
         }
         Slot::Stream(index) => {
             let person = &voice.participants[index];
@@ -508,19 +516,21 @@ fn stage_tile(
                 on_press = Message::Call(Event::Watch(person.id.clone()));
                 let column = column![
                     app.look().glyph(Icon::ScreenShare, 30, NOTE),
-                    tile::pill("Watch stream", theme.danger, theme.on_danger),
+                    tile::pill("Watch stream", theme.danger, theme.on_danger, theme.square),
                 ]
                 .spacing(10)
                 .align_x(Alignment::Center);
                 container(column).center(Length::Fill).into()
             };
-            Tile::new(size, content, Some(Color::BLACK)).chip(tile::chip(
-                app.look(),
-                vec![(Icon::ScreenShare, Color::WHITE)],
-                &person.user,
-                true,
-                None,
-            ))
+            Tile::new(size, content, Some(Color::BLACK))
+                .square_if(theme.square)
+                .chip(tile::chip(
+                    app.look(),
+                    vec![(Icon::ScreenShare, Color::WHITE)],
+                    &person.user,
+                    true,
+                    None,
+                ))
         }
         Slot::Person(index) => {
             let person = &voice.participants[index];
@@ -582,16 +592,24 @@ fn stage_tile(
             // A stream with a tile of its own is LIVE there.
             let live = person.streaming && (person.local || person.video.is_none());
             let mut tile = Tile::new(size, content, Some(ground))
+                .square_if(theme.square)
                 .ring(speaking(person).then_some(theme.live))
                 .chip(tile::chip(app.look(), marks, &person.user, live, note));
-            if app.ctx().themes.square_avatars() {
-                tile = tile.square();
-            }
             if person.local && voice.camera_phase == voice::CameraPhase::Starting {
-                tile = tile.top_left(tile::pill("Starting camera...", GLASS, Color::WHITE));
+                tile = tile.top_left(tile::pill(
+                    "Starting camera...",
+                    GLASS,
+                    Color::WHITE,
+                    theme.square,
+                ));
             }
             if streams_here && !watched {
-                tile = tile.top_right(tile::pill("Watch stream", theme.danger, theme.on_danger));
+                tile = tile.top_right(tile::pill(
+                    "Watch stream",
+                    theme.danger,
+                    theme.on_danger,
+                    theme.square,
+                ));
             }
             tile
         }
@@ -777,7 +795,7 @@ fn call_controls(app: &App) -> Element<'_, Message> {
     .style(controls::lit_style(
         Some(faded(danger, opacity)),
         faded(danger_hover, opacity),
-        ROUND / 2.0,
+        if theme.square { 0.0 } else { ROUND / 2.0 },
     ));
     let leave = iced::widget::tooltip(
         leave,
@@ -810,12 +828,14 @@ pub fn viewers<'a>(
     if people.is_empty() {
         return None;
     }
+    let square = ctx.look.theme.square;
+    let (avatar_radius, ring_radius) = if square { (0.0, 0.0) } else { (11.0, 13.0) };
     let mut faces = stack![];
     let shown = people.len().min(3);
     for (index, (name, avatar)) in people.iter().take(shown).enumerate() {
-        let ring = container(ctx.avatar(*avatar, name, 22.0, 11.0, 1.0))
+        let ring = container(ctx.avatar(*avatar, name, 22.0, avatar_radius, 1.0))
             .padding(2)
-            .style(|_| rounded(Color::BLACK, 13));
+            .style(move |_| rounded(Color::BLACK, ring_radius));
         faces = faces.push(pin(ring).x(index as f32 * 15.0));
     }
     let faces = faces.width(26.0 + (shown as f32 - 1.0) * 15.0).height(26);
@@ -838,6 +858,7 @@ pub fn viewers<'a>(
                 .color(Color::WHITE),
         );
     }
+    let glass_radius = if square { 0.0 } else { 15.0 };
     let stack = container(face)
         .padding(iced::Padding {
             left: 8.0,
@@ -846,7 +867,7 @@ pub fn viewers<'a>(
         })
         .height(30)
         .align_y(Alignment::Center)
-        .style(|_| rounded(GLASS, 15));
+        .style(move |_| rounded(GLASS, glass_radius));
     Some(
         iced::widget::tooltip(
             stack,

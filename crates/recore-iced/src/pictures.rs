@@ -408,7 +408,9 @@ pub use crate::icons::Icon;
 /// Whether moving pictures play, as Messages' Animate choice and the
 /// window's focus say, and not while nobody is using ReCore, whatever
 /// Animate says (`crate::away`); while they don't, each shows its first
-/// frame and nothing asks for frames.
+/// frame and nothing asks for frames. The window's own background is the
+/// exception: it plays whenever it's asked to, regardless of focus or
+/// whether anyone is using ReCore.
 pub fn plays(app: &App) -> bool {
     if app.away.inactive {
         return false;

@@ -3,7 +3,8 @@
 //! doesn't. Once nobody has for [`QUIET`], Discord hears since when
 //! (`Action::Inactive`, with Settings' Show idle), and goes AFK and then
 //! idle on its own clock; moving pictures hold still until someone is back
-//! ([`pictures::plays`]).
+//! ([`pictures::plays`]), the window's background excepted, which keeps
+//! moving.
 //!
 //! Input while someone is using it costs no message: the event filter
 //! notes the time in [`LAST_USE`], and one timer, due [`QUIET`] after the

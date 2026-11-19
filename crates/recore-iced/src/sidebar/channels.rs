@@ -43,7 +43,8 @@ pub(super) fn row_background(
         let accent = theme.accent;
         let peak = if dm { 0.36 } else { 0.34 };
         Background::Gradient(
-            gradient::Linear::new(0.0)
+            // Strong at the row's left, the base wash by its right.
+            gradient::Linear::new(iced::Degrees(90.0))
                 .add_stop(0.0, Color { a: peak, ..accent })
                 .add_stop(0.72, Color { a: 0.14, ..accent })
                 .add_stop(1.0, Color { a: 0.14, ..accent })

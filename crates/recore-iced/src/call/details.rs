@@ -316,12 +316,12 @@ pub(super) fn link_card<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
         )
         .width(Length::Fill)
         .padding(8)
-        .style(move |_| rounded(faded(live, 0.12), 6)),
+        .style(move |_| rounded(faded(live, 0.12), if theme.square { 0.0 } else { 6.0 })),
     );
     let (ground, edge) = (theme.raised, theme.edge);
     container(card)
         .width(WIDTH)
-        .style(move |_| crate::style::panel(ground, edge, 8.0))
+        .style(move |_| crate::style::panel(ground, edge, if theme.square { 0.0 } else { 8.0 }))
         .into()
 }
 
@@ -358,7 +358,8 @@ fn connection_page<'a>(ctx: crate::ctx::Ctx<'a>, stats: &LinkStats) -> Element<'
     .clip(true)
     .style({
         let sunken = theme.sunken;
-        move |_| rounded(sunken, 6)
+        let radius = if theme.square { 0.0 } else { 6.0 };
+        move |_| rounded(sunken, radius)
     });
     let average = words::average(&stats.pings).map(words::milliseconds);
     let mut page = column![
@@ -435,7 +436,7 @@ fn privacy_page<'a>(ctx: crate::ctx::Ctx<'a>, code: Vec<String>) -> Element<'a, 
         detail_note(PRIVACY_NOTE.to_owned(), theme.secondary),
         container(rows)
             .width(Length::Fill)
-            .style(move |_| rounded(sunken, 6)),
+            .style(move |_| { rounded(sunken, if theme.square { 0.0 } else { 6.0 }) }),
         container(copy).center_x(Length::Fill),
         controls::bar(theme.line, Length::Fill, 1.0),
         detail_note(PRIVATE_NOTE.to_owned(), theme.secondary),

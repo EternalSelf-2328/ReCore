@@ -1167,8 +1167,9 @@ impl<'a, M: Clone + 'a> Slider<'a, M> {
     }
 }
 
-/// A round control of the call's: 52 px across on `fill`, its glyph 22 px
-/// in `ink`, lifted under the pointer; its label in a tooltip over it.
+/// A control of the call's: 52 px across on `fill`, its glyph 22 px in
+/// `ink`, lifted under the pointer; its label in a tooltip over it. Square
+/// in a square theme.
 pub fn round_button<'a, M: Clone + 'a>(
     face: crate::widgets::Pic,
     label: impl text::IntoFragment<'a>,
@@ -1178,6 +1179,7 @@ pub fn round_button<'a, M: Clone + 'a>(
 ) -> Element<'a, M> {
     let lit = crate::theme::mix(fill, theme.overlay, 0.9);
     let enabled = message.is_some();
+    let radius = if theme.square { 0.0 } else { ROUND / 2.0 };
     let face = button(face.boxed(ROUND))
         .padding(0)
         .width(ROUND)
@@ -1185,7 +1187,7 @@ pub fn round_button<'a, M: Clone + 'a>(
         .on_press_maybe(message)
         .style(move |_, status| button::Style {
             background: Some(if enabled && lights(status) { lit } else { fill }.into()),
-            border: Border::default().rounded(ROUND / 2.0),
+            border: Border::default().rounded(radius),
             ..Default::default()
         });
     iced::widget::tooltip(
@@ -1202,7 +1204,8 @@ pub const ROUND: f32 = 52.0;
 pub const ROUND_GLYPH: u32 = 22;
 
 /// A button with its label under it, as the one that answers a call: a 64
-/// by 48 pill of `fill`, darker under the pointer, its icon in white.
+/// by 48 block of `fill`, darker under the pointer, its icon in white;
+/// square in a square theme.
 pub fn call_button<'a, M: Clone + 'a>(
     face: crate::widgets::Pic,
     label: &'a str,
@@ -1212,6 +1215,7 @@ pub fn call_button<'a, M: Clone + 'a>(
 ) -> Element<'a, M> {
     let lit = crate::theme::mix(fill, Color::BLACK, 0.85);
     let opacity = if message.is_some() { 1.0 } else { 0.5 };
+    let radius = if theme.square { 0.0 } else { 24.0 };
     let pill = button(face.boxed(Length::Fill))
         .padding(0)
         .width(64)
@@ -1221,7 +1225,7 @@ pub fn call_button<'a, M: Clone + 'a>(
             background: Some(
                 crate::style::faded(if lights(status) { lit } else { fill }, opacity).into(),
             ),
-            border: Border::default().rounded(24),
+            border: Border::default().rounded(radius),
             ..Default::default()
         });
     column![
@@ -1254,6 +1258,7 @@ pub fn dock_button<'a, M: Clone + 'a>(
         (theme.raised, theme.hover)
     };
     let enabled = message.is_some();
+    let radius = if theme.square { 0.0 } else { 8.0 };
     let face = button(face.boxed(Length::Fill))
         .padding(0)
         .width(Length::Fill)
@@ -1261,7 +1266,7 @@ pub fn dock_button<'a, M: Clone + 'a>(
         .on_press_maybe(message)
         .style(move |_, status| button::Style {
             background: Some(if enabled && lights(status) { lit } else { rest }.into()),
-            border: Border::default().rounded(8),
+            border: Border::default().rounded(radius),
             ..Default::default()
         });
     iced::widget::tooltip(

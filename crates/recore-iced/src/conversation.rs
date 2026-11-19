@@ -71,7 +71,8 @@ pub fn conversation(app: &App) -> Element<'_, Message> {
             .height(240.0)
             .style(move |_| container::Style {
                 background: Some(Background::Gradient(
-                    gradient::Linear::new(0.0)
+                    // Bright at the chat's top, darkening down it.
+                    gradient::Linear::new(iced::Degrees(180.0))
                         .add_stop(0.0, Color { a: 0.045, ..accent })
                         .add_stop(1.0, Color::TRANSPARENT)
                         .into(),

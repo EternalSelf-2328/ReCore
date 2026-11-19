@@ -65,6 +65,32 @@ impl<'a> super::View<'a> {
             }
             Some(_) => {
                 let mut line = row![self.server_name_button()].spacing(INSET);
+                // Who is in a call, or streaming, beside the server's name.
+                let (voice, live) = (head.voice, head.live);
+                if voice > 0 || live > 0 {
+                    let (ink, live_ink) = if head.banner.is_some() {
+                        (Color::WHITE, Color::WHITE)
+                    } else {
+                        (theme.secondary, theme.danger)
+                    };
+                    let mut marks = row![].spacing(5).align_y(Alignment::Center);
+                    if voice > 0 {
+                        marks = marks
+                            .push(self.cx.look.glyph(Icon::Speaker, 14, ink))
+                            .push(text(voice.to_string()).size(12).font(MEDIUM()).color(ink));
+                    }
+                    if live > 0 {
+                        marks = marks
+                            .push(self.cx.look.glyph(Icon::ScreenShare, 14, live_ink))
+                            .push(
+                                text(live.to_string())
+                                    .size(12)
+                                    .font(MEDIUM())
+                                    .color(live_ink),
+                            );
+                    }
+                    line = line.push(marks);
+                }
                 if head.invite {
                     line = line.push(
                         self.cx

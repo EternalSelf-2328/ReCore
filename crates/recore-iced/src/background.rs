@@ -132,40 +132,153 @@ impl Grade {
 /// Applies `grade` in place to straight RGBA pixels. `width` is the
 /// picture's width, so the scanline filter can draw one line every third
 /// row rather than every third pixel.
+///
+/// The work is fixed point: 256-entry tone tables and a 3x3 matrix, all
+/// scaled by 4096, instead of a float chain for every channel of every
+/// pixel. The filter, contrast, saturation, sepia and channel gains stay
+/// as they were; only the last bit of rounding can differ.
 pub fn apply(rgba: &mut [u8], width: u32, grade: Grade) {
     if grade.is_identity() {
         return;
     }
-    let width = width.max(1) as usize;
-    for (index, pixel) in rgba.chunks_exact_mut(4).enumerate() {
-        let mut red = f32::from(pixel[0]) / 255.0;
-        let mut green = f32::from(pixel[1]) / 255.0;
-        let mut blue = f32::from(pixel[2]) / 255.0;
-        red = ((red - 0.5) * grade.contrast + 0.5) * grade.brightness;
-        green = ((green - 0.5) * grade.contrast + 0.5) * grade.brightness;
-        blue = ((blue - 0.5) * grade.contrast + 0.5) * grade.brightness;
-        if grade.saturation != 1.0 {
-            let luma = red * 0.299 + green * 0.587 + blue * 0.114;
-            red = luma + (red - luma) * grade.saturation;
-            green = luma + (green - luma) * grade.saturation;
-            blue = luma + (blue - luma) * grade.saturation;
-        }
-        if grade.sepia > 0.0 {
-            let (r, g, b) = (red, green, blue);
-            red = r * (1.0 - grade.sepia) + (r * 0.393 + g * 0.769 + b * 0.189) * grade.sepia;
-            green = g * (1.0 - grade.sepia) + (r * 0.349 + g * 0.686 + b * 0.168) * grade.sepia;
-            blue = b * (1.0 - grade.sepia) + (r * 0.272 + g * 0.534 + b * 0.131) * grade.sepia;
-        }
-        let scan = if grade.scanline > 0.0 && (index / width) % 3 == 0 {
-            1.0 - grade.scanline
-        } else {
-            1.0
+    const SHIFT: u32 = 12;
+    const ONE: i32 = 1 << SHIFT;
+    const HALF: i32 = ONE / 2;
+    let tone = std::array::from_fn::<i32, 256, _>(|value| {
+        let channel = value as f32 / 255.0;
+        (((channel - 0.5) * grade.contrast + 0.5) * grade.brightness * ONE as f32).round() as i32
+    });
+    let matrix = |scan: f32| {
+        let (s, p) = (grade.saturation, grade.sepia);
+        let luma = [0.299, 0.587, 0.114];
+        // Saturation first, then sepia, as one linear map.
+        let sat = |row: usize, column: usize| {
+            (if row == column { s } else { 0.0 }) + (1.0 - s) * luma[column]
         };
-        red *= grade.red * scan;
-        green *= grade.green * scan;
-        blue *= grade.blue * scan;
-        pixel[0] = (red.clamp(0.0, 1.0) * 255.0).round() as u8;
-        pixel[1] = (green.clamp(0.0, 1.0) * 255.0).round() as u8;
-        pixel[2] = (blue.clamp(0.0, 1.0) * 255.0).round() as u8;
+        let sepia = |row: usize, column: usize| {
+            let paper = [
+                [0.393, 0.769, 0.189],
+                [0.349, 0.686, 0.168],
+                [0.272, 0.534, 0.131],
+            ];
+            (if row == column { 1.0 - p } else { 0.0 }) + p * paper[row][column]
+        };
+        let gain = [grade.red * scan, grade.green * scan, grade.blue * scan];
+        std::array::from_fn::<[i32; 3], 3, _>(|row| {
+            std::array::from_fn(|column| {
+                let mut sum = 0.0;
+                for inner in 0..3 {
+                    sum += sepia(row, inner) * sat(inner, column);
+                }
+                (sum * gain[row] * ONE as f32).round() as i32
+            })
+        })
+    };
+    let plain = matrix(1.0);
+    let scanned = (grade.scanline > 0.0).then(|| matrix(1.0 - grade.scanline));
+    let diagonal = grade.saturation == 1.0 && grade.sepia == 0.0;
+    let width = width.max(1) as usize;
+    let row_width = (width * 4).max(4);
+    for (row, line) in rgba.chunks_mut(row_width).enumerate() {
+        let m = match &scanned {
+            Some(scanned) if row % 3 == 0 => scanned,
+            _ => &plain,
+        };
+        for pixel in line.chunks_exact_mut(4) {
+            let (red, green, blue) = (
+                tone[pixel[0] as usize],
+                tone[pixel[1] as usize],
+                tone[pixel[2] as usize],
+            );
+            let (mut out_red, mut out_green, mut out_blue) = (0, 0, 0);
+            if diagonal {
+                out_red = (m[0][0] * red + HALF) >> SHIFT;
+                out_green = (m[1][1] * green + HALF) >> SHIFT;
+                out_blue = (m[2][2] * blue + HALF) >> SHIFT;
+            } else {
+                for (at, out) in [&mut out_red, &mut out_green, &mut out_blue]
+                    .into_iter()
+                    .enumerate()
+                {
+                    *out = (m[at][0] * red + m[at][1] * green + m[at][2] * blue + HALF) >> SHIFT;
+                }
+            }
+            let ink = |value: i32| {
+                let value = value.clamp(0, ONE);
+                ((value * 255 + HALF) >> SHIFT) as u8
+            };
+            pixel[0] = ink(out_red);
+            pixel[1] = ink(out_green);
+            pixel[2] = ink(out_blue);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The float pipeline the fixed point one replaced.
+    fn reference(rgba: &mut [u8], width: u32, grade: Grade) {
+        let width = width.max(1) as usize;
+        for (index, pixel) in rgba.chunks_exact_mut(4).enumerate() {
+            let mut red = f32::from(pixel[0]) / 255.0;
+            let mut green = f32::from(pixel[1]) / 255.0;
+            let mut blue = f32::from(pixel[2]) / 255.0;
+            red = ((red - 0.5) * grade.contrast + 0.5) * grade.brightness;
+            green = ((green - 0.5) * grade.contrast + 0.5) * grade.brightness;
+            blue = ((blue - 0.5) * grade.contrast + 0.5) * grade.brightness;
+            if grade.saturation != 1.0 {
+                let luma = red * 0.299 + green * 0.587 + blue * 0.114;
+                red = luma + (red - luma) * grade.saturation;
+                green = luma + (green - luma) * grade.saturation;
+                blue = luma + (blue - luma) * grade.saturation;
+            }
+            if grade.sepia > 0.0 {
+                let (r, g, b) = (red, green, blue);
+                red = r * (1.0 - grade.sepia) + (r * 0.393 + g * 0.769 + b * 0.189) * grade.sepia;
+                green = g * (1.0 - grade.sepia) + (r * 0.349 + g * 0.686 + b * 0.168) * grade.sepia;
+                blue = b * (1.0 - grade.sepia) + (r * 0.272 + g * 0.534 + b * 0.131) * grade.sepia;
+            }
+            let scan = if grade.scanline > 0.0 && (index / width) % 3 == 0 {
+                1.0 - grade.scanline
+            } else {
+                1.0
+            };
+            red *= grade.red * scan;
+            green *= grade.green * scan;
+            blue *= grade.blue * scan;
+            pixel[0] = (red.clamp(0.0, 1.0) * 255.0).round() as u8;
+            pixel[1] = (green.clamp(0.0, 1.0) * 255.0).round() as u8;
+            pixel[2] = (blue.clamp(0.0, 1.0) * 255.0).round() as u8;
+        }
+    }
+
+    #[test]
+    fn the_fixed_point_grade_keeps_the_float_ones_look() {
+        const WIDTH: u32 = 41;
+        let mut pixels = Vec::new();
+        for red in (0..=255).step_by(17) {
+            for green in (0..=255).step_by(17) {
+                for blue in (0..=255).step_by(17) {
+                    pixels.extend([red as u8, green as u8, blue as u8, 255]);
+                }
+            }
+        }
+        for filter in Filter::ALL {
+            for brightness in [25, 50, 100, 150, 200] {
+                let grade = Grade::new(filter, f32::from(brightness as u16) / 100.0);
+                let (mut fixed, mut exact) = (pixels.clone(), pixels.clone());
+                apply(&mut fixed, WIDTH, grade);
+                reference(&mut exact, WIDTH, grade);
+                let worst = fixed
+                    .iter()
+                    .zip(&exact)
+                    .map(|(a, b)| a.abs_diff(*b))
+                    .max()
+                    .unwrap_or(0);
+                assert!(worst <= 1, "{filter:?} at {brightness}% differs by {worst}");
+            }
+        }
     }
 }

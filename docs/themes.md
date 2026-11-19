@@ -34,7 +34,8 @@ in `layout.json` beside `recore_accent`:
   `recore_background_filter`, `recore_background_brightness` and
   `recore_background_animate`; the background may be a still picture, an
   animated GIF/APNG/WebP, or a video (MP4, WebM, MOV or MKV), which plays
-  through the window's picture players;
+  through the window's picture players, and keeps playing while nobody is
+  using ReCore or the window is out of focus;
 - `recore_font` (`pixel`, `mono` or `system`) and `recore_motion` (`full`,
   `subtle` or `off`).
 

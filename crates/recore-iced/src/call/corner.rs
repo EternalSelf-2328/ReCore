@@ -170,13 +170,14 @@ pub fn corner_view(app: &App) -> Option<Element<'_, Message>> {
         Hover::new(base, over).into()
     };
     let edge = theme.edge;
+    let radius = if theme.square { 0.0 } else { RADIUS };
     let framed = container(face)
         .width(CORNER.width)
         .height(CORNER.height)
         .clip(true)
         .style(move |_| container::Style {
             background: Some(Color::BLACK.into()),
-            border: crate::style::edge(edge, RADIUS),
+            border: crate::style::edge(edge, radius),
             ..Default::default()
         });
     let held = mouse_area(framed)
@@ -238,7 +239,12 @@ pub fn clip_viewer(app: &App) -> Option<Element<'_, Message>> {
                     .padding([0, 10])
                     .height(28)
                     .align_y(Alignment::Center)
-                    .style(|_| crate::style::rounded(crate::playback::CLIP_SHADE, 6)),
+                    .style(|_| {
+                        crate::style::rounded(
+                            crate::playback::CLIP_SHADE,
+                            if app.theme.square { 0.0 } else { 6.0 },
+                        )
+                    }),
             )
             .center(Length::Fill),
         );
@@ -249,7 +255,9 @@ pub fn clip_viewer(app: &App) -> Option<Element<'_, Message>> {
                     .padding([0, 10])
                     .height(28)
                     .align_y(Alignment::Center)
-                    .style(|_| crate::style::rounded(GLASS, 14)),
+                    .style(|_| {
+                        crate::style::rounded(GLASS, if app.theme.square { 0.0 } else { 14.0 })
+                    }),
             )
             .center(Length::Fill),
         );

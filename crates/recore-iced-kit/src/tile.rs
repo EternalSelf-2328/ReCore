@@ -92,6 +92,14 @@ impl<'a, M: Clone + 'a> Tile<'a, M> {
         self
     }
 
+    /// Its corners square when `square`, as ReCord's are.
+    pub fn square_if(mut self, square: bool) -> Self {
+        if square {
+            self.radius = 0.0;
+        }
+        self
+    }
+
     /// The ring of someone speaking, in `color`.
     pub fn ring(mut self, color: Option<Color>) -> Self {
         self.ring = color;
@@ -262,12 +270,13 @@ pub fn chip<'a, M: Clone + 'a>(
                 .wrapping(text::Wrapping::None),
         );
     }
+    let radius = if theme.square { 0.0 } else { 6.0 };
     container(face)
         .padding([0, 8])
         .height(CHIP)
         .align_y(Alignment::Center)
         .clip(true)
-        .style(|_| rounded(GLASS, 6))
+        .style(move |_| rounded(GLASS, radius))
         .into()
 }
 
@@ -282,6 +291,7 @@ pub fn glass_button<'a, M: Clone + 'a>(
 ) -> Element<'a, M> {
     let theme = look.theme;
     let lit = crate::theme::mix(GLASS, theme.overlay, 0.9);
+    let radius = if theme.square { 0.0 } else { BUTTON / 2.0 };
     let face = button(look.glyph(icon, 20, Color::WHITE).boxed(BUTTON))
         .padding(0)
         .width(BUTTON)
@@ -289,7 +299,7 @@ pub fn glass_button<'a, M: Clone + 'a>(
         .on_press(message)
         .style(move |_, status| button::Style {
             background: Some(if lights(status) { lit } else { GLASS }.into()),
-            border: Border::default().rounded(BUTTON / 2.0),
+            border: Border::default().rounded(radius),
             ..Default::default()
         });
     tooltip(face, controls::tip(theme, label), tooltip::Position::Top)
@@ -298,13 +308,19 @@ pub fn glass_button<'a, M: Clone + 'a>(
 }
 
 /// A pill on a tile, as "Watch stream" (in the danger colour) and
-/// "Starting camera..." (on glass).
-pub fn pill<'a, M: Clone + 'a>(label: &'a str, ground: Color, ink: Color) -> Element<'a, M> {
+/// "Starting camera..." (on glass); square in a square theme.
+pub fn pill<'a, M: Clone + 'a>(
+    label: &'a str,
+    ground: Color,
+    ink: Color,
+    square: bool,
+) -> Element<'a, M> {
+    let radius = if square { 0.0 } else { 13.0 };
     container(text(label).size(13).font(BOLD()).color(ink))
         .padding([0, 10])
         .height(26)
         .align_y(Alignment::Center)
-        .style(move |_| rounded(ground, 13))
+        .style(move |_| rounded(ground, radius))
         .into()
 }
 

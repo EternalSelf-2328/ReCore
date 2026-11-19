@@ -468,7 +468,7 @@ pub(super) fn screen_card<'a>(
             border: Border {
                 color: edge,
                 width: if checked { 2.0 } else { 1.0 },
-                radius: 4.0.into(),
+                radius: if theme.square { 0.0 } else { 4.0 }.into(),
             },
             ..Default::default()
         });

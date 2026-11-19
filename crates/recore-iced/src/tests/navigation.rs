@@ -146,6 +146,52 @@ fn a_server_on_the_rail_opens_its_channels() {
 }
 
 #[test]
+fn a_call_or_stream_in_a_server_marks_the_rails_corner() {
+    use recore_core::chat::VoicePerson;
+    let (mut app, _folder) = preview();
+    let friends = |app: &App| {
+        app.rail
+            .items
+            .iter()
+            .find(|item| item.id == "friends")
+            .cloned()
+            .expect("the Friends server")
+    };
+    assert!(!friends(&app).call && !friends(&app).live);
+    let in_lounge = |streaming| {
+        move |state: &mut recore_core::application::AppState| {
+            let room = state
+                .rooms
+                .iter_mut()
+                .find(|room| room.id == "lounge")
+                .expect("Lounge");
+            Arc::make_mut(room).people = vec![VoicePerson {
+                id: "sam".into(),
+                name: "Sam".into(),
+                streaming,
+                ..Default::default()
+            }];
+        }
+    };
+    change(&mut app, in_lounge(false));
+    let item = friends(&app);
+    assert!(item.call && !item.live, "someone in the call");
+    assert_eq!(
+        (app.sidebar.header.voice, app.sidebar.header.live),
+        (1, 0),
+        "the server's top counts them"
+    );
+    change(&mut app, in_lounge(true));
+    let item = friends(&app);
+    assert!(item.call && item.live, "someone streaming there");
+    assert_eq!(
+        (app.sidebar.header.voice, app.sidebar.header.live),
+        (1, 1),
+        "and counts the stream"
+    );
+}
+
+#[test]
 fn clicking_a_category_folds_it_and_it_stays_folded() {
     let (mut app, folder) = preview();
     assert!(shows(&app, "games"));

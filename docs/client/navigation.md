@@ -5,7 +5,9 @@ badge counts DM mentions and friend
 requests), the DMs with unread messages, a line, then the servers and
 folders, and "Join a server" at the foot, which opens Join a Server. Each tile has its pill at the
 rail's edge (open, pointed at, unread), its mentions in a red badge, a
-speaker while this account is in a call there, and its name in a tooltip;
+speaker at its top corner while anyone is in a call there (or this
+account is), a screen there while someone shares one, and its name in a
+tooltip;
 a server out of reach in a Discord outage shows faded, its tooltip "Name
 (unavailable in a Discord outage)".
 A folder opens and closes on a click, its servers on a strip of its
@@ -32,8 +34,10 @@ and empties as the rail goes elsewhere),
 Friends and Requests, "Direct Messages" and each DM with its person's
 presence, the voice channel they're in (a click goes to it, in its
 server) and what they're up to; in a
-server its name, which opens the server's menu, then its pinned channels,
-then each category's heading and channels. A category folds on a click,
+server its name, which opens the server's menu (beside it, a speaker and
+how many are in its voice channels, and a screen and how many stream
+there), then its pinned channels, then each category's heading and
+channels. A category folds on a click,
 keeping the open channel, unread ones and busy voice channels, as
 Discord's does; under the pointer its heading offers a "+" that makes a
 channel in it, where this account may. A channel's row shows its kind's
