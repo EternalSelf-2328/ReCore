@@ -89,6 +89,14 @@ pub fn status_pixel(presence: Presence, ring: u32, live: u32, faint: u32) -> Opt
 /// to the edges (a decoration's).
 pub fn fitted(source: &[u8], from: (u32, u32), to: (u32, u32), cover: bool) -> Vec<u8> {
     let ((source_width, source_height), (width, height)) = (from, to);
+    // Nothing to put it in; a zero side would take the spans below past
+    // their end. A picture with no size is as clear as its room.
+    if width == 0 || height == 0 {
+        return Vec::new();
+    }
+    if source_width == 0 || source_height == 0 {
+        return vec![0; (width * height * 4) as usize];
+    }
     if !cover {
         let scale = f32::min(
             width as f32 / source_width as f32,
@@ -567,6 +575,13 @@ mod tests {
         for pixel in out.chunks_exact(4) {
             assert_eq!(pixel, [0, 255, 0, 255]);
         }
+    }
+
+    #[test]
+    fn a_picture_with_no_size_is_clear_or_empty() {
+        let clear = fitted(&[], (0, 0), (2, 2), true);
+        assert_eq!(clear, vec![0; 2 * 2 * 4]);
+        assert!(fitted(&[], (2, 2), (0, 0), true).is_empty());
     }
 
     #[test]

@@ -296,6 +296,10 @@ fn the_gif_picker_searches_sends_and_keeps_favorites() {
         asked.is_empty(),
         "the start asked for the home and the favourites"
     );
+    // A setting may open it on Favorites instead.
+    app.dispatch(Action::OpenGifsFavorites);
+    assert_eq!(app.state.gifs.view, GifView::Favorites);
+    app.dispatch(Action::CloseGifs);
     app.apply(Event::GifCategories(Ok((
         vec![GifCategory {
             name: "happy".into(),

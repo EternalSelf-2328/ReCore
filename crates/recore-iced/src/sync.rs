@@ -706,11 +706,12 @@ impl App {
         };
         for item in &self.rail.items {
             want(item.icon.as_deref());
-            if let crate::rail::Kind::Folder {
-                open: false,
-                preview,
-                ..
-            } = &item.kind
+            if !self.layout.prefs.plain_folders.unwrap_or(false)
+                && let crate::rail::Kind::Folder {
+                    open: false,
+                    preview,
+                    ..
+                } = &item.kind
             {
                 for (_, icon) in preview {
                     want(icon.as_deref());

@@ -672,7 +672,7 @@ pub(crate) fn profile_picture(
         Some(picture) => picture,
         None => ctx.state.pictures.get(url)?,
     };
-    if picture.width == 0 || picture.height == 0 {
+    if picture.width == 0 || picture.height == 0 || width == 0 || height == 0 {
         return None;
     }
     let handle = if picture.width == width && picture.height == height {

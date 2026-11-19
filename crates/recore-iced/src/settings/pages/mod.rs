@@ -43,6 +43,9 @@ pub enum Pref {
     CollapseLong(bool),
     BoostGems(bool),
     ShareTyping(bool),
+    PlainFolders(bool),
+    GifFavoritesFirst(bool),
+    TranslateTarget(usize),
     ReplyPing(bool),
     StripTracking(bool),
     Notifications(bool),
@@ -86,6 +89,8 @@ impl Pref {
                 | Self::CollapseLong(_)
                 | Self::BoostGems(_)
                 | Self::ShareTyping(_)
+                | Self::PlainFolders(_)
+                | Self::GifFavoritesFirst(_)
                 | Self::ReplyPing(_)
                 | Self::StripTracking(_)
                 | Self::Notifications(_)
@@ -204,6 +209,22 @@ impl Settings {
                 prefs.share_typing = Some(on);
                 cx.client.share_typing = on;
                 cx.keep("share_typing", on);
+            }
+            Pref::PlainFolders(on) => {
+                prefs.plain_folders = Some(on);
+                cx.keep("plain_folders", on);
+            }
+            Pref::GifFavoritesFirst(on) => {
+                prefs.gif_favorites_first = Some(on);
+                cx.keep("gif_favorites_first", on);
+            }
+            Pref::TranslateTarget(index) => {
+                let (code, _) = crate::translate::LANGUAGES
+                    .get(index)
+                    .copied()
+                    .unwrap_or(crate::translate::LANGUAGES[1]);
+                prefs.translate_target = Some(code.to_owned());
+                cx.keep("translate_target", code);
             }
             Pref::ReplyPing(on) => {
                 prefs.reply_ping = Some(on);

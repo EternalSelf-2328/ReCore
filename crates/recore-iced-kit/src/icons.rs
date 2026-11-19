@@ -67,6 +67,8 @@ pub enum Icon {
     Reply,
     Copy,
     TextSelect,
+    /// A globe, for Translate.
+    Translate,
     Trash,
     Thread,
     Bell,
@@ -257,6 +259,7 @@ impl Icon {
             Icon::Reply => icon!("reply.svg"),
             Icon::Copy => icon!("copy.svg"),
             Icon::TextSelect => icon!("text-select.svg"),
+            Icon::Translate => icon!("translate.svg"),
             Icon::Trash => icon!("trash-2.svg"),
             Icon::Thread => icon!("thread.svg"),
             Icon::Bell => icon!("bell.svg"),

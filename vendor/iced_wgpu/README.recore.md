@@ -18,6 +18,9 @@ Changes, marked `ReCore port` in the source:
   the frame that draws them. A 1080p video frame comes as a new handle each
   frame; uploaded on the worker, it was never ready before the next one
   replaced it, and the stream never showed.
+- `src/image/atlas.rs`: a zero-sized picture's upload is refused. The atlas
+  padded its rows with `width - 1`, so a handle made for a collapsed tile,
+  such as a square stream's corner, crashed it.
 - `src/enabled.rs` (new), `src/window/compositor.rs` `with_backend`,
   `src/lib.rs` `Headless::new`: the renderer starts only once
   `set_enabled(true)` says it may, as the app does when its GPU setting is

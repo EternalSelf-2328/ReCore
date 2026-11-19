@@ -432,7 +432,11 @@ impl Closes for Picker {
 fn open_tab(tab: Tab, cx: &mut Cx<'_>) -> String {
     match tab {
         Tab::Gifs => {
-            cx.dispatch(Action::OpenGifs);
+            if cx.layout.prefs.gif_favorites_first.unwrap_or(false) {
+                cx.dispatch(Action::OpenGifsFavorites);
+            } else {
+                cx.dispatch(Action::OpenGifs);
+            }
             cx.state().gifs.query.clone()
         }
         Tab::Stickers => {

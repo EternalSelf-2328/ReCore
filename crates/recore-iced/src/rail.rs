@@ -620,7 +620,7 @@ impl<'a> View<'a> {
         pointed: bool,
     ) -> Element<'a, Message> {
         let tint = hex(tint);
-        if open {
+        if open || self.cx.layout.prefs.plain_folders.unwrap_or(false) {
             return self
                 .cx
                 .look

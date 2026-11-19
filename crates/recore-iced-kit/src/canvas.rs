@@ -165,6 +165,10 @@ pub fn svg_icon(svg: &str, size: u32, rgb: u32) -> Canvas {
 /// A handle on pixels the client made, in the renderer's format.
 pub fn handle(mut canvas: Canvas) -> Handle {
     finish(&mut canvas.pixels);
+    if canvas.width == 0 || canvas.height == 0 {
+        // Nothing to draw; a zero-sized handle can't go in the atlas.
+        return Handle::from_rgba(1, 1, vec![0; 4]);
+    }
     Handle::from_rgba(canvas.width, canvas.height, canvas.pixels)
 }
 

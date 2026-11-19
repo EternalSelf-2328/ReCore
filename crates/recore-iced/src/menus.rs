@@ -162,6 +162,8 @@ pub enum MenuAct {
     Reply,
     Forward,
     CopyText,
+    /// Translate the message's text, then show it in a card.
+    Translate,
     CopySelection,
     EndPoll,
     /// Pin, or unpin.
@@ -204,6 +206,10 @@ pub enum MenuAct {
     SaveMedia,
     CopyMediaLink,
     OpenMediaLink,
+    /// Search the media's picture with Google Lens, Yandex or TinEye.
+    SearchImageLens,
+    SearchImageYandex,
+    SearchImageTinEye,
     /// A link in the message's text, its address in the row's `key`:
     /// copied or opened.
     CopyTextLink,
@@ -411,6 +417,7 @@ pub fn open_menu(app: &mut App, index: usize, at: Point) -> Task<Message> {
     }
     if !message.body.is_empty() {
         rows.push(row(MenuAct::CopyText, "Copy text", Icon::Copy));
+        rows.push(row(MenuAct::Translate, "Translate", Icon::Translate));
     }
     if crate::timeline::selection::copied_selection(app).is_some() {
         rows.push(row(
@@ -671,7 +678,10 @@ fn carry_out(app: &mut App, row: &MenuRow, ticked: Option<bool>, stays: bool) ->
         MenuAct::CopyImage
         | MenuAct::SaveMedia
         | MenuAct::CopyMediaLink
-        | MenuAct::OpenMediaLink => {
+        | MenuAct::OpenMediaLink
+        | MenuAct::SearchImageLens
+        | MenuAct::SearchImageYandex
+        | MenuAct::SearchImageTinEye => {
             let item = menu.item.clone().unwrap_or_default();
             let index = row.key.parse().unwrap_or_default();
             Task::batch([
@@ -745,6 +755,10 @@ pub fn act(
         MenuAct::Reply => {
             app.client.dispatch(Action::Reply(item));
             Task::batch([app.sync(), focus])
+        }
+        MenuAct::Translate => {
+            let task = crate::translate::open(app, &item);
+            Task::batch([focus, task])
         }
         MenuAct::CopyText => {
             let body = app
@@ -850,6 +864,9 @@ pub fn act(
         | MenuAct::SaveMedia
         | MenuAct::CopyMediaLink
         | MenuAct::OpenMediaLink
+        | MenuAct::SearchImageLens
+        | MenuAct::SearchImageYandex
+        | MenuAct::SearchImageTinEye
         | MenuAct::CopyTextLink
         | MenuAct::OpenTextLink => focus,
     }

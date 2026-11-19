@@ -192,6 +192,8 @@ pub struct App {
     pub channel_screen: crate::slot::Slot<crate::channel_settings::Screen>,
     /// The account's popover, and the custom status's dialog's draft.
     pub status: crate::status::Status,
+    /// A message's translation, and the request that answers it.
+    pub translate: crate::translate::Translate,
     /// The quick switcher's places and the one Enter goes to.
     pub quick: crate::switcher::Quick,
     pub build: crate::settings::Build,
@@ -374,6 +376,7 @@ impl App {
             away: Default::default(),
             channel_screen: Default::default(),
             status: Default::default(),
+            translate: Default::default(),
             quick: Default::default(),
             build: crate::build(),
             keybinds: Default::default(),
@@ -626,6 +629,7 @@ impl App {
             Message::Away(event) => crate::away::update(self, event),
             Message::ChannelSettings(event) => self.channel_settings_event(event),
             Message::Status(event) => self.status_event(event),
+            Message::Translate(event) => crate::translate::update(self, event),
             Message::Switcher(event) => self.switcher_event(event),
             Message::Shell(event) => self.shell_event(event),
             Message::Bar(event) => crate::window_bar::update(self, event),

@@ -1894,8 +1894,9 @@ pub enum Action {
     /// The pointer went over a message's reaction, by item and key, or left
     /// it.
     HoverReaction(Option<(String, String)>),
-    /// Open the GIF picker, or close it.
+    /// Open the GIF picker, or close it; one opens on Favorites.
     OpenGifs,
+    OpenGifsFavorites,
     CloseGifs,
     /// The GIF picker's search field, after a pause in typing.
     SearchGifs(String),
@@ -3618,6 +3619,11 @@ impl Application {
             Action::ShowPins(shown) => self.show_pins(shown),
             Action::HoverReaction(hovered) => self.hover_reaction(hovered),
             Action::OpenGifs => self.open_gifs(),
+            Action::OpenGifsFavorites => {
+                let mut effects = self.open_gifs();
+                effects.extend(self.show_gifs(GifView::Favorites));
+                effects
+            }
             Action::OpenStickers => self.open_stickers(),
             Action::CloseStickers => self.close_stickers(),
             Action::StickersShown(shown) => self.stickers_shown(shown),
