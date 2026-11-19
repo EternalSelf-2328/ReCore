@@ -506,7 +506,20 @@ impl<'a> View<'a> {
                 Message::Rail(Event::Join),
             ));
         }
+        // The Home tile and its selection mark share the top-left corner.
+        // Leave room for both even when the CRT frame is drawn over the rail.
+        let top = if self
+            .cx
+            .themes
+            .shade(theme)
+            .is_some_and(|shade| shade.frame > 0.0)
+        {
+            recore_iced_kit::effects::FRAME_DEPTH + GAP / 2.0
+        } else {
+            GAP
+        };
         container(items.padding(Padding {
+            top,
             bottom: 12.0,
             ..Padding::ZERO
         }))

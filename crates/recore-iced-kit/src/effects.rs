@@ -9,6 +9,11 @@ use iced::{
     widget::canvas::{self, Frame, Image},
 };
 
+const FRAME_INSET: f32 = 3.0;
+const FRAME_LENGTH: f32 = 18.0;
+/// How far the corner brackets extend from the window's edges.
+pub const FRAME_DEPTH: f32 = FRAME_INSET + FRAME_LENGTH;
+
 /// How strong each part of the layer is, from 0 to 1.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Shade {
@@ -152,8 +157,8 @@ impl<Message> canvas::Program<Message> for Shade {
             };
             // Keep the overlay at the edge, outside the logo, avatar and
             // controls that occupy the window's corners.
-            let inset = 3.0;
-            let length = 18.0;
+            let inset = FRAME_INSET;
+            let length = FRAME_LENGTH;
             let thickness = 2.0;
             for (x, y, dx, dy) in [
                 (inset, inset, 1.0, 1.0),
