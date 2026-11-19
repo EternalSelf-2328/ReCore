@@ -1179,6 +1179,8 @@ pub enum Presence {
     Online,
     /// Online, and only on a phone.
     Mobile,
+    /// Online, and only on the web.
+    Web,
     Idle,
     DoNotDisturb,
     Offline,

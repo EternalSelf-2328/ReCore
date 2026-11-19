@@ -206,7 +206,7 @@ fn presence_word(presence: Presence) -> &'static str {
     match presence {
         Presence::DoNotDisturb => "Do Not Disturb",
         Presence::Idle => "Idle",
-        Presence::Online | Presence::Mobile => "Online",
+        Presence::Online | Presence::Mobile | Presence::Web => "Online",
         _ => "Offline",
     }
 }

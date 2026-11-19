@@ -31,6 +31,15 @@ pub fn status_dot(presence: Presence, ring: u32, live: u32, faint: u32) -> Optio
         canvas.circle(7.0, 15.0, 2.0, ring);
         return Some(canvas);
     }
+    if presence == Presence::Web {
+        // A globe: the dot with its equator and meridian marked.
+        let mut canvas = Canvas::new(16, 16);
+        canvas.circle(0.0, 0.0, 16.0, ring);
+        canvas.circle(3.0, 3.0, 10.0, Ink(live, 1.0));
+        canvas.rounded(4.0, 7.0, 8.0, 2.0, 0.0, ring);
+        canvas.rounded(7.0, 4.0, 2.0, 8.0, 0.0, ring);
+        return Some(canvas);
+    }
     let mut canvas = Canvas::new(16, 16);
     canvas.circle(0.0, 0.0, 16.0, ring);
     match presence {
@@ -47,7 +56,7 @@ pub fn status_dot(presence: Presence, ring: u32, live: u32, faint: u32) -> Optio
             canvas.circle(3.0, 3.0, 10.0, Ink(faint, 1.0));
             canvas.circle(6.0, 6.0, 4.0, ring);
         }
-        Presence::Mobile => return None,
+        Presence::Mobile | Presence::Web => return None,
     }
     Some(canvas)
 }
@@ -57,7 +66,7 @@ pub fn status_dot(presence: Presence, ring: u32, live: u32, faint: u32) -> Optio
 /// tall phone shape.
 pub fn status_pixel(presence: Presence, ring: u32, live: u32, faint: u32) -> Option<Canvas> {
     let ring = Ink(ring, 1.0);
-    if presence == Presence::Mobile {
+    if presence == Presence::Mobile || presence == Presence::Web {
         return status_dot(presence, ring.0, live, faint);
     }
     let mut canvas = Canvas::new(16, 16);
@@ -75,7 +84,7 @@ pub fn status_pixel(presence: Presence, ring: u32, live: u32, faint: u32) -> Opt
             canvas.rounded(3.0, 3.0, 10.0, 10.0, 0.0, Ink(faint, 1.0));
             canvas.rounded(6.0, 6.0, 4.0, 4.0, 0.0, ring);
         }
-        Presence::Mobile => return None,
+        Presence::Mobile | Presence::Web => return None,
     }
     Some(canvas)
 }

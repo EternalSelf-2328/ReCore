@@ -250,6 +250,7 @@ pub fn presence(presence: recore_discord::member_list::Presence) -> chat::Presen
     match presence {
         Discord::Online => chat::Presence::Online,
         Discord::Mobile => chat::Presence::Mobile,
+        Discord::Web => chat::Presence::Web,
         Discord::Idle => chat::Presence::Idle,
         Discord::DoNotDisturb => chat::Presence::DoNotDisturb,
         Discord::Offline => chat::Presence::Offline,
