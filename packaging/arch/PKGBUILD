@@ -5,7 +5,7 @@
 pkgname=recore
 # The upstream application version. Arch revisions track fixes in this fork.
 pkgver=0.4.9
-pkgrel=1
+pkgrel=2
 _id=io.github.leriart.ReCore
 # The prebuilt native parts nix/native.nix pins.
 _webrtc=webrtc-51ef663

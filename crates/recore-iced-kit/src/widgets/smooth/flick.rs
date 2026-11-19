@@ -19,7 +19,7 @@ use iced::{Point, Vector};
 /// How far a wheel's notch scrolls (Slint's winit backend's).
 pub const WHEEL_NOTCH: f32 = 60.0;
 /// How long a notch's move takes.
-pub const WHEEL_DURATION: Duration = Duration::from_millis(180);
+pub const WHEEL_DURATION: Duration = Duration::from_millis(120);
 /// Notches a second past which each notch scrolls farther, in proportion.
 const ACCELERATION_START: f32 = 12.0;
 /// The most a notch scales.

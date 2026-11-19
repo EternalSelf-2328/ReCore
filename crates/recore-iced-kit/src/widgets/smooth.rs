@@ -14,7 +14,7 @@
 use std::{
     cell::Cell,
     sync::atomic::{AtomicU32, Ordering},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use iced::{
@@ -36,6 +36,9 @@ pub mod flick;
 
 pub use bar::Scroller;
 use flick::{Flick, Phase, Room, Rooms};
+
+/// Leave the pointer over the content again after the list settles.
+const HOVER_DELAY: Duration = Duration::from_millis(90);
 
 thread_local! {
     /// Set by a `Claim` as a wheel event goes through what a scrollable
@@ -165,6 +168,7 @@ pub struct SmoothState {
     phases: Phases,
     shift: bool,
     bar: bar::BarState,
+    last_move: Option<Instant>,
 }
 
 /// What the touchpad does, told from its events: iced hands on a wheel's
@@ -287,6 +291,7 @@ impl Smooth {
             if outcome.moved != Vector::ZERO {
                 // Drawn, and said, on the next frame.
                 self.move_by(child, outcome.moved);
+                state.last_move = Some(now);
                 shell.request_redraw();
             }
             if outcome.taken {
@@ -397,13 +402,18 @@ impl<M> Hooks<M> for Smooth {
                 if state.flick.moving() {
                     let flick = &mut state.flick;
                     let trace = frames::on();
+                    let mut moved = false;
                     self.drive(child, &mut |rooms| {
                         let by = flick.frame(*now, rooms);
+                        moved = by != Vector::ZERO;
                         if trace {
                             trace_step(*now, rooms, by);
                         }
                         by
                     });
+                    if moved {
+                        state.last_move = Some(*now);
+                    }
                     if state.flick.moving() {
                         shell.request_redraw();
                     }
@@ -413,6 +423,17 @@ impl<M> Hooks<M> for Smooth {
                     state.bar.rooms = self.rooms(child);
                     if state.bar.frame(*now) {
                         shell.request_redraw();
+                    }
+                }
+                // Moving content under a stationary pointer can publish an
+                // enter and exit for each passing row and rebuild the view.
+                if let Some(last) = state.last_move {
+                    let restore = last + HOVER_DELAY;
+                    if *now < restore {
+                        child.cursor = child.cursor.levitate();
+                        shell.request_redraw_at(restore);
+                    } else {
+                        state.last_move = None;
                     }
                 }
             }

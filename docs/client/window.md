@@ -152,7 +152,7 @@ own, which a stream hands to the event loop as messages; nothing polls.
   display and is told no change; elsewhere the window's own.
 - Scrolling (`widgets::scroll_view`, every list that scrolls): a wheel's
   notch moves 60
-  px over 180 ms, fast at first and slowing on Flutter's power curve; a
+  px over 120 ms, fast at first and slowing on Flutter's power curve; a
   notch while one moves adds what was left of it; a wheel spun past 12
   notches a second scrolls each notch farther, in proportion, at most six
   times, its recent notches weighing less by e every 200 ms. A touchpad
@@ -167,7 +167,8 @@ own, which a stream hands to the event loop as messages; nothing polls.
   it or while the pointer stays where it last scrolled it, for 800 ms. A
   press on it stops it; put somewhere (a jump, the end, another room) it
   drops its motion, and moved by (rows measured above what's read) it
-  keeps on. Frames are asked for only while it moves. A list held to its
+  keeps on. Hover follows the settled content 90 ms after the last move.
+  A list held to its
   foot (the timeline, the thread beside) counts the other way round. No
   rubber band at the ends.
 - A list's scroll bar (`widgets/smooth/bar.rs`) is a thumb drawn over
