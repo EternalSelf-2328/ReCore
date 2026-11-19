@@ -543,12 +543,13 @@ impl Application {
         let playing = snapshot.playing.as_deref();
         // Snapshots come often; the game rarely changes.
         let shown = self.state.discord_playing.as_ref();
-        if shown.map(|shown| (shown.name.as_str(), shown.started_ms))
-            != playing.map(|playing| (playing.name.as_str(), playing.started_ms))
+        if shown.map(|shown| (shown.name.as_str(), shown.started_ms, shown.kind))
+            != playing.map(|playing| (playing.name.as_str(), playing.started_ms, playing.kind))
         {
             self.state.discord_playing = playing.map(|playing| chat::Playing {
                 name: playing.name.clone(),
                 started_ms: playing.started_ms,
+                kind: playing.kind,
             });
         }
         if changed(|a, b| Arc::ptr_eq(&a.friend_requests, &b.friend_requests)) {

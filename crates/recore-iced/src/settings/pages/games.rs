@@ -1,4 +1,4 @@
-//! Game Activity: the games ReCore knows and the ones added by hand.
+//! Activity: the games ReCore knows and the ones added by hand.
 
 use iced::{
     Alignment, Element, Length,
@@ -121,19 +121,19 @@ impl<'a> Page<'a> {
         let draft = &settings.game;
         let shown = state.discord_show_game;
         let mut parts = vec![
-            form::title(theme, "Game activity"),
+            form::title(theme, "Activity"),
             switch(
-                "Share the game you play",
+                "Share your activity",
                 shown,
                 linked.then(|| Message::Settings(Event::Game(GameEvent::Show(!shown)))),
             )
-            .description("ReCore looks for games among the programs running, and on Linux takes the Rich Presence games send. Your Discord account keeps this setting, so it's the same in Discord's apps.")
+            .description("ReCore looks for games among the programs running and, on Linux, shows the Rich Presence that games, apps and music players send. Your Discord account keeps this setting, so it's the same in Discord's apps.")
             .locked("Link a Discord account first.")
             .view(self.cx.look),
             form::heading(theme, "CUSTOM GAMES"),
             form::note(
                 theme,
-                "Name a game by its executable, a file name or a full path, and what to show after Playing. These come before the games ReCore knows, but a game's Rich Presence comes first.",
+                "Name a game by its executable, a file name or a full path, and what to show after Playing. These come before the games ReCore knows, but an app's or game's Rich Presence comes first.",
             ),
         ];
         for (index, (executable, name)) in self.cx.layout.prefs.game_executables.iter().enumerate()

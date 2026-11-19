@@ -246,6 +246,8 @@ pub struct Playing {
     pub name: String,
     /// When it started, in Unix milliseconds, when the game says.
     pub started_ms: Option<u64>,
+    /// What it is: a game, music, a video or a competition.
+    pub kind: ActivityKind,
 }
 
 /// A Discord friend request waiting for an answer.

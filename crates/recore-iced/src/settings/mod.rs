@@ -103,7 +103,7 @@ impl Section {
             Section::Sounds => "Sounds",
             Section::Advanced => "Advanced",
             Section::Appearance => "Appearance",
-            Section::Games => "Game Activity",
+            Section::Games => "Activity",
             Section::Keybinds => "Keybinds",
             Section::About => "About",
         }

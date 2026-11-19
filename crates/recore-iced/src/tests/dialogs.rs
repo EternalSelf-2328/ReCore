@@ -183,6 +183,7 @@ fn the_account_popover_shows_the_accounts_own_card_while_open() {
         state.discord_playing = Some(Playing {
             name: "Factorio".into(),
             started_ms: Some(recore_core::clock::now_ms() - 125 * 60_000),
+            kind: recore_core::chat::ActivityKind::Playing,
         });
     });
     assert!(app.profiles.account.is_none(), "made only while it shows");

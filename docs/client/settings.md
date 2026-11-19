@@ -91,11 +91,13 @@ recording. Each change is kept at once in
   blocked, five more at a time, each with Unblock. Whether someone is
   using ReCore (`away.rs`): a key, a click or the
   wheel counts; once nobody has for 15 s, Discord hears since when, with
-  idle while away, and goes AFK and idle on its own clock, and moving
-  pictures hold still until someone is back. Input while someone is using
-  it costs no message, only a time noted; one timer checks it.
-- Game Activity: sharing the game played (Discord keeps it), and the games
-  named by hand, added, edited and removed, which detection takes at once.
+  idle while away, and goes AFK and idle on its own clock; moving
+  pictures hold still until someone is back, the window's background
+  excepted. Input while someone is using it costs no message, only a
+  time noted; one timer checks it.
+- Activity: sharing what is played, watched or listened to (Discord keeps
+  it), and the games named by hand, added, edited and removed, which
+  detection takes at once.
 - About: the build with Copy version, the update switches, the releases
   (Updates in [the window](window.md#the-window-and-the-desktop)), and
   the links.

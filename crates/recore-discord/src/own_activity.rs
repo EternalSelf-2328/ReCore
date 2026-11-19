@@ -1,6 +1,7 @@
-//! The game this account shares: what a game says over Rich Presence, or
-//! else the game detection finds. The account's `show_current_game` setting
-//! turns both on and off; the custom status stays apart from them.
+//! The activity this account shares: what a game, app or music player says
+//! over Rich Presence, or else the game detection finds. The account's
+//! `show_current_game` setting turns both on and off; the custom status
+//! stays apart from them.
 
 use crate::{api::Api, service::Snapshot};
 use serde_json::Value;
@@ -15,17 +16,26 @@ pub struct Playing {
     pub name: String,
     /// When it started, in Unix milliseconds, when the game says.
     pub started_ms: Option<u64>,
+    /// What it is: a game, music, a video or a competition.
+    pub kind: crate::activity::Kind,
 }
 
 impl Playing {
     /// The game an activity names, if it names one.
     pub(crate) fn of(activity: &Value) -> Option<Self> {
         let name = activity["name"].as_str()?.trim();
+        let kind = match activity["type"].as_u64().unwrap_or(0) {
+            2 => crate::activity::Kind::Listening,
+            3 => crate::activity::Kind::Watching,
+            5 => crate::activity::Kind::Competing,
+            _ => crate::activity::Kind::Playing,
+        };
         (!name.is_empty()).then(|| Self {
             name: name.to_owned(),
             started_ms: activity
                 .pointer("/timestamps/start")
                 .and_then(Value::as_u64),
+            kind,
         })
     }
 }
@@ -150,7 +160,8 @@ mod tests {
             Playing::of(&json!({"type":0,"name":" Game ","timestamps":{"start":5}})),
             Some(Playing {
                 name: "Game".into(),
-                started_ms: Some(5)
+                started_ms: Some(5),
+                kind: crate::activity::Kind::Playing,
             })
         );
         assert_eq!(Playing::of(&json!({"type":0,"name":" "})), None);

@@ -283,6 +283,7 @@ fn shares_the_game_as_the_account_settings_say() {
             Arc::new(Playing {
                 name: name.into(),
                 started_ms: Some(5),
+                kind: recore_discord::activity::Kind::Playing,
             })
         }),
         ..Default::default()
@@ -293,7 +294,8 @@ fn shares_the_game_as_the_account_settings_say() {
         app.state.discord_playing,
         Some(chat::Playing {
             name: "Game".into(),
-            started_ms: Some(5)
+            started_ms: Some(5),
+            kind: recore_discord::activity::Kind::Playing,
         })
     );
     assert!(

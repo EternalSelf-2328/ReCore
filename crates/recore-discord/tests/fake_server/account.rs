@@ -133,6 +133,37 @@ async fn plays_through_rpc(discord: &Discord, server: &str, directory: &std::pat
             })
     })
     .await;
+    // The same socket carries a music player's Listening activity.
+    let music = json!({"type":2,"details":"Song One","state":"Fixture Band",
+        "timestamps":{"start":1700000000_u64}});
+    send(
+        &mut first,
+        1,
+        json!({"cmd":"SET_ACTIVITY","nonce":"music","args":{"pid":42,"activity":music}}),
+    )
+    .await;
+    let response = receive(&mut first).await;
+    assert_eq!(response["nonce"], "music");
+    assert_eq!(response["data"]["type"], 2);
+    presence_where(server, |presence| {
+        presence["activities"].as_array().is_some_and(|activities| {
+            activities.iter().any(|activity| {
+                activity["type"] == 2
+                    && activity["details"] == "Song One"
+                    && activity["state"] == "Fixture Band"
+            })
+        })
+    })
+    .await;
+    // Put the game back for what follows.
+    send(
+        &mut first,
+        1,
+        json!({"cmd":"SET_ACTIVITY","nonce":"game-again","args":{"pid":42,"activity":activity}}),
+    )
+    .await;
+    assert!(receive(&mut first).await["evt"].is_null());
+
     send(
         &mut first,
         1,

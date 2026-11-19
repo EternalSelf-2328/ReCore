@@ -987,11 +987,14 @@ as its file chooser would.
 
 ## Linux Rich Presence
 
-Games and tools on Linux tell Discord what they're doing through its local
-RPC socket, which the discord-rpc library and Discord's game SDK use. While
-the account shares its game ([game detection](#game-detection)), ReCore
-serves that socket itself, so no bridge such as arRPC needs to run. Windows'
-named pipes and the macOS socket aren't served yet.
+Games, apps and music players on Linux tell Discord what they're doing
+through its local RPC socket, which the discord-rpc library and Discord's
+game SDK use. While the account shares its activity
+([game detection](#game-detection)), ReCore serves that socket itself, so no
+bridge such as arRPC needs to run. An app's Listening activity shows as
+Listening to in the profile and the status popover; Watching and Competing
+show as their own. Windows' named pipes and the macOS socket aren't served
+yet.
 
 The socket is the first free `discord-ipc-0` to `discord-ipc-9` in
 `XDG_RUNTIME_DIR`, or else in `TMPDIR`, `TMP`, `TEMP` or `/tmp`. A socket
@@ -1078,7 +1081,7 @@ request for each.
 
 ## Game detection
 
-Settings → Game activity → Share the game you play is the account's own
+Settings → Activity → Share your activity is the account's own
 `show_current_game` setting, which Discord's apps change too. ReCore reads
 it from READY and settings updates and writes it with
 `PATCH /users/@me/settings-proto/1`, keeping the status and custom status

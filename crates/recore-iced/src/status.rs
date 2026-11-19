@@ -11,7 +11,7 @@ use iced::{
 };
 use recore_core::{
     application::{Action, AppState, ClearAfter},
-    chat::Presence,
+    chat::{ActivityKind, Presence},
 };
 
 use crate::{
@@ -299,10 +299,18 @@ impl<'a> View<'a> {
             message(Event::Settings),
         ));
         let raised = theme.raised;
-        body = body.push(group(first, raised)).push(group(second, raised));
-        let card = container(column![header, body])
-            .width(POPOVER)
-            .style(crate::profile::frame_style(inks, theme.line, 8.0, true));
+        body =
+            body.push(group(first, raised, theme.square))
+                .push(group(second, raised, theme.square));
+        let card =
+            container(column![header, body])
+                .width(POPOVER)
+                .style(crate::profile::frame_style(
+                    inks,
+                    theme.line,
+                    if theme.square { 0.0 } else { 8.0 },
+                    true,
+                ));
         let bottom =
             self.cx.look.window.height - crate::account::HEIGHT - crate::account::INSET - 4.0;
         Some(
@@ -330,7 +338,11 @@ impl<'a> View<'a> {
             .map(hex)
             .or(inks.themed.then_some(inks.primary))
             .unwrap_or(theme.sunken);
-        let top = corners([8.0, 8.0, 0.0, 0.0]);
+        let top = if theme.square {
+            corners([0.0; 4])
+        } else {
+            corners([8.0, 8.0, 0.0, 0.0])
+        };
         let mut banner = stack![
             container(Space::new())
                 .width(Length::Fill)
@@ -351,16 +363,20 @@ impl<'a> View<'a> {
             })
         {
             banner = banner.push(
-                Pic::new(picture, iced::Size::new(POPOVER, BANNER))
-                    .radius_each([8.0, 8.0, 0.0, 0.0]),
+                Pic::new(picture, iced::Size::new(POPOVER, BANNER)).radius_each(if theme.square {
+                    [0.0; 4]
+                } else {
+                    [8.0, 8.0, 0.0, 0.0]
+                }),
             );
         }
         let ring = inks.ground;
+        let ring_radius = if theme.square { 0.0 } else { 44.0 };
         let mut face = stack![
             container(Space::new())
                 .width(88)
                 .height(88)
-                .style(move |_| rounded(ring, 44)),
+                .style(move |_| rounded(ring, ring_radius)),
             container(
                 self.cx.face(
                     crate::pictures::Face::new(account.avatar.as_deref(), &account.name, 80.0)
@@ -421,8 +437,19 @@ impl<'a> View<'a> {
     /// and for how long when the game says when it started.
     fn playing_card(self, playing: &'a recore_core::chat::Playing) -> Element<'a, Message> {
         let theme = self.cx.look.theme;
+        let (label, icon) = match playing.kind {
+            ActivityKind::Listening => ("Listening to", Icon::Music),
+            ActivityKind::Watching => ("Watching", Icon::Tv),
+            ActivityKind::Competing => ("Competing in", Icon::Trophy),
+            _ => ("Playing", Icon::Gamepad),
+        };
         let mut lines = column![
-            text("Playing").size(12).font(BOLD()).color(theme.secondary),
+            row![
+                self.cx.look.glyph(icon, 14, theme.secondary),
+                text(label).size(12).font(BOLD()).color(theme.secondary),
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center),
             crate::elide::elide(playing.name.as_str())
                 .size(15)
                 .font(crate::fonts::SEMIBOLD())
@@ -434,12 +461,13 @@ impl<'a> View<'a> {
             lines = lines.push(text(lasted).size(12).color(theme.live));
         }
         let raised = theme.raised;
+        let radius = if theme.square { 0.0 } else { 8.0 };
         container(lines)
             .padding(12)
             .height(80)
             .width(Length::Fill)
             .align_y(Alignment::Center)
-            .style(move |_| rounded(raised, 8))
+            .style(move |_| rounded(raised, radius))
             .into()
     }
 
@@ -469,7 +497,12 @@ impl<'a> View<'a> {
             .find(|(key, ..)| *key == status)
             .map_or("Online", |(_, name, _)| name);
         let mut line = row![].spacing(8).align_y(Alignment::Center);
-        if let Some(dot) = self.cx.mark(Mark::Dot(presence(status), rgb(theme.raised))) {
+        let dot = if theme.square {
+            Mark::SquareDot(presence(status), rgb(theme.raised))
+        } else {
+            Mark::Dot(presence(status), rgb(theme.raised))
+        };
+        if let Some(dot) = self.cx.mark(dot) {
             line = line.push(Pic::square(dot, 16.0));
         }
         line = line
@@ -498,7 +531,11 @@ impl<'a> View<'a> {
         .height(ROW)
         .width(Length::Fill)
         .on_press(message(Event::Expand))
-        .style(controls::lit_style(None, active, 4.0))
+        .style(controls::lit_style(
+            None,
+            active,
+            if theme.square { 0.0 } else { 4.0 },
+        ))
         .into()
     }
 
@@ -540,7 +577,11 @@ impl<'a> View<'a> {
             .padding([6, 8])
             .width(Length::Fill)
             .on_press(message(Event::Choose(key)))
-            .style(controls::lit_style(None, active, 4.0))
+            .style(controls::lit_style(
+                None,
+                active,
+                if theme.square { 0.0 } else { 4.0 },
+            ))
             .into()
     }
 }
@@ -644,11 +685,16 @@ fn presence(key: &str) -> Presence {
 }
 
 /// A group of the popover's rows, on its raised ground.
-fn group(rows: iced::widget::Column<'_, Message>, raised: iced::Color) -> Element<'_, Message> {
+fn group(
+    rows: iced::widget::Column<'_, Message>,
+    raised: iced::Color,
+    square: bool,
+) -> Element<'_, Message> {
+    let radius = if square { 0.0 } else { 8.0 };
     container(rows)
         .padding(8)
         .width(Length::Fill)
-        .style(move |_| rounded(raised, 8))
+        .style(move |_| rounded(raised, radius))
         .into()
 }
 

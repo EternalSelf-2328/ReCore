@@ -267,7 +267,14 @@ pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
         .clip(true)
         .style(move |_| {
             if pointed {
-                rounded(lit, 6)
+                rounded(
+                    lit,
+                    if ctx.themes.square_avatars() {
+                        0.0
+                    } else {
+                        6.0
+                    },
+                )
             } else {
                 Default::default()
             }
@@ -486,16 +493,17 @@ fn ring_and_dot<'a>(
             Dot::Offline => theme.faint,
         };
         let ground = theme.panel;
+        let (inner, outer) = if square { (0.0, 0.0) } else { (4.0, 7.0) };
         let dot = container(
             container(Space::new())
                 .width(8)
                 .height(8)
-                .style(move |_| rounded(ink, 4)),
+                .style(move |_| rounded(ink, inner)),
         )
         .width(14)
         .height(14)
         .center(14)
-        .style(move |_| rounded(ground, 7));
+        .style(move |_| rounded(ground, outer));
         layers = layers.push(pin(dot).x(27.0).y(27.0));
     }
     layers.width(AVATAR).height(AVATAR).into()
