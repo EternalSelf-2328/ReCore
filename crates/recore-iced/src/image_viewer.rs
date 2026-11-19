@@ -246,7 +246,10 @@ impl<'a> View<'a> {
             ground: false,
             ..Shot::new(shown, size)
         });
+        // Wheel zooms and a drag moves the picture, kept inside its box;
+        // another picture starts unzoomed.
         let (item, index) = (viewer.item.clone(), viewer.index);
+        let picture = crate::widgets::Zoom::new(picture, size, format!("{item}:{index}"));
         let picture = RightPress::new(picture, move |_| {
             Message::Image(Event::Menu(item.clone(), index, false))
         });
