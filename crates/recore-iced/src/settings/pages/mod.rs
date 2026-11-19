@@ -65,6 +65,7 @@ pub enum Pref {
     PlaySound(usize),
     GpuRendering(bool),
     GpuEncoding(bool),
+    StreamerMode(bool),
     CloseToTray(bool),
     MultipleWindows(bool),
     DeveloperMode(bool),
@@ -105,6 +106,7 @@ impl Pref {
                 | Self::AdjustEach(_)
                 | Self::GpuRendering(_)
                 | Self::GpuEncoding(_)
+                | Self::StreamerMode(_)
                 | Self::CloseToTray(_)
                 | Self::MultipleWindows(_)
                 | Self::DeveloperMode(_)
@@ -357,6 +359,10 @@ impl Settings {
             Pref::DeveloperMode(on) => {
                 cx.layout.developer_mode = on;
                 cx.keep("developer_mode", on);
+            }
+            Pref::StreamerMode(on) => {
+                prefs.streamer_mode = Some(on);
+                cx.keep("streamer_mode", on);
             }
             Pref::ShowHiddenChannels(on) => {
                 prefs.show_hidden_channels = on;

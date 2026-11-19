@@ -240,6 +240,10 @@ impl App {
     /// the call speakers' output device.
     pub fn interface_sound(&self, sound: recore_core::sounds::InterfaceSound) {
         use recore_core::sounds::InterfaceSound;
+        // Streamer mode keeps the window quiet.
+        if self.layout.prefs.streamer_mode.unwrap_or(false) {
+            return;
+        }
         let gap = match sound {
             InterfaceSound::Hover => Duration::from_millis(45),
             InterfaceSound::Select => Duration::from_millis(60),
@@ -630,6 +634,7 @@ impl App {
             Message::ChannelSettings(event) => self.channel_settings_event(event),
             Message::Status(event) => self.status_event(event),
             Message::Translate(event) => crate::translate::update(self, event),
+            Message::Toast(event) => crate::toast::update(self, event),
             Message::Switcher(event) => self.switcher_event(event),
             Message::Shell(event) => self.shell_event(event),
             Message::Bar(event) => crate::window_bar::update(self, event),

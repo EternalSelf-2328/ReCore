@@ -222,6 +222,7 @@ pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
     let account = ctx.account;
     let pointed = ctx.account_pointed;
     let state = ctx.state;
+    let streamer = ctx.layout.prefs.streamer_mode.unwrap_or(false);
     let decoration = state
         .cosmetics
         .decoration(state.account_decoration.as_deref());
@@ -235,7 +236,9 @@ pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
             ),
     );
     let face = ring_and_dot(ctx, account, face);
-    let second: Element<'a, Message> = if pointed && !account.username.is_empty() {
+    let second: Element<'a, Message> = if streamer {
+        ctx.status_line(&account.status, StatusInk::under_name(ctx.look.theme, 1.0))
+    } else if pointed && !account.username.is_empty() {
         text(account.username.as_str())
             .size(13)
             .color(theme.muted)
@@ -251,11 +254,15 @@ pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
     let names = mouse_area(
         container(
             column![
-                text(account.name.as_str())
-                    .size(15)
-                    .font(BOLD())
-                    .color(theme.text)
-                    .wrapping(text::Wrapping::None),
+                text(if streamer {
+                    "Streamer"
+                } else {
+                    account.name.as_str()
+                })
+                .size(15)
+                .font(BOLD())
+                .color(theme.text)
+                .wrapping(text::Wrapping::None),
                 second
             ]
             .width(Length::Fill),

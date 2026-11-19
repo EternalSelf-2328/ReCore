@@ -131,6 +131,9 @@ impl App {
         // come and go: the card, the suggestions, the picker, a menu, the
         // modal, each over the last.
         let mut layers = stack![base];
+        if let Some(toast) = crate::toast::view(self) {
+            layers = layers.push(toast);
+        }
         // ReCord's screen-in when the open room changes: over the room,
         // under the overlays and the title bar. It joins the window's one
         // stack rather than wrapping the room, which would give the rail,
