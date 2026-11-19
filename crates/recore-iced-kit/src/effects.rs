@@ -140,7 +140,7 @@ impl<Message> canvas::Program<Message> for Shade {
             }
         }
 
-        if self.frame > 0.0 {
+        if self.frame > 0.0 && size.width >= 48.0 && size.height >= 48.0 {
             let alpha = self.frame.clamp(0.0, 1.0) * 0.8;
             let ink = Color {
                 a: alpha,
@@ -150,7 +150,9 @@ impl<Message> canvas::Program<Message> for Shade {
                 a: alpha * 0.55,
                 ..self.line
             };
-            let inset = 12.0;
+            // Keep the overlay at the edge, outside the logo, avatar and
+            // controls that occupy the window's corners.
+            let inset = 3.0;
             let length = 18.0;
             let thickness = 2.0;
             for (x, y, dx, dy) in [
@@ -178,7 +180,7 @@ impl<Message> canvas::Program<Message> for Shade {
                     x - 4.0 - length / 2.0
                 };
                 frame.fill_rectangle(
-                    Point::new(right, y + 5.0),
+                    Point::new(right, y + dy * 5.0),
                     Size::new(length / 2.0, 1.0),
                     soft,
                 );
@@ -188,7 +190,7 @@ impl<Message> canvas::Program<Message> for Shade {
                     y - 4.0 - length / 2.0
                 };
                 frame.fill_rectangle(
-                    Point::new(x + 5.0, down),
+                    Point::new(x + dx * 5.0, down),
                     Size::new(1.0, length / 2.0),
                     soft,
                 );

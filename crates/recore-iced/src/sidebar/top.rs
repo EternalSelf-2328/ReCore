@@ -194,13 +194,11 @@ impl<'a> super::View<'a> {
             .width(Length::Fill)
             .height(Length::Fill);
         let words = row![
-            text("Boost Goal")
+            elide("Boost Goal")
                 .size(14)
                 .font(SEMIBOLD())
-                .color(theme.text)
-                .wrapping(text::Wrapping::None)
-                .width(Length::Fill),
-            text(format!("{boosts}/{BOOST_GOAL} Boosts"))
+                .color(theme.text),
+            text(format!("{boosts}/{BOOST_GOAL}"))
                 .size(14)
                 .font(MEDIUM())
                 .color(faded(theme.text, 0.7))

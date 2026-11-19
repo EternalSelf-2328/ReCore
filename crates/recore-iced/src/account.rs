@@ -4,7 +4,7 @@
 
 use iced::{
     Alignment, Element, Length, Padding, Point,
-    widget::{column, container, mouse_area, row, text},
+    widget::{column, container, mouse_area, row},
 };
 use recore_core::{
     application::AppState,
@@ -14,6 +14,7 @@ use recore_core::{
 
 use crate::{
     app::{App, Message},
+    elide::elide,
     fonts::BOLD,
     looks::{Status, one_line},
     people::StatusInk,
@@ -221,6 +222,12 @@ pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
     let theme = ctx.look.theme;
     let account = ctx.account;
     let pointed = ctx.account_pointed;
+    let compact = crate::sidebar::width(ctx.layout) < 220.0;
+    let (control_side, caret_side, gap) = if compact {
+        (26.0, 16.0, 3.0)
+    } else {
+        (32.0, 20.0, 5.0)
+    };
     let state = ctx.state;
     let decoration = state
         .cosmetics
@@ -236,10 +243,9 @@ pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
     );
     let face = ring_and_dot(ctx, account, face);
     let second: Element<'a, Message> = if pointed && !account.username.is_empty() {
-        text(account.username.as_str())
+        elide(account.username.as_str())
             .size(13)
             .color(theme.muted)
-            .wrapping(text::Wrapping::None)
             .into()
     } else {
         ctx.status_line(&account.status, StatusInk::under_name(ctx.look.theme, 1.0))
@@ -251,16 +257,15 @@ pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
     let names = mouse_area(
         container(
             column![
-                text(account.name.as_str())
+                elide(account.name.as_str())
                     .size(15)
                     .font(BOLD())
-                    .color(theme.text)
-                    .wrapping(text::Wrapping::None),
+                    .color(theme.text),
                 second
             ]
             .width(Length::Fill),
         )
-        .padding([0, 6])
+        .padding([0, if compact { 3 } else { 6 }])
         .height(Length::Fill)
         .width(Length::Fill)
         .align_y(Alignment::Center)
@@ -340,7 +345,7 @@ pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
                     label,
                     Message::Call(crate::call::Event::Open(popup)),
                 )
-                .size(20.0, 16),
+                .size(caret_side, 16),
         )
     };
     let alert = |on: bool| if on { theme.danger } else { theme.text };
@@ -353,7 +358,7 @@ pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
                 mic,
                 mic_label,
                 alert(account.shown_muted(join)),
-                20,
+                (control_side, 20),
                 toggle(Event::Mute)
             ),
             caret("Input options", crate::call::Popup::Input),
@@ -365,14 +370,14 @@ pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
                 ear,
                 ear_label,
                 alert(account.shown_deafened(join)),
-                21,
+                (control_side, 21),
                 toggle(Event::Deafen)
             ),
             caret("Output options", crate::call::Popup::Output),
         ]
         .align_y(Alignment::Center),
     ]
-    .spacing(5)
+    .spacing(gap)
     .align_y(Alignment::Center);
     // Offline, Reconnect before Settings.
     let state = ctx.state;
@@ -382,7 +387,7 @@ pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
             Icon::Refresh,
             "Reconnect",
             theme.secondary,
-            20,
+            (control_side, 20),
             (!state.busy).then_some(Message::Account(Event::Reconnect)),
         ))
     } else {
@@ -393,7 +398,7 @@ pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
         Icon::Settings,
         "Settings",
         theme.text,
-        24,
+        (control_side, 24),
         Some(Message::Settings(crate::settings::Event::Reopen)),
     ));
     let ground = theme.panel;
@@ -412,12 +417,15 @@ pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
                 ..Padding::ZERO
             })
             .align_y(Alignment::Center),
-        container(names).padding([6, 0]).height(Length::Fill),
+        container(names)
+            .padding([6, 0])
+            .height(Length::Fill)
+            .width(Length::Fill),
         controls,
     ]
-    .spacing(5)
+    .spacing(gap)
     .padding(Padding {
-        right: 14.0,
+        right: if compact { 8.0 } else { 14.0 },
         ..Padding::ZERO
     })
     .height(HEIGHT)
@@ -509,16 +517,16 @@ fn ring_and_dot<'a>(
     layers.width(AVATAR).height(AVATAR).into()
 }
 
-/// An icon button of the card's, 32 px, its glyph in `ink`; greyed
+/// An icon button of the card's, its glyph in `ink`; greyed
 /// without a message.
 fn tinted_button<'a>(
     ctx: crate::ctx::Ctx<'a>,
     icon: Icon,
     label: &'static str,
     ink: iced::Color,
-    glyph: u32,
+    (side, glyph): (f32, u32),
     message: Option<Message>,
 ) -> Element<'a, Message> {
     let face = Pic::square(ctx.look.icon(icon, glyph, rgb(ink)), glyph as f32);
-    ctx.look.face_button(face, 32.0, label, message).into()
+    ctx.look.face_button(face, side, label, message).into()
 }

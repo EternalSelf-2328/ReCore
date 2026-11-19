@@ -817,7 +817,7 @@ impl<'a> View<'a> {
                         };
                         rounded(ink, radius)
                     }),
-                0.0,
+                2.0,
                 above + (side - pill) / 2.0,
             ));
         }

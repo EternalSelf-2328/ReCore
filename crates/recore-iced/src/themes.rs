@@ -66,8 +66,8 @@ pub enum Motion {
 impl Default for RecoreOptions {
     fn default() -> Self {
         Self {
-            scanlines: 0.25,
-            grain: 0.18,
+            scanlines: 0.16,
+            grain: 0.08,
             // ReCord's vignette darkens the window's edges, and its top and
             // bottom most of all; ReCore starts without it.
             vignette: 0.0,
@@ -89,14 +89,15 @@ impl Default for RecoreOptions {
 
 impl RecoreOptions {
     fn read(layout: &Layout) -> Self {
+        let defaults = Self::default();
         let percent = |value: Option<u8>, fallback: f32| {
             value
                 .map(|value| f32::from(value.min(100)) / 100.0)
                 .unwrap_or(fallback)
         };
         Self {
-            scanlines: percent(layout.recore_scanlines, 0.25),
-            grain: percent(layout.recore_grain, 0.18),
+            scanlines: percent(layout.recore_scanlines, defaults.scanlines),
+            grain: percent(layout.recore_grain, defaults.grain),
             vignette: percent(layout.recore_vignette, 0.0),
             frame: if layout.recore_frame.unwrap_or(true) {
                 0.6

@@ -42,6 +42,10 @@ in `layout.json` beside `recore_accent`:
 The vignette starts at 0, off: it darkens the window's edges, its top and
 bottom most of all.
 
+ReCore starts with scanlines at 16% and grain at 8% to keep small text
+legible. The CRT corner brackets sit near the window edge so they clear
+the toolbar and account card.
+
 The window boots with ReCord's signal: a stepped mark, a twelve-step loading
 bar, a blinking line and the same screen-in. Menus and dialogs use the
 theme's stepped 190 ms motion, a changed room flashes its channel and fades
