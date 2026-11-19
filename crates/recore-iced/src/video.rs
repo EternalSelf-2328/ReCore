@@ -674,6 +674,16 @@ impl<M> Widget<M, Theme, Renderer> for Video {
             );
             return;
         };
+        if size.0 == 0 || size.1 == 0 {
+            renderer.fill_quad(
+                renderer::Quad {
+                    bounds: tile,
+                    ..Default::default()
+                },
+                self.ground,
+            );
+            return;
+        }
         // On screen: a worker's next frame may be taken.
         self.shared.taken(&self.key);
         // In the window's pixels, which the frame was made in.

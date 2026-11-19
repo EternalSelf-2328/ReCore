@@ -116,6 +116,11 @@ impl Atlas {
         height: u32,
         pixels: &[u8],
     ) -> Option<Entry> {
+        // A zero-sized picture has no allocation to upload, and its empty
+        // pixels would underflow the padding copies below.
+        if width == 0 || height == 0 {
+            return None;
+        }
         let entry = {
             let current_size = self.layers.len();
             let entry = self.allocate(width, height)?;

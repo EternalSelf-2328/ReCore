@@ -122,6 +122,9 @@ pub(super) fn glance(ids: Vec<u64>) -> Task<Message> {
                         height,
                         rgba,
                     } => {
+                        if width == 0 || height == 0 {
+                            continue;
+                        }
                         let handle = Handle::from_rgba(width, height, rgba);
                         if sender.unbounded_send((id, handle)).is_err() {
                             break;

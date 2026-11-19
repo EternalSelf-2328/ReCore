@@ -176,6 +176,7 @@ impl Pictures {
     /// A copy of `picture` at `size`, graded warm and scanlined as ReCord
     /// draws an avatar. Kept with the picture, like a fitted copy.
     pub fn filtered_avatar(&self, picture: &Arc<Picture>, size: u32) -> Handle {
+        let size = size.max(1);
         self.filtered
             .borrow_mut()
             .entry(size)
@@ -796,7 +797,9 @@ impl<'a> crate::ctx::Ctx<'a> {
         radius: f32,
         opacity: f32,
     ) -> Element<'a, Message> {
-        let pixels = size as u32;
+        // A collapsed row has no room for a picture; still make a handle
+        // the atlas can take, drawn at no size.
+        let pixels = (size as u32).max(1);
         let square = self.themes.square_avatars();
         let radius = if square { 0.0 } else { radius };
         let line = self.look.theme.line;
