@@ -155,7 +155,7 @@ matrix-sdk-crypto = { git = "https://github.com/matrix-org/matrix-rust-sdk", rev
 matrix-rtc-livekit = { path = "vendor/matrix-rtc-livekit", features = ["matrix-sdk"] }
 matrix-rtc-core = { git = "https://github.com/element-hq/matrix-rust-rtc", rev = "5831af899f1e1744c21332613cdc9578a98c604f" }
 matrix-rtc-media = { git = "https://github.com/element-hq/matrix-rust-rtc", rev = "5831af899f1e1744c21332613cdc9578a98c604f" }
-rustls = { version = "0.23", features = ["aws_lc_rs"] }
+rustls = { version = "0.23.46", features = ["aws_lc_rs"] }
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 tempfile = "3"
