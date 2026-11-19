@@ -86,7 +86,12 @@ impl Engine {
             && quad.shadow.color.a == 0.0
             && let Some((x, y, width, height)) = whole_pixels(physical_bounds, transformation.scale_factor())
         {
-            let (start, end) = linear.angle.to_distance(&quad.bounds);
+            let (start, mut end) = linear.angle.to_distance(&quad.bounds);
+            let angle = f32::from(linear.angle).rem_euclid(std::f32::consts::TAU);
+            if angle == 0.0 || angle == std::f32::consts::PI {
+                // cos(±π/2) can leave a tiny horizontal component.
+                end.x = start.x;
+            }
             let (start, end) = (start * transformation, end * transformation);
             let mut stops: Vec<(f32, [f32; 4])> = Vec::with_capacity(8);
             for stop in linear.stops.into_iter().flatten() {
