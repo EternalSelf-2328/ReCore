@@ -152,11 +152,12 @@ own, which a stream hands to the event loop as messages; nothing polls.
   display and is told no change; elsewhere the window's own.
 - Scrolling (`widgets::scroll_view`, every list that scrolls): a wheel's
   notch moves 60
-  px over 120 ms, fast at first and slowing on Flutter's power curve; a
-  notch while one moves adds what was left of it; a wheel spun past 12
+  px over 120 ms with a smooth start and stop. Another notch in the same
+  direction adds to the remaining distance at the current speed. A reversal
+  starts in the new direction and drops the previous tail. A wheel spun past 12
   notches a second scrolls each notch farther, in proportion, at most six
   times, its recent notches weighing less by e every 200 ms. A touchpad
-  moves the list with the fingers, less their first event and 8 px, and
+  moves the list from the first delta, and
   once they lift faster than 50 px a second it goes on at their speed
   (the last three moves' speeds blended 0.6, 0.35 and 0.05, oldest first)
   and slows to a stop on Android's fling spline. iced hands the wheel on

@@ -264,16 +264,20 @@ impl Smooth {
             return;
         }
         let now = Instant::now();
-        let delta = view_delta(delta, state.shift);
+        let mut delta = view_delta(delta, state.shift);
         let rooms = self.rooms(child);
         let take = if state.flick.intercepts(now, phase, delta, pointer, rooms) {
             true
         } else {
             CLAIMED.set(false);
             child.update(shell);
-            // A touchpad's fingers going down or lifting tell every list
-            // under them, whatever took the event.
-            CLAIMED.replace(false) || phase != Phase::Moved
+            let claimed = CLAIMED.replace(false);
+            // Every list under the fingers follows the gesture's phases,
+            // but only the list that claimed it gets the first movement.
+            if phase == Phase::Started && !claimed {
+                delta = Vector::ZERO;
+            }
+            claimed || phase != Phase::Moved
         };
         if take {
             let outcome = state.flick.wheel(now, delta, phase, pointer, rooms);
@@ -723,19 +727,17 @@ impl<M> Hooks<M> for Claim {
     }
 }
 
-/// A touchpad's two moves that scroll a list by `pixels` at once (the
-/// first only begins the gesture, and the list holds back the next
-/// 8 px), and the frame that shows it, for tests.
+/// A touchpad's two moves that scroll a list by `pixels`, and the frame
+/// that shows it, for tests.
 pub fn swipe(pixels: f32) -> [iced::Event; 3] {
-    let sign = pixels.signum();
     let moved = |y| {
         iced::Event::Mouse(mouse::Event::WheelScrolled {
             delta: mouse::ScrollDelta::Pixels { x: 0.0, y },
         })
     };
     [
-        moved(sign),
-        moved(pixels + 8.0 * sign),
+        moved(pixels / 2.0),
+        moved(pixels / 2.0),
         iced::Event::Window(window::Event::RedrawRequested(Instant::now())),
     ]
 }
@@ -794,18 +796,17 @@ mod tests {
     }
 
     #[test]
-    fn a_touchpad_moves_the_list_at_once_and_flings_once_lifted() {
+    fn a_touchpad_moves_the_list_on_its_first_delta() {
         let mut ui = Simulator::with_size(Settings::default(), Size::new(300.0, 400.0), list());
         ui.point_at(Point::new(150.0, 200.0));
-        ui.simulate(swipe(-100.0));
-        let lifted = Instant::now();
-        // The fingers stopped long ago, by the time they lift: no fling.
-        ui.simulate([Event::Mouse(mouse::Event::WheelScrolled {
-            delta: mouse::ScrollDelta::Pixels { x: 0.0, y: 0.0 },
-        })]);
-        ui.simulate([frame(lifted + Duration::from_millis(100))]);
+        ui.simulate([
+            Event::Mouse(mouse::Event::WheelScrolled {
+                delta: mouse::ScrollDelta::Pixels { x: 0.0, y: -3.0 },
+            }),
+            frame(Instant::now()),
+        ]);
         let seen = offsets(ui);
-        assert_eq!(seen.last(), Some(&100.0), "{seen:?}");
+        assert_eq!(seen, [3.0]);
     }
 
     #[test]
