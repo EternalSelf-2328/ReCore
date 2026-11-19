@@ -463,12 +463,9 @@ fn stage_tile(
     let voice = &app.client.state().voice;
     let size = bounds.size();
     let pointed = app.call.pointed == Some(place);
-    let corners = (!full).then(|| {
-        (
-            if theme.square { 0 } else { tile::RADIUS as u32 },
-            rgb(theme.stage),
-        )
-    });
+    // A square theme has no corners to cut, and a zero-radius corner image
+    // is not one the renderer can draw.
+    let corners = (!full && !theme.square).then(|| (tile::RADIUS as u32, rgb(theme.stage)));
     let watch_user = voice
         .watching
         .as_ref()

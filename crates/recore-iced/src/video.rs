@@ -585,7 +585,9 @@ impl Video {
     }
 
     pub fn corners(mut self, radius: u32, behind: u32) -> Self {
-        self.corners = Some((radius, behind));
+        // Nothing to cut for a square corner; a zero-sized picture is not
+        // one the renderer draws.
+        self.corners = (radius > 0).then_some((radius, behind));
         self
     }
 }
@@ -807,5 +809,19 @@ mod frame_tests {
         // What no longer shows goes.
         shared.set(Sources::default());
         assert!(!shared.has("bob") && shared.frame("clip:i/0").is_none());
+    }
+}
+
+#[cfg(test)]
+mod corner_tests {
+    use super::*;
+
+    #[test]
+    fn a_zero_radius_cuts_no_corners() {
+        let shared = Arc::new(Shared::default());
+        let square = Video::new(&shared, "stream:1", Color::BLACK).corners(0, 0);
+        assert!(square.corners.is_none(), "nothing to cut");
+        let rounded = Video::new(&shared, "stream:1", Color::BLACK).corners(8, 0);
+        assert_eq!(rounded.corners, Some((8, 0)));
     }
 }
