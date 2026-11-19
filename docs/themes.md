@@ -145,7 +145,8 @@ structure, flexbox or grid layout, pseudo-elements, generated class hashes
 without a usable substring, or CSS animations. Those rules stay in the file
 without being painted. ReCord's scanlines, grain, vignette and corner frame
 are drawn natively over the window, including the rolling scan beam and
-flicker; a CSS theme's DOM animations are not drawn. The note under
+flicker, which rest while the window is not focused; a CSS theme's DOM
+animations are not drawn. The note under
 **Appearance → Theme** says how many files were read and how many could not
 be.
 

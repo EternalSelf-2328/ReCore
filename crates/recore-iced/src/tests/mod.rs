@@ -26,6 +26,19 @@ fn preview() -> (App, tempfile::TempDir) {
     (start(&folder, true), folder)
 }
 
+/// The preview in `theme` from its first frame, as a layout that names it.
+/// Tests of a look other than ReCore's own start here, without a change of
+/// theme to settle first.
+fn preview_in(theme: &str) -> (App, tempfile::TempDir) {
+    let folder = tempfile::tempdir_in(local()).expect("test folder");
+    std::fs::write(
+        folder.path().join(crate::layout::LAYOUT),
+        serde_json::json!({ "theme": theme }).to_string(),
+    )
+    .expect("the layout");
+    (start(&folder, true), folder)
+}
+
 /// The window on `folder`'s data: the preview, or else the sign-in screen
 /// of a ReCore that has no account yet.
 fn start(folder: &tempfile::TempDir, preview: bool) -> App {
@@ -39,6 +52,11 @@ fn start(folder: &tempfile::TempDir, preview: bool) -> App {
     // As the window opens, in front.
     app.shell.window = Some(iced::window::Id::unique());
     app.shell.focused = true;
+    // The tests read the pixels of what they draw: ReCord's CRT layer
+    // would put its grain and scanlines over every one of them, and its
+    // screen-in would cover the first frames after a room opens.
+    app.themes.effects = false;
+    app.switched = None;
     app
 }
 

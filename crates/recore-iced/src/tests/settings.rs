@@ -73,6 +73,54 @@ fn settings_opened_again_as_they_close_open_anew() {
 }
 
 #[test]
+fn a_popover_open_before_settings_does_not_take_the_first_click() {
+    let (mut app, _folder) = preview();
+    let _ = app.update(Message::Status(crate::status::Event::Toggle));
+    assert!(app.status.popover.is_some(), "the account's popover");
+    let _ = app.open_settings(Section::Messages);
+    let before = app.layout.prefs.clock_seconds;
+    interact(&mut app, |ui| {
+        ui.click("Show seconds").expect("the switch");
+    });
+    assert_ne!(
+        app.layout.prefs.clock_seconds, before,
+        "the switch took the click under the popover"
+    );
+}
+
+#[test]
+fn the_accent_suggestions_switch_turns_them_off() {
+    let (mut app, _folder) = preview();
+    open(&mut app, Section::Messages);
+    interact(&mut app, |ui| {
+        ui.click("Suggest accented words")
+            .expect("the suggestions' switch");
+    });
+    assert_eq!(
+        app.layout.prefs.word_suggestions,
+        Some(false),
+        "off by the click"
+    );
+}
+
+#[test]
+fn settings_answer_clicks_under_the_windows_own_title_bar() {
+    let (mut app, _folder) = preview();
+    app.shell.own_title_bar = true;
+    app.shell.frame.height = 2400.0;
+    crate::window_bar::fit_window(&mut app);
+    let _ = app.open_settings(Section::Messages);
+    let before = app.layout.prefs.clock_seconds;
+    interact(&mut app, |ui| {
+        ui.click("Show seconds").expect("the switch");
+    });
+    assert_ne!(
+        app.layout.prefs.clock_seconds, before,
+        "the switch took the click"
+    );
+}
+
+#[test]
 fn a_theme_chosen_in_appearance_shows_at_once_and_is_kept() {
     let (mut app, folder) = preview();
     open(&mut app, Section::Account);
@@ -442,6 +490,7 @@ fn keybinds_are_added_chosen_recorded_and_removed() {
 #[test]
 fn closing_settings_lets_go_of_an_edited_theme() {
     let (mut app, _folder) = preview();
+    let before = app.theme.id.clone();
     open(&mut app, Section::Appearance);
     interact(&mut app, |ui| {
         ui.click("New theme").expect("New theme");
@@ -452,7 +501,7 @@ fn closing_settings_lets_go_of_an_edited_theme() {
     assert!(!app.theme.dark, "shown while edited");
     let _ = app.update(Message::Settings(Event::Close));
     assert!(!app.win.settings.is_open());
-    assert_eq!(app.theme.id, "bonfire", "the theme from before");
+    assert_eq!(app.theme.id, before, "the theme from before");
 }
 
 #[test]
@@ -547,7 +596,7 @@ fn a_theme_switch_lays_the_timelines_text_out_in_the_new_inks() {
 #[test]
 fn the_theme_command_switches_the_colours_and_keeps_the_choice() {
     let (mut app, folder) = preview();
-    assert_eq!(app.theme.id, "bonfire", "the default with the Discord look");
+    assert_eq!(app.theme.id, "recore", "ReCore's own look by default");
     let _ = app.update(Message::Control("theme sakura".into()));
     assert_eq!(app.theme.id, "sakura");
     assert!(!app.theme.dark);

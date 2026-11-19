@@ -87,8 +87,6 @@ pub enum Message {
     /// Fallback fonts the shaper wanted are in (`fonts::load_wanted`): the
     /// view is built and its text laid out again.
     FontsLoaded,
-    /// A frame of the CRT beam or flicker.
-    EffectsTick,
     /// A frame of the window's stepped motion: the boot signal, badges,
     /// presence and the screen-in.
     MotionTick,

@@ -48,6 +48,9 @@ type Renderer = iced::Renderer;
 pub enum Event {
     /// The text changed: the whole of it and the caret's byte offset.
     Edited(String, usize),
+    /// An input method's preedit changed, which isn't the text yet: the
+    /// app may offer words for what it holds before the method commits it.
+    Composing,
     /// The caret moved without an edit, to this byte offset.
     Moved(usize),
     /// Enter, with nothing over the composer to take it.
@@ -105,6 +108,9 @@ struct Inner {
     /// The input method's text, put into the editor at the caret: its first
     /// and last place, on one line.
     preedit: Option<(Position, Position)>,
+    /// A word the app took while the method still held it: the next thing
+    /// the method sends for that composition is stale, and dropped.
+    ignore_composition: bool,
     /// The height last laid out, for what opens over the composer.
     height: f32,
 }
@@ -124,6 +130,7 @@ impl Default for Draft {
             redo: Vec::new(),
             last: None,
             preedit: None,
+            ignore_composition: false,
             height: 48.0,
         }))
     }
@@ -150,6 +157,20 @@ fn offset(editor: &Editor, position: Position) -> usize {
         + position.column
 }
 
+/// The character just before the editor's caret, without making the whole
+/// text: the line's last letter, or the newline at the end of a line before.
+fn char_before(editor: &Editor) -> Option<char> {
+    let position = editor.cursor().position;
+    if position.column > 0 {
+        let text = editor.buffer().lines.get(position.line)?.text();
+        return text
+            .get(..position.column.min(text.len()))?
+            .chars()
+            .next_back();
+    }
+    (position.line > 0).then_some('\n')
+}
+
 /// The position of a byte offset in the whole text.
 fn position(text: &str, at: usize) -> Position {
     let at = at.min(text.len());
@@ -164,9 +185,7 @@ fn position(text: &str, at: usize) -> Position {
 /// when there's nothing to join, and `Some(None)` when the accent goes and
 /// the letter stays as typed.
 fn joined_before(editor: &Editor, typed: char) -> Option<Option<char>> {
-    let text = whole(editor);
-    let caret = offset(editor, editor.cursor().position);
-    let before = text[..caret].chars().next_back()?;
+    let before = char_before(editor)?;
     // A combining mark typed after the letter it belongs to.
     if combining(typed) {
         return before
@@ -250,6 +269,85 @@ impl Draft {
         whole(&self.0.borrow().editor)
     }
 
+    /// How many characters the text has, without making a copy of it.
+    pub fn chars(&self) -> usize {
+        let inner = self.0.borrow();
+        inner
+            .editor
+            .buffer()
+            .lines
+            .iter()
+            .enumerate()
+            .map(|(index, line)| line.text().chars().count() + usize::from(index > 0))
+            .sum()
+    }
+
+    /// Whether the text starts with `prefix`.
+    pub fn starts_with(&self, prefix: &str) -> bool {
+        self.text_at(0, prefix)
+    }
+
+    /// The character at byte offset `at` in the whole text.
+    pub fn char_at(&self, at: usize) -> Option<char> {
+        let inner = self.0.borrow();
+        let mut offset = 0;
+        for (index, line) in inner.editor.buffer().lines.iter().enumerate() {
+            if index > 0 {
+                if offset == at {
+                    return Some('\n');
+                }
+                offset += 1;
+            }
+            let text = line.text();
+            if at < offset + text.len() {
+                let at = at.checked_sub(offset)?;
+                if !text.is_char_boundary(at) {
+                    return None;
+                }
+                return text[at..].chars().next();
+            }
+            offset += text.len();
+        }
+        None
+    }
+
+    /// Whether `needle` is at byte offset `at` in the whole text, without
+    /// making a copy of it.
+    pub fn text_at(&self, at: usize, needle: &str) -> bool {
+        if needle.is_empty() {
+            return at <= whole(&self.0.borrow().editor).len();
+        }
+        let inner = self.0.borrow();
+        let mut offset = 0;
+        let mut rest = needle;
+        for (index, line) in inner.editor.buffer().lines.iter().enumerate() {
+            if index > 0 {
+                if offset >= at {
+                    match rest.strip_prefix('\n') {
+                        Some(after) => rest = after,
+                        None => return false,
+                    }
+                }
+                offset += 1;
+            }
+            let text = line.text();
+            let end = offset + text.len();
+            if end > at {
+                let from = at.saturating_sub(offset);
+                let take = rest.len().min(text.len() - from);
+                if text.as_bytes().get(from..from + take) != rest.as_bytes().get(..take) {
+                    return false;
+                }
+                rest = &rest[take..];
+                if rest.is_empty() {
+                    return true;
+                }
+            }
+            offset = end;
+        }
+        rest.is_empty()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.0.borrow().editor.is_empty()
     }
@@ -276,6 +374,7 @@ impl Draft {
         inner.redo.clear();
         inner.last = None;
         inner.preedit = None;
+        inner.ignore_composition = false;
         inner.editor = Editor::with_text(text);
         inner.editor.perform(Action::Move(Motion::DocumentEnd));
     }
@@ -286,6 +385,9 @@ impl Draft {
         let mut inner = self.0.borrow_mut();
         inner.remember(Kind::Other);
         inner.editor = Editor::with_text(text);
+        // The input method's preedit was in the text it replaced; what it
+        // still commits for that composition is stale.
+        inner.ignore_composition = inner.preedit.take().is_some();
         let at = position(text, caret);
         inner.editor.move_to(Cursor {
             position: at,
@@ -696,6 +798,12 @@ impl<M: Clone> Field<'_, M> {
         shell.publish((self.on)(Event::Edited(text, caret)));
     }
 
+    /// Publishes that an input method's preedit changed, which the app may
+    /// read from the draft for what it offers while the word is written.
+    fn composing(&self, _inner: &Inner, shell: &mut Shell<'_, M>) {
+        shell.publish((self.on)(Event::Composing));
+    }
+
     fn moved(&self, inner: &Inner, shell: &mut Shell<'_, M>) {
         let caret = offset(&inner.editor, inner.editor.cursor().position);
         shell.publish((self.on)(Event::Moved(caret)));
@@ -946,37 +1054,50 @@ impl<M: Clone> Widget<M, Theme, Renderer> for Field<'_, M> {
                 let mut inner = self.draft.0.borrow_mut();
                 match event {
                     input_method::Event::Opened => {}
-                    input_method::Event::Closed => inner.drop_preedit(),
-                    input_method::Event::Preedit(content, selection) => {
+                    input_method::Event::Closed => {
                         inner.drop_preedit();
-                        if !content.is_empty() {
-                            if inner.editor.copy().is_some() {
-                                inner.remember(Kind::Delete);
-                                inner.editor.perform(Action::Edit(Edit::Delete));
-                                self.edited(&inner, shell);
+                        inner.ignore_composition = false;
+                        self.composing(&inner, shell);
+                    }
+                    input_method::Event::Preedit(content, selection) => {
+                        if inner.ignore_composition {
+                            inner.ignore_composition = false;
+                        } else {
+                            inner.drop_preedit();
+                            if !content.is_empty() {
+                                if inner.editor.copy().is_some() {
+                                    inner.remember(Kind::Delete);
+                                    inner.editor.perform(Action::Edit(Edit::Delete));
+                                    self.edited(&inner, shell);
+                                }
+                                let start = inner.editor.cursor().position;
+                                inner
+                                    .editor
+                                    .perform(Action::Edit(Edit::Paste(Arc::new(content.clone()))));
+                                let end = inner.editor.cursor().position;
+                                if let Some(selection) = selection {
+                                    let column = start.column + selection.end.min(content.len());
+                                    inner.editor.move_to(Cursor {
+                                        position: Position { column, ..start },
+                                        selection: None,
+                                    });
+                                }
+                                inner.preedit = Some((start, end));
                             }
-                            let start = inner.editor.cursor().position;
+                        }
+                        self.composing(&inner, shell);
+                    }
+                    input_method::Event::Commit(content) => {
+                        if inner.ignore_composition {
+                            inner.ignore_composition = false;
+                        } else {
+                            inner.drop_preedit();
+                            inner.remember(Kind::Other);
                             inner
                                 .editor
                                 .perform(Action::Edit(Edit::Paste(Arc::new(content.clone()))));
-                            let end = inner.editor.cursor().position;
-                            if let Some(selection) = selection {
-                                let column = start.column + selection.end.min(content.len());
-                                inner.editor.move_to(Cursor {
-                                    position: Position { column, ..start },
-                                    selection: None,
-                                });
-                            }
-                            inner.preedit = Some((start, end));
+                            self.edited(&inner, shell);
                         }
-                    }
-                    input_method::Event::Commit(content) => {
-                        inner.drop_preedit();
-                        inner.remember(Kind::Other);
-                        inner
-                            .editor
-                            .perform(Action::Edit(Edit::Paste(Arc::new(content.clone()))));
-                        self.edited(&inner, shell);
                     }
                 }
                 focus.updated_at = Instant::now();
@@ -996,11 +1117,6 @@ impl<M: Clone> Widget<M, Theme, Renderer> for Field<'_, M> {
                 ..
             }) => {
                 let mut inner = self.draft.0.borrow_mut();
-                // The input method has the keys while it composes.
-                if inner.preedit.is_some() {
-                    shell.capture_event();
-                    return;
-                }
                 let command = modifiers.command();
                 let named = match modified_key {
                     keyboard::Key::Named(named) => Some(*named),
@@ -1010,6 +1126,20 @@ impl<M: Clone> Widget<M, Theme, Renderer> for Field<'_, M> {
                     shell.publish((self.on)(event));
                     shell.capture_event();
                 };
+                // The input method has the keys while it composes, but Tab
+                // still takes the word offered for what it holds: on Linux
+                // the method often keeps the word until it's taken.
+                if inner.preedit.is_some() {
+                    if self.spelling
+                        && named == Some(key::Named::Tab)
+                        && !modifiers.shift()
+                        && !command
+                    {
+                        return publish(shell, Event::Choose);
+                    }
+                    shell.capture_event();
+                    return;
+                }
                 if self.suggesting {
                     match named {
                         Some(key::Named::ArrowUp) => return publish(shell, Event::Step(-1)),
@@ -1319,6 +1449,27 @@ impl<'a, M: Clone + 'a> From<Field<'a, M>> for Element<'a, M> {
 }
 
 #[cfg(test)]
+mod draft_tests {
+    use super::Draft;
+
+    #[test]
+    fn a_drafts_own_methods_read_its_text_without_making_it() {
+        let draft = Draft::default();
+        draft.replace("uno\ndos\n", 8);
+        assert_eq!(draft.chars(), 8);
+        assert!(draft.starts_with("uno\n"));
+        assert!(!draft.starts_with("dos"));
+        assert_eq!(draft.char_at(3), Some('\n'));
+        assert_eq!(draft.char_at(0), Some('u'));
+        assert_eq!(draft.char_at(8), None);
+        assert!(draft.text_at(4, "dos\n"));
+        assert!(!draft.text_at(5, "dos"));
+        assert!(draft.text_at(8, ""));
+        assert!(!draft.text_at(9, ""));
+    }
+}
+
+#[cfg(test)]
 mod paste_tests {
     use super::pasted_into;
 
@@ -1333,13 +1484,13 @@ mod paste_tests {
 mod pointer_tests {
     use iced::{
         Color, Event, Font, Pixels, Point, Size,
-        advanced::{Clipboard, clipboard, renderer::Headless as _, widget::Id},
+        advanced::{Clipboard, clipboard, input_method, renderer::Headless as _, widget::Id},
         keyboard, mouse,
         widget::container,
     };
     use iced_test::runtime::{UserInterface, user_interface::Cache};
 
-    use super::{Colors, Draft, Field};
+    use super::{Colors, Draft, Event as FieldEvent, Field};
     use crate::testing::{Message, install_fonts};
 
     /// The desktop's clipboards, as a field reads and writes them.
@@ -1502,5 +1653,85 @@ mod pointer_tests {
             assert_eq!(above.text(), "a", "{button:?}");
             assert_eq!(below.text(), "b", "{button:?}");
         }
+    }
+
+    #[test]
+    fn tab_takes_the_word_an_input_method_still_holds() {
+        install_fonts();
+        let draft = Draft::default();
+        let mut renderer = iced_test::futures::futures::executor::block_on(iced::Renderer::new(
+            Font::DEFAULT,
+            Pixels(16.0),
+            None,
+        ))
+        .expect("a headless renderer");
+        let colors = Colors {
+            ground: Color::BLACK,
+            text: Color::WHITE,
+            placeholder: Color::WHITE,
+            selection: Color::WHITE,
+        };
+        let field = Field::new(
+            &draft,
+            Id::new("field"),
+            String::new(),
+            Message::Field,
+            colors,
+        )
+        .spelling(true);
+        let mut ui = UserInterface::build(
+            container(field).width(400).height(50),
+            Size::new(400.0, 100.0),
+            Cache::default(),
+            &mut renderer,
+        );
+        let mut clipboards = Clipboards::default();
+        let mut messages = Vec::new();
+        let cursor = mouse::Cursor::Available(START);
+        let mut event = vec![Event::Mouse(mouse::Event::CursorMoved { position: START })];
+        event.push(press(mouse::Button::Left));
+        event.push(release(mouse::Button::Left));
+        ui.update(
+            &event,
+            cursor,
+            &mut renderer,
+            &mut clipboards,
+            &mut messages,
+        );
+        ui.update(
+            &[Event::InputMethod(input_method::Event::Preedit(
+                "pasion".into(),
+                None,
+            ))],
+            cursor,
+            &mut renderer,
+            &mut clipboards,
+            &mut messages,
+        );
+        assert_eq!(draft.text(), "pasion");
+        let tab = keyboard::Key::Named(keyboard::key::Named::Tab);
+        ui.update(
+            &[Event::Keyboard(keyboard::Event::KeyPressed {
+                key: tab.clone(),
+                modified_key: tab,
+                physical_key: keyboard::key::Physical::Unidentified(
+                    keyboard::key::NativeCode::Unidentified,
+                ),
+                location: keyboard::Location::Standard,
+                modifiers: keyboard::Modifiers::empty(),
+                repeat: false,
+                text: None,
+            })],
+            cursor,
+            &mut renderer,
+            &mut clipboards,
+            &mut messages,
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| matches!(message, Message::Field(FieldEvent::Choose))),
+            "{messages:?}"
+        );
     }
 }

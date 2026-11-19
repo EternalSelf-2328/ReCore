@@ -10,7 +10,10 @@ the right the section's title and the close button over its page, a
 column at most 696 px wide that starts at its top for each section. The
 account card's gear opens it on the section it last showed (My Account at
 first), a device menu's Voice Settings on Voice & Video. Edit Profile
-closes it under the profile editor. Escape closes an open dropdown, then stops recording a
+closes it under the profile editor. Opening it puts away what was over the
+window first: a menu, the inbox, an account or header popover, a profile or
+info card, the expression picker and a server tag's card, so none of them
+takes the first click meant for a setting. Escape closes an open dropdown, then stops recording a
 key, then Settings; so does a click outside or the close button.
 
 It's a screen on the contract in [Screens](structure.md#screens): its

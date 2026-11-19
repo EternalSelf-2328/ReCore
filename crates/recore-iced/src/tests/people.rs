@@ -754,7 +754,8 @@ fn a_note_typed_on_a_profile_is_kept_as_it_changes_without_enter() {
 
 #[test]
 fn view_full_bio_shows_when_the_bio_is_taller_than_three_lines_as_laid_out() {
-    let (mut app, _folder) = preview();
+    // The three lines are the Discord look's card, not ReCore's narrower one.
+    let (mut app, _folder) = super::preview_in("bonfire");
     let user = app
         .client
         .state()
@@ -778,11 +779,11 @@ fn view_full_bio_shows_when_the_bio_is_taller_than_three_lines_as_laid_out() {
                 .bio = bio;
         });
     };
-    // Wide letters on one line: few by count, four lines as laid out.
-    bio(&mut app, &"W".repeat(70));
+    // Wide letters, far past any card's three lines as they're laid out.
+    bio(&mut app, &"W".repeat(200));
     assert!(shows(&app, "View full bio"), "a long bio offers it");
-    // Narrow ones: many by count, two lines as laid out.
-    bio(&mut app, &"il ".repeat(40));
+    // Narrow ones: few by count, and within the lines at any font.
+    bio(&mut app, &"il ".repeat(10));
     assert!(!shows(&app, "View full bio"), "a bio that fits doesn't");
 }
 

@@ -139,6 +139,8 @@ nix develop path:./nix --command cargo run --locked -- --preview
 nix develop path:./nix --command cargo run --locked
 ```
 
+### Without Nix
+
 Or, on Linux with rustup and the libraries installed:
 
 ```bash

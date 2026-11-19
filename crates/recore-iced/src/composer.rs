@@ -9,7 +9,7 @@
 
 use iced::{
     Alignment, Color, Element, Length, Padding, Rectangle, Size, Task,
-    advanced::{Layout, layout, mouse, renderer, widget::Tree},
+    advanced::mouse,
     keyboard,
     widget::{Id, Space, button, column, container, operation, row, stack, text, tooltip},
 };
@@ -404,6 +404,10 @@ fn field_event(app: &mut App, which: Writing, event: field::Event) -> Task<Messa
         field::Event::Edited(text, caret) => {
             app.interface_sound(recore_core::sounds::InterfaceSound::Type);
             edited(app, which, text, caret);
+            Task::none()
+        }
+        field::Event::Composing => {
+            crate::spelling::composing(app, which);
             Task::none()
         }
         field::Event::Moved(caret) => {
@@ -821,7 +825,6 @@ pub fn composer_look(ctx: crate::ctx::Ctx<'_>) -> Look {
         "Unencrypted room. Reading only in this build."
     }
     .to_owned();
-    let draft = ctx.composer.draft.text();
     Look {
         enabled,
         locked,
@@ -831,10 +834,12 @@ pub fn composer_look(ctx: crate::ctx::Ctx<'_>) -> Look {
         attach: state.can_attach(),
         plus: ctx.app.can_start_threads() || ctx.app.can_create_polls(),
         discord,
-        silent: draft.starts_with("@silent")
-            && draft
-                .strip_prefix("@silent")
-                .is_none_or(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace)),
+        silent: ctx.composer.draft.starts_with("@silent")
+            && ctx
+                .composer
+                .draft
+                .char_at(7)
+                .is_none_or(char::is_whitespace),
     }
 }
 
@@ -1061,7 +1066,7 @@ fn composer_box<'a>(ctx: crate::ctx::Ctx<'a>, look: &Look) -> Element<'a, Messag
             opens(Tab::Stickers),
         )));
     }
-    let count = ctx.composer.draft.text().chars().count();
+    let count = ctx.composer.draft.chars();
     if look.discord && count > 0 {
         let ink = if count > 2000 {
             theme.danger
@@ -1174,14 +1179,19 @@ fn composer_box<'a>(ctx: crate::ctx::Ctx<'a>, look: &Look) -> Element<'a, Messag
             }
             style
         });
-    // ReCord's dithered strip along the composer's top edge.
+    // ReCord's dithered strip along the composer's top edge: a canvas, so
+    // its checkerboard is made once into one mesh and drawn as it is.
     let frame: Element<'a, Message> = if square {
-        let strip = container(iced::Element::new(Dither {
-            color: Color {
-                a: 0.28,
-                ..theme.accent
-            },
-        }))
+        let strip = container(
+            iced::widget::Canvas::new(Dither {
+                color: Color {
+                    a: 0.28,
+                    ..theme.accent
+                },
+            })
+            .width(Length::Fill)
+            .height(Length::Fixed(2.0)),
+        )
         .width(Length::Fill)
         .height(Length::Fill)
         .align_y(Alignment::Start);
@@ -1198,60 +1208,62 @@ fn composer_box<'a>(ctx: crate::ctx::Ctx<'a>, look: &Look) -> Element<'a, Messag
 }
 
 /// ReCord's dithered strip: a two-pixel checkerboard of the signal along
-/// the composer's top edge, what the theme's `::before` paints. It takes
-/// no events and holds no state.
+/// the composer's top edge, what the theme's `::before` paints. Its mesh
+/// is made once for the strip's width and kept in the canvas' cache: the
+/// frame draws one triangle mesh rather than one quad for each square.
 struct Dither {
     color: Color,
 }
 
-impl<M> iced::advanced::Widget<M, iced::Theme, iced::Renderer> for Dither {
-    fn size(&self) -> Size<Length> {
-        Size::new(Length::Fill, Length::Fixed(2.0))
-    }
+#[derive(Default)]
+struct DitherState {
+    cache: iced::widget::canvas::Cache,
+    color: std::cell::Cell<Option<Color>>,
+}
 
-    fn layout(
-        &mut self,
-        _tree: &mut Tree,
-        _renderer: &Renderer,
-        limits: &layout::Limits,
-    ) -> layout::Node {
-        layout::Node::new(Size::new(limits.max().width, 2.0))
-    }
+impl<M> iced::widget::canvas::Program<M> for Dither {
+    type State = DitherState;
 
     fn draw(
         &self,
-        _tree: &Tree,
-        renderer: &mut Renderer,
+        state: &DitherState,
+        renderer: &Renderer,
         _theme: &iced::Theme,
-        _style: &renderer::Style,
-        layout: Layout<'_>,
+        bounds: Rectangle,
         _cursor: mouse::Cursor,
-        _viewport: &Rectangle,
-    ) {
-        use iced::advanced::Renderer as _;
-        let bounds = layout.bounds();
-        let mut row = 0;
-        let mut y = bounds.y;
-        while y < bounds.y + bounds.height {
-            let mut column = 0;
-            let mut x = bounds.x;
-            while x < bounds.x + bounds.width {
-                // Filled top-right and bottom-left, as the conic dither.
-                if (row + column) % 2 == 1 {
-                    renderer.fill_quad(
-                        renderer::Quad {
-                            bounds: Rectangle::new(iced::Point::new(x, y), Size::new(2.0, 2.0)),
-                            ..Default::default()
-                        },
-                        iced::Background::Color(self.color),
-                    );
-                }
-                x += 2.0;
-                column += 1;
-            }
-            y += 2.0;
-            row += 1;
+    ) -> Vec<iced::widget::canvas::Geometry> {
+        if state.color.get() != Some(self.color) {
+            state.cache.clear();
+            state.color.set(Some(self.color));
         }
+        let color = self.color;
+        let geometry = state.cache.draw(
+            renderer,
+            bounds.size(),
+            |frame: &mut iced::widget::canvas::Frame| {
+                let mut row = 0;
+                let mut y = 0.0;
+                while y < bounds.height {
+                    let mut column = 0;
+                    let mut x = 0.0;
+                    while x < bounds.width {
+                        // Filled top-right and bottom-left, as the conic dither.
+                        if (row + column) % 2 == 1 {
+                            frame.fill_rectangle(
+                                iced::Point::new(x, y),
+                                Size::new(2.0, 2.0),
+                                color,
+                            );
+                        }
+                        x += 2.0;
+                        column += 1;
+                    }
+                    y += 2.0;
+                    row += 1;
+                }
+            },
+        );
+        vec![geometry]
     }
 }
 

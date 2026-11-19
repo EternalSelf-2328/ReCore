@@ -73,8 +73,6 @@ pub struct App {
     /// A look at the releases nobody asked for is under way, whose newer
     /// release a notification tells of (`settings/updates.rs`).
     pub announce_updates: bool,
-    /// The CRT beam's or flicker's place in its cycle, in 100 ms ticks.
-    pub effects_phase: u32,
     /// The window's motion clock, in 50 ms ticks: pulsing badges, the
     /// boot signal's blinking line and the screen-in.
     pub motion_phase: u32,
@@ -324,7 +322,6 @@ impl App {
             inbox: None,
             bar_drag: Default::default(),
             announce_updates: false,
-            effects_phase: 0,
             motion_phase: 0,
             boot: (!cfg!(test)).then(Instant::now),
             reveal: None,
@@ -549,10 +546,6 @@ impl App {
             Message::Report => {
                 self.reporting = false;
                 self.report()
-            }
-            Message::EffectsTick => {
-                self.effects_phase = self.effects_phase.wrapping_add(1);
-                Task::none()
             }
             Message::Interface(sound) => {
                 self.interface_sound(sound);

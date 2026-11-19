@@ -21,6 +21,14 @@ the desktop's primary selection, and a middle click pastes it at the
 pointer, taking no autoscroll; the field that took the keys last, by any
 button, holds them alone.
 
+While a word is written, one whose unaccented spelling is another word, or
+no word, in Spanish is offered under the composer with its accents
+(`spelling.rs`): Tab takes it, and so does a press on it, and nothing
+changes on its own. An input method's word is offered while it composes it,
+before it's committed, and Tab takes it then too; the method's stale commit
+is dropped. Messages' "Suggest accented words" turns the offers off. Words
+like `esta`/`está` and `el`/`él` are left to the sentence.
+
 Files go with the next message (`uploads.rs`) from the system's file
 dialog (the + where nothing else can start, or the + menu's "Upload a
 File", whose Create Thread shows greyed until threads come; its Create

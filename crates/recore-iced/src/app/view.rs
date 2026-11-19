@@ -408,9 +408,16 @@ impl App {
         // ReCord's CRT layer over the whole window. Its canvas takes no
         // pointer events, so everything under it behaves as if it weren't
         // there.
-        if let Some(shade) = self.themes.shade(&self.theme) {
+        if let Some(mut shade) = self.themes.shade(&self.theme) {
+            // The beam and flicker rest while the window is not the one
+            // in use, as the background picture does: an inactive window
+            // draws nothing.
+            if !self.shell.focused {
+                shade.beam = 0.0;
+                shade.flicker = 0.0;
+            }
             layers = layers.push(
-                iced::widget::Canvas::new(shade.at_phase(self.effects_phase as f32 / 90.0))
+                iced::widget::Canvas::new(shade)
                     .width(Length::Fill)
                     .height(Length::Fill),
             );

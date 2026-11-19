@@ -77,18 +77,23 @@ impl App {
             crate::window_bar::history_keys(),
             Self::shell_subscription(),
         ];
-        // The CRT beam and flicker move on their own while the layer has
-        // them; the view reads the phase.
-        if self.themes.animates_effects() {
-            subscriptions
-                .push(iced::time::every(Duration::from_millis(100)).map(|_| Message::EffectsTick));
-        }
-        // ReCord moves in steps: badges pulse, the boot line blinks and a
-        // new screen fades in while the motion level asks for it.
-        if self.boot.is_some()
-            || self.reveal.is_some()
-            || self.themes.motion() != crate::themes::Motion::Off
-        {
+        // ReCord moves in steps: the boot line blinks and a new screen fades
+        // in, a speaking ring or an unread rail tile pulses, and a channel
+        // just opened flashes. The clock runs only while one of those can
+        // be seen, so an idle window builds no view at all.
+        let full = self.themes.motion() == crate::themes::Motion::Full;
+        let pulsing = full
+            && (self.account.speaking
+                || self
+                    .switched
+                    .is_some_and(|start| start.elapsed() < Duration::from_millis(160))
+                || self
+                    .client
+                    .state()
+                    .rooms
+                    .iter()
+                    .any(|room| room.unread > 0 || room.mentions > 0));
+        if self.shell.focused && (self.boot.is_some() || self.reveal.is_some() || pulsing) {
             subscriptions
                 .push(iced::time::every(Duration::from_millis(50)).map(|_| Message::MotionTick));
         }

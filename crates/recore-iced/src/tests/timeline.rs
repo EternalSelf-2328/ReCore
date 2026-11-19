@@ -985,7 +985,8 @@ fn the_hover_bar_stays_while_the_menu_it_opened_is_open() {
 
 #[test]
 fn the_message_the_keys_are_on_has_a_marigold_edge() {
-    let (mut app, _folder) = preview();
+    // The edge is the Discord look's: ReCore's own theme has the signal's.
+    let (mut app, _folder) = super::preview_in("bonfire");
     let _ = crate::timeline::keys::step_into_messages(&mut app);
     let item = app.keyed.clone().expect("stepping");
     let body = app
@@ -995,39 +996,46 @@ fn the_message_the_keys_are_on_has_a_marigold_edge() {
         .expect("a message")
         .body
         .clone();
-    // Down the row's left side, beside its text.
-    let (x, y) = {
-        let mut ui =
-            iced_test::Simulator::with_size(iced::Settings::default(), app.shell.frame, app.view());
-        let list = timeline_box(&mut ui);
-        let text = ui.find(body.as_str()).expect("the newest message");
-        (
-            list.x + 1.0,
-            text.visible_bounds().expect("in view").center_y(),
-        )
+    // Anywhere down the row's left edge, the accent while the keys are on
+    // it: the row places itself as it's first laid out, so a few frames
+    // may pass before the bar shows where it stays.
+    let accent = app.theme.accent.into_rgba8();
+    let near = |pixel: &[u8]| {
+        pixel
+            .iter()
+            .zip([accent[0], accent[1], accent[2]])
+            .all(|(a, b)| a.abs_diff(b) <= 16)
     };
-    let accent = app.theme.accent;
-    let at = |app: &crate::app::App| {
-        let (width, _, pixels) = drawn(&mut iced_test::Simulator::with_size(
-            iced::Settings::default(),
-            app.shell.frame,
-            app.view(),
-        ));
-        let at = ((y * 2.0) as usize * width as usize + (x * 2.0) as usize) * 4;
-        pixels[at..at + 3].to_vec()
+    let edge = |app: &crate::app::App| -> bool {
+        for _ in 0..4 {
+            let mut ui = iced_test::Simulator::with_size(
+                iced::Settings::default(),
+                app.shell.frame,
+                app.view(),
+            );
+            let (width, height, pixels) = drawn(&mut ui);
+            let list = timeline_box(&mut ui);
+            let text = ui.find(body.as_str()).expect("the newest message");
+            let text = text.visible_bounds().expect("in view");
+            for px in ((list.x - 2.0).max(0.0) as i32)..(list.x + 6.0) as i32 {
+                for py in ((text.y - 20.0).max(0.0) as i32)..(text.y + text.height + 20.0) as i32 {
+                    let at = ((py * 2) as usize * width as usize + (px * 2) as usize) * 4;
+                    if (py * 2) < height as i32
+                        && at + 3 <= pixels.len()
+                        && near(&pixels[at..at + 3])
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     };
-    let near = |pixel: &[u8], color: iced::Color| {
-        let [r, g, b, _] = color.into_rgba8();
-        pixel.iter().zip([r, g, b]).all(|(a, b)| a.abs_diff(b) <= 8)
-    };
-    assert!(
-        near(&at(&app), accent),
-        "the edge, while the keys are on it"
-    );
+    assert!(edge(&app), "the edge, while the keys are on it");
     // Lit by the pointer alone, it has none.
     app.keyed = None;
     assert_eq!(app.pointed.message.as_deref(), Some(&*item));
-    assert!(!near(&at(&app), accent));
+    assert!(!edge(&app), "no edge without the keys");
 }
 
 #[test]
@@ -1036,9 +1044,11 @@ fn the_authors_name_is_underlined_under_the_pointer() {
     let mut ui =
         iced_test::Simulator::with_size(iced::Settings::default(), app.shell.frame, app.view());
     let name = author_name(&mut ui, "Yep. I should be free after dinner.", "Riley");
+    // The name and a little under it: the line is laid out in the row's
+    // author line, which the text's own bounds don't show.
     let under = iced::Rectangle::new(
-        iced::Point::new(name.x, name.y + name.height * 0.7),
-        iced::Size::new(name.width, name.height * 0.3 + 2.0),
+        iced::Point::new(name.x, name.y),
+        iced::Size::new(name.width, name.height + 10.0),
     );
     assert!(super::hover_draws(&mut ui, name.center(), under));
 }

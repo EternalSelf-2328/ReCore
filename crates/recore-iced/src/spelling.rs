@@ -8,6 +8,8 @@
 //! `esta`/`está`, `el`/`él` or `si`/`sí` are left out, since which one is
 //! meant is the sentence's.
 
+use std::{cmp::Ordering, sync::OnceLock};
+
 use crate::{app::App, composer::Writing};
 
 /// The words offered when their accents are missing.
@@ -222,28 +224,78 @@ pub fn for_draft(text: &str, caret: usize) -> Option<Suggestion> {
     {
         return None;
     }
-    let lower = word.to_lowercase();
     // A word already carrying an accent is taken as written.
-    if !lower.is_ascii() {
+    if !word.is_ascii() {
         return None;
     }
-    let known = WORDS
-        .iter()
-        .find(|known| folded(known) == lower && known.to_lowercase() != lower)?;
+    let fixed = lookup(&word)?;
     Some(Suggestion {
         at: start,
         word: word.to_owned(),
-        fixed: case_like(word, known),
+        fixed: case_like(word, fixed),
     })
+}
+
+/// The word in the list whose letters are `typed`'s, found by comparing the
+/// typed word against a table of the list's folded spellings: a binary
+/// search, and no allocation for a word typed.
+fn lookup(typed: &str) -> Option<&'static str> {
+    let table = folded_table();
+    let at = table
+        .binary_search_by(|(folded, _)| compare(folded, typed))
+        .ok()?;
+    Some(table[at].1)
+}
+
+/// How `typed` orders against a folded spelling, by bytes with the typed
+/// letters lowercased: the typed word is ASCII, and so is every folded one.
+fn compare(folded: &str, typed: &str) -> Ordering {
+    let (folded, typed) = (folded.as_bytes(), typed.as_bytes());
+    for (a, b) in folded.iter().zip(typed) {
+        match a.cmp(&b.to_ascii_lowercase()) {
+            Ordering::Equal => {}
+            other => return other,
+        }
+    }
+    folded.len().cmp(&typed.len())
+}
+
+/// The list once, each word with its letters folded and no accents, sorted
+/// by them for [`lookup`]: about 160 words, made on the first word typed.
+fn folded_table() -> &'static [(String, &'static str)] {
+    static TABLE: OnceLock<Vec<(String, &'static str)>> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut table: Vec<_> = WORDS.iter().map(|word| (folded(word), *word)).collect();
+        table.sort_unstable_by(|(this, _), (that, _)| this.cmp(that));
+        table
+    })
+}
+
+/// An input method's preedit changed: the word it holds, which isn't in the
+/// core's draft yet, is offered all the same, so Tab can take it before the
+/// method commits it.
+pub fn composing(app: &mut App, which: Writing) {
+    if which != Writing::Draft {
+        return;
+    }
+    let offer = app.layout.prefs.word_suggestions.unwrap_or(true);
+    app.composer.spelling = offer
+        .then(|| {
+            let draft = &app.composer.draft;
+            let text = draft.text();
+            for_draft(&text, draft.caret())
+        })
+        .flatten();
 }
 
 /// The suggestion still matching the draft and its caret, for the bar and
 /// the field under them.
 pub fn current(composer: &crate::composer::Composer) -> Option<&Suggestion> {
     let suggestion = composer.spelling.as_ref()?;
-    let draft = &composer.draft;
-    let text = draft.text();
-    (text.get(suggestion.at..draft.caret()) == Some(suggestion.word.as_str())).then_some(suggestion)
+    let caret = composer.draft.caret();
+    (caret == suggestion.at + suggestion.word.len()
+        && composer.draft.text_at(suggestion.at, suggestion.word()))
+    .then_some(suggestion)
 }
 
 /// Takes the suggestion under the composer, if it still matches the draft.
@@ -340,5 +392,30 @@ mod tests {
         let suggestion = for_draft("una cancion triste", 11).expect("a suggestion");
         assert_eq!(suggestion.at, 4);
         assert_eq!(suggestion.fixed(), "canción");
+    }
+
+    #[test]
+    fn every_word_is_found_by_its_letters_without_their_accents() {
+        for word in WORDS {
+            assert_eq!(lookup(&folded(word)), Some(*word), "{word}");
+        }
+    }
+
+    #[test]
+    fn the_folded_spellings_are_sorted_and_distinct() {
+        let table = folded_table();
+        assert!(
+            table.windows(2).all(|pair| pair[0].0 < pair[1].0),
+            "sorted, each spelling once"
+        );
+    }
+
+    #[test]
+    fn the_lookup_ignores_case_without_allocating_a_lowercase_word() {
+        assert_eq!(lookup("PASION"), Some("pasión"));
+        assert_eq!(lookup("Pasion"), Some("pasión"));
+        assert_eq!(lookup("teleFONO"), Some("teléfono"));
+        assert_eq!(lookup("pasioncita"), None);
+        assert_eq!(lookup("pasio"), None);
     }
 }

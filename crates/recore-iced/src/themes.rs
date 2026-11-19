@@ -476,12 +476,6 @@ impl Themes {
         }
     }
 
-    /// Whether the CRT layer has a beam or flicker that needs the clock.
-    pub fn animates_effects(&self) -> bool {
-        self.shade(&Theme::new("probe", true))
-            .is_some_and(|shade| shade.beam > 0.0 || shade.flicker > 0.0)
-    }
-
     /// The CRT layer the window draws over itself: ReCord's effect levels for
     /// a ReCore theme, the CSS theme's own `--rl-*` levels otherwise. `None`
     /// when the layer is off or the theme asks for no effects.
@@ -524,7 +518,6 @@ impl Themes {
             },
             line: theme.line,
             accent: theme.accent,
-            phase: 0.0,
         };
         shade.visible().then_some(shade)
     }

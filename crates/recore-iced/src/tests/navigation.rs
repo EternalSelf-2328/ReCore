@@ -583,11 +583,20 @@ fn the_account_card_without_a_discord_presence_shows_the_previews_dot() {
 
 #[test]
 fn a_dms_nameplate_fills_its_row_to_the_edges() {
-    use recore_core::chat::Nameplate;
+    use recore_core::chat::{Nameplate, Picture, Pixels};
     let (mut app, _folder) = preview();
     let _ = app.update(Message::Rail(crate::rail::Event::Home));
     // Sam wears a red nameplate, and their DM is the open one.
     change(&mut app, |state| {
+        let red = Arc::new(Picture {
+            width: 2,
+            height: 2,
+            rgba: Pixels::new(2, 2, [255, 0, 0, 255].repeat(4)),
+            ..Default::default()
+        });
+        state
+            .pictures
+            .insert("https://example.invalid/plate.png".into(), red);
         let room = state
             .rooms
             .iter_mut()
@@ -601,6 +610,20 @@ fn a_dms_nameplate_fills_its_row_to_the_edges() {
     interact(&mut app, |ui| {
         ui.click("Sam").expect("Sam's DM");
     });
+    // The click opened a room; ReCord's screen-in would cover the frame.
+    app.switched = None;
+    // The plate's picture, made at the row's size as the window's own fitter
+    // makes pictures: a copy the first frame asks for.
+    let picture = app
+        .client
+        .state()
+        .pictures
+        .get("https://example.invalid/plate.png")
+        .cloned()
+        .expect("the plate's picture");
+    drop(app.view());
+    app.win.pictures.fitter.borrow_mut().make_asked(&picture);
+    drop(app.view());
     let mut ui =
         iced_test::Simulator::with_size(iced::Settings::default(), app.shell.frame, app.view());
     let (width, height, rgba) = super::drawn(&mut ui);

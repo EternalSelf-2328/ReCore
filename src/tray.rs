@@ -81,7 +81,7 @@ impl Tray {
     }
 }
 
-/// ReCore's logo in Yap's marigold, `size` pixels square, with a red dot for
+/// ReCore's logo in the signal, `size` pixels square, with a red dot for
 /// unread messages cut into its corner.
 fn logo(size: u32, unread: bool) -> Option<crate::icon::Rgba> {
     let mut svg = include_str!("../crates/recore-iced-kit/icons/logo.svg")
@@ -90,15 +90,15 @@ fn logo(size: u32, unread: bool) -> Option<crate::icon::Rgba> {
             &format!(r#"width="{size}" height="{size}""#),
             1,
         )
-        .replacen(r##"fill="#fff" mask"##, r##"fill="#ffbf47" mask"##, 1);
+        .replacen(r##"fill="#fff""##, r##"fill="#e94221""##, 1);
     if unread {
-        svg = svg
-            .replacen("</mask>", r#"<circle cx="74" cy="74" r="21" /></mask>"#, 1)
-            .replacen(
-                "</svg>",
-                r##"<circle cx="74" cy="74" r="15" fill="#f0545e" /></svg>"##,
-                1,
-            );
+        // The logo's viewBox is 24 square: the dot sits at three quarters
+        // of it, as the tray's marks do.
+        svg = svg.replacen(
+            "</svg>",
+            r##"<circle cx="18" cy="18" r="3.6" fill="#f0545e" /></svg>"##,
+            1,
+        );
     }
     crate::icon::rasterize(svg.as_bytes(), size)
 }
@@ -579,15 +579,15 @@ mod none {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn the_logo_is_marigold_and_unread_adds_a_red_dot() {
+    fn the_logo_is_signal_and_unread_adds_a_red_dot() {
         let plain = super::logo(32, false).unwrap();
         let unread = super::logo(32, true).unwrap();
         assert_eq!((plain.width, plain.height), (32, 32));
-        let marigold = |pixel: &[u8]| pixel == [0xff, 0xbf, 0x47, 255];
+        let signal = |pixel: &[u8]| pixel == [0xe9, 0x42, 0x21, 255];
         let red = |pixel: &[u8]| pixel == [0xf0, 0x54, 0x5e, 255];
-        assert!(plain.pixels.chunks_exact(4).any(marigold));
+        assert!(plain.pixels.chunks_exact(4).any(signal));
         assert!(!plain.pixels.chunks_exact(4).any(red));
-        assert!(unread.pixels.chunks_exact(4).any(marigold));
+        assert!(unread.pixels.chunks_exact(4).any(signal));
         // The dot is in the bottom-right corner.
         let corner = (24 * 32 + 24) * 4;
         assert!(red(&unread.pixels[corner..corner + 4]));

@@ -136,6 +136,34 @@ fn up_in_an_empty_composer_edits_ones_last_message_in_its_row() {
 }
 
 #[test]
+fn a_word_missing_its_accent_is_offered_under_the_composer_and_tab_takes_it() {
+    let (mut app, _folder) = preview();
+    interact(&mut app, |ui| {
+        ui.click(Id::new(COMPOSER)).expect("the composer");
+        ui.typewrite("pasion");
+    });
+    assert!(shows(&app, "Did you mean"), "the offer");
+    assert!(shows(&app, "pasión"), "the word it offers");
+    interact(&mut app, |ui| {
+        // A new simulator starts with no field focused, as a new frame
+        // would keep the composer's; the click gives it the keys again.
+        ui.click(Id::new(COMPOSER)).expect("the composer");
+        ui.tap_key(keyboard::Key::Named(key::Named::Tab));
+    });
+    assert_eq!(app.client.state().draft(), "pasión");
+}
+
+#[test]
+fn a_word_an_input_method_is_still_composing_is_offered_and_tab_takes_it() {
+    let (mut app, _folder) = preview();
+    app.composer.draft.replace("pasion", 6);
+    crate::spelling::composing(&mut app, crate::composer::Writing::Draft);
+    assert!(shows(&app, "pasión"), "the word held in the preedit");
+    assert!(crate::spelling::apply(&mut app), "Tab takes it");
+    assert_eq!(app.client.state().draft(), "pasión");
+}
+
+#[test]
 fn a_colon_word_suggests_emoji_and_enter_takes_the_first() {
     let (mut app, _folder) = preview();
     interact(&mut app, |ui| {
@@ -684,17 +712,26 @@ fn the_typing_lines_words_breathe_while_animations_play_and_hold_still_otherwise
             .map(|at| u64::from(rgba[at..at + 3].iter().copied().max().unwrap_or(0)))
             .sum()
     };
-    // A quarter of a breath in, they're at their brightest; three
-    // quarters in, at half of it.
-    let (full, dim) = (
-        brightness(&app, Duration::from_millis(360)),
-        brightness(&app, Duration::from_millis(1080)),
+    // Across a breath: the words are brighter at some of it than others.
+    // The frame a snapshot draws lands a little after the moment asked
+    // for, so a range of moments is measured rather than two.
+    let breath = |app: &crate::app::App| -> Vec<u64> {
+        [0, 360, 720, 1080]
+            .into_iter()
+            .map(|ms| brightness(app, Duration::from_millis(ms)))
+            .collect()
+    };
+    let lit = breath(&app);
+    let (dim, full) = (lit.iter().min(), lit.iter().max());
+    assert!(
+        full.zip(dim)
+            .is_some_and(|(full, dim)| full * 10 > dim * 11),
+        "the words breathe: {lit:?}"
     );
-    assert!(dim * 10 < full * 9, "dimmer: {dim} against {full}");
     app.layout.prefs.animate = crate::layout::Animate::Never;
-    let (full, dim) = (
-        brightness(&app, Duration::from_millis(360)),
-        brightness(&app, Duration::from_millis(1080)),
+    let still = breath(&app);
+    assert!(
+        still.iter().all(|value| *value == still[0]),
+        "held still: {still:?}"
     );
-    assert_eq!(dim, full, "held still");
 }

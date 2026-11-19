@@ -78,7 +78,27 @@ impl App {
     /// Opens Settings on a section, or shows the section in Settings
     /// already open.
     pub fn open_settings(&mut self, section: Section) -> Task<Message> {
+        // What was open over the window goes, so the first click is the
+        // settings': a popover or a card over them would take it.
+        self.status.popover = None;
+        self.inbox = None;
+        self.win.menu = None;
+        self.cards.server = None;
+        self.cards.expression = None;
+        if self.profiles.card.take().is_some() || self.profiles.shown.is_some() {
+            self.client
+                .dispatch(recore_core::application::Action::CloseProfile);
+            self.profiles.shown = None;
+        }
+        if self.client.state().status_editor.is_some() {
+            self.client
+                .dispatch(recore_core::application::Action::CloseStatusEditor);
+        }
         let mut cx = cx!(self);
+        self.popovers.close(&mut cx);
+        self.win.picker.close(&mut cx, Why::User);
+        self.win.tag_card.close(&mut cx, Why::User);
+        self.profiles.editor.close(&mut cx, Why::User);
         let settings = self.win.settings.open(|| Settings::open(&mut cx));
         let task = settings.show(section, &mut cx);
         self.win.settings_section = section;

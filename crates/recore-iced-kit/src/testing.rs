@@ -11,6 +11,8 @@ pub enum Message {
     Scrolled(Viewport),
     /// What Ctrl+C copied of a `widgets::Selectable`.
     Copied(String),
+    /// What a `field::Field` reports.
+    Field(crate::field::Event),
 }
 
 /// The window's fonts, once, without Twemoji.
