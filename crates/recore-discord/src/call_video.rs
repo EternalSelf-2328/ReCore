@@ -202,6 +202,11 @@ struct Incoming {
     reorder: rtp::Reorder,
     assembler: Option<Assembler>,
     asked: Instant,
+    /// The quality last asked for, 0 while out of sight. The decoder is
+    /// reset only when a camera starts showing, not each time its tile
+    /// moves: resetting it on every want froze the picture until the next
+    /// keyframe while the sound went on.
+    quality: u8,
     /// The orientation the sender last gave, which holds until it gives
     /// another: libwebrtc leaves it out of upright frames' packets.
     orientation: Orientation,
@@ -266,6 +271,7 @@ impl Receiving {
                 reorder: rtp::Reorder::default(),
                 assembler: None,
                 asked: Instant::now() - KEYFRAME_REQUESTS,
+                quality: 0,
                 orientation: Orientation::default(),
             },
         );
@@ -291,9 +297,14 @@ impl Receiving {
             asked.insert(ssrc.to_string(), json!(quality));
             if quality > 0 {
                 pixels.insert(ssrc.to_string(), json!(shown));
-                // The decoder starts from a keyframe.
-                incoming.assembler = None;
+                // The decoder starts from a keyframe when they start
+                // showing, or come back to sight; a tile that only moved
+                // or changed size keeps decoding.
+                if incoming.quality == 0 {
+                    incoming.assembler = None;
+                }
             }
+            incoming.quality = quality;
         }
         asked.insert("pixelCounts".into(), Value::Object(pixels));
         send_json(&mut connection.ws, 15, Value::Object(asked)).await
