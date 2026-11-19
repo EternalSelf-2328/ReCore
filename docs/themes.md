@@ -82,8 +82,10 @@ tile with the CSS badge. A theme carries:
   local files, `@media (prefers-color-scheme: dark|light)`, `.theme-dark`
   and `.theme-light` blocks, `color-mix(in srgb, ...)` and `light-dark()`.
   Hex, `rgb()`, `rgba()`, `hsl()`, `hsla()` and named colours are read.
-  A remote `@import` is skipped with a warning: ReCore reads local theme
-  files, so download a theme that imports a web base beside it first.
+  Remote `@import` rules are skipped with a warning. ReCore can read the
+  colours supplied directly by Midnight, System24 and Material Discord
+  themes, including the exports from Noctalia. After changing the Noctalia
+  palette, use **Reload CSS** to pick up the newly generated colours.
 - Its fonts: `@font-face` with a `data:` URI or a file beside the theme is
   loaded into the window's font system, and `--font-primary` picks the
   family.

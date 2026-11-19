@@ -330,6 +330,8 @@ pub fn load_str(
         });
     }
     warnings.extend(sheet.warnings);
+    let specs = crate::options::detect(&vars, dark);
+    palette_aliases(&mut vars);
     let palette = palette(&vars, dark);
     let native = crate::NativeStyle::compute(&sheet.rules, &vars, dark);
     let mut look = look(&vars, palette, directory, &fonts, options, &mut warnings);
@@ -337,7 +339,6 @@ pub fn load_str(
     look.font_family = native.font_family.clone().or(look.font_family);
     look.font_size = native.font_size.or(look.font_size);
     look.letter_spacing = native.letter_spacing.or(look.letter_spacing);
-    let specs = crate::options::detect(&vars, dark);
     let name = meta.name.clone().unwrap_or_else(|| "CSS theme".to_owned());
     Ok(ThemeFile {
         id: format!("css:{}", slug(&name)),
@@ -492,6 +493,7 @@ impl Collected {
                 return Some(true);
             }
         }
+        palette_aliases(&mut vars);
         let background = vars.first_color(
             &[
                 "--background-primary",
@@ -525,6 +527,70 @@ fn choose_dark(collected: &Collected, mode: Mode, warnings: &mut Vec<String>) ->
                     .into(),
             );
             true
+        }
+    }
+}
+
+/// Maps the local colours a Midnight, System24 or Material Discord theme
+/// can provide on its own, even when the browser stylesheet is remote.
+fn palette_aliases(vars: &mut css::Vars) {
+    let aliases: &[(&str, &str)] = if vars.contains("--bg-4")
+        && vars.contains("--text-1")
+        && vars.contains("--accent-3")
+        && vars.get("--colors") != Some("off")
+    {
+        &[
+            ("--background-primary", "var(--bg-4)"),
+            ("--background-secondary", "var(--bg-3)"),
+            ("--background-base-lowest", "var(--bg-4)"),
+            ("--background-floating", "var(--bg-floating, var(--bg-3))"),
+            ("--channeltextarea-background", "var(--bg-2)"),
+            ("--text-normal", "var(--text-1)"),
+            ("--header-secondary", "var(--text-2)"),
+            ("--text-muted", "var(--text-3)"),
+            ("--text-subtle", "var(--text-4)"),
+            ("--text-link", "var(--accent-1)"),
+            ("--background-brand", "var(--accent-3)"),
+            ("--control-primary-text-default", "var(--text-0)"),
+            ("--control-primary-background-hover", "var(--accent-4)"),
+            ("--border-subtle", "var(--border)"),
+            ("--background-modifier-hover", "var(--hover)"),
+            ("--background-modifier-selected", "var(--active)"),
+            ("--message-background-hover", "var(--message-hover)"),
+            ("--status-danger", "var(--red-3)"),
+            ("--status-positive", "var(--green-3)"),
+        ]
+    } else if vars.contains("--chat-color")
+        && vars.contains("--sidebar-panel-color")
+        && vars.contains("--accent-hue")
+    {
+        &[
+            ("--background-primary", "var(--chat-color)"),
+            ("--background-base-lowest", "var(--server-color)"),
+            ("--background-secondary", "var(--sidebar-panel-color)"),
+            ("--background-floating", "var(--card-color-filled)"),
+            ("--channeltextarea-background", "var(--card-color-filled)"),
+            ("--text-normal", "var(--input-text-color)"),
+            ("--header-primary", "var(--card-header-text-color)"),
+            (
+                "--background-brand",
+                "hsl(var(--accent-hue), var(--accent-saturation), var(--accent-lightness))",
+            ),
+            ("--control-primary-text-default", "var(--accent-text-color)"),
+            ("--border-subtle", "var(--card-border-color)"),
+            ("--background-modifier-selected", "var(--message-color-alt)"),
+            ("--background-tooltip", "var(--tooltip-color)"),
+        ]
+    } else {
+        return;
+    };
+    for &(name, value) in aliases {
+        if !vars.contains(name) {
+            vars.insert(&css::Declaration {
+                name: name.into(),
+                value: value.into(),
+                important: false,
+            });
         }
     }
 }
@@ -1451,6 +1517,50 @@ html.theme-light:not([data-rl-mode="dark"]) {
         let light = load_str(css, None, &Options::with_mode(Mode::Light)).unwrap();
         assert_eq!(light.palette.chat, Rgba::rgb(0xff, 0xff, 0xff));
         assert_eq!(light.palette.text, Rgba::rgb(0x31, 0x33, 0x38));
+    }
+
+    #[test]
+    fn midnight_and_system24_use_local_colours_without_their_base_sheet() {
+        let css = r#"
+        @import url('https://example.test/base.css');
+        body {
+            --colors: on;
+            --bg-4: #eeeeee;
+            --bg-3: #dddddd;
+            --text-1: #223344;
+            --accent-1: #0055bb;
+            --accent-3: var(--accent-1);
+            --text-normal: #111111;
+        }
+        "#;
+        let theme = load_str(css, None, &Options::default()).unwrap();
+        assert!(!theme.palette.dark);
+        assert_eq!(theme.palette.chat.hex(), "#eeeeee");
+        assert_eq!(theme.palette.sidebar.hex(), "#dddddd");
+        assert_eq!(theme.palette.text.hex(), "#111111");
+        assert_eq!(theme.palette.accent.hex(), "#0055bb");
+        assert_eq!(theme.warnings.len(), 1);
+    }
+
+    #[test]
+    fn material_discord_reads_the_local_palette_and_accent_components() {
+        let css = r#"
+        :root {
+            --chat-color: #101820;
+            --sidebar-panel-color: #222222;
+            --input-text-color: #eeeeee;
+            --accent-hue: 120;
+            --accent-saturation: 100%;
+            --accent-lightness: 25%;
+            --accent-text-color: #ffffff;
+        }
+        "#;
+        let theme = load_str(css, None, &Options::default()).unwrap();
+        assert!(theme.palette.dark);
+        assert_eq!(theme.palette.chat.hex(), "#101820");
+        assert_eq!(theme.palette.sidebar.hex(), "#222222");
+        assert_eq!(theme.palette.accent.hex(), "#008000");
+        assert_eq!(theme.palette.on_accent.hex(), "#ffffff");
     }
 
     #[test]
