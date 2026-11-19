@@ -16,6 +16,7 @@ use recore_core::{
 };
 use recore_css::{OptionKind, ThemeOption};
 
+use super::pages::{Pref, ZOOM_SIZES};
 use super::{Drop, Event as SettingsEvent, Page, Settings};
 use crate::{
     app::Message,
@@ -195,15 +196,23 @@ impl Settings {
             }
             Event::New => self.new_theme(cx),
             Event::Edit(id) => {
-                let Some(custom) = cx.themes.custom.iter().find(|custom| custom.id == id) else {
+                if let Some(custom) = cx.themes.custom.iter().find(|custom| custom.id == id) {
+                    let editor = Editor::new(
+                        Some(custom.id.clone()),
+                        custom.base,
+                        custom.theme,
+                        custom.name.clone(),
+                    );
+                    self.open_editor(editor, cx);
+                    return;
+                }
+                // A built-in theme is edited as a copy of itself, saved among
+                // the person's own.
+                let Some(built_in) = palette::find(&id) else {
                     return;
                 };
-                let editor = Editor::new(
-                    Some(custom.id.clone()),
-                    custom.base,
-                    custom.theme,
-                    custom.name.clone(),
-                );
+                let editor =
+                    Editor::new(None, built_in.id, built_in.theme, copy_name(built_in.name));
                 self.open_editor(editor, cx);
             }
             Event::Start(index) => {
@@ -809,10 +818,33 @@ impl<'a> Page<'a> {
                 .view(self.cx.look.theme),
             ]),
             form::group([
-                form::heading(theme, "RECORE WINDOW"),
+                form::heading(theme, "INTERFACE SIZE"),
+                form::dropdown(
+                    ZOOM_SIZES
+                        .iter()
+                        .map(|(_, name)| (*name).to_owned())
+                        .collect(),
+                    Some(
+                        ZOOM_SIZES
+                            .iter()
+                            .position(|(level, _)| (level - self.cx.zoom).abs() < 0.005)
+                            .unwrap_or(4),
+                    ),
+                    self.s.open == Some(Drop::Zoom),
+                    Message::Settings(SettingsEvent::Drop(Drop::Zoom)),
+                    |index| Message::Settings(SettingsEvent::Pref(Pref::Zoom(index))),
+                )
+                .view(self.cx.look),
                 form::note(
                     theme,
-                    "ReCord's surface picture and type. Lower the panel opacity to let the picture show through, as ReCord does.",
+                    "Text, spacing and pictures all grow together, as Ctrl with + and - or the wheel does.",
+                ),
+            ]),
+            form::group([
+                form::heading(theme, "WINDOW"),
+                form::note(
+                    theme,
+                    "The picture behind the window, its dim and the panel opacity over it, and the type every theme can use. CSS themes bring their own colours and effects.",
                 ),
                 row![
                     action(
@@ -1077,7 +1109,7 @@ impl<'a> Page<'a> {
                 ..Default::default()
             }
         });
-        if kind != Tile::Custom {
+        if kind == Tile::Css {
             return face.into();
         }
         let pencil = self

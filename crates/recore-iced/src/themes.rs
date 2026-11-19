@@ -46,6 +46,8 @@ pub struct RecoreOptions {
     pub background_dim: f32,
     pub panel_opacity: f32,
     pub font: String,
+    /// Whether the person chose `font`, rather than ReCore's start.
+    pub font_chosen: bool,
     pub motion: Motion,
     /// The background's filter, brightness (0.25–2) and whether a moving
     /// background plays.
@@ -79,6 +81,7 @@ impl Default for RecoreOptions {
             background_dim: 0.7,
             panel_opacity: 0.75,
             font: "pixel".into(),
+            font_chosen: false,
             motion: Motion::Full,
             background_filter: Filter::None,
             background_brightness: 1.0,
@@ -110,6 +113,7 @@ impl RecoreOptions {
             background_dim: percent(layout.recore_background_dim, 0.7),
             panel_opacity: percent(layout.recore_panel_opacity, 0.75),
             font: layout.recore_font.clone().unwrap_or_else(|| "pixel".into()),
+            font_chosen: layout.recore_font.is_some(),
             motion: match layout.recore_motion.as_deref() {
                 Some("subtle") => Motion::Subtle,
                 Some("off") => Motion::Off,
@@ -330,10 +334,7 @@ impl Themes {
     /// Lowers the panels over ReCore's own background picture, as ReCord's
     /// surface opacity does. Text and lines keep their full strength.
     fn paint_recore(&self, shown: &mut Theme) {
-        if !matches!(shown.id.as_str(), "recore" | "recore-light")
-            || self.background.is_none()
-            || self.recore.panel_opacity >= 1.0
-        {
+        if self.background.is_none() || self.recore.panel_opacity >= 1.0 {
             return;
         }
         let opacity = self.recore.panel_opacity.clamp(0.0, 1.0);
@@ -447,6 +448,7 @@ impl Themes {
 
     pub fn set_font(&mut self, root: &Path, name: &str) {
         self.recore.font = name.to_owned();
+        self.recore.font_chosen = true;
         layout::store(root, "recore_font", name.to_owned());
         let chosen = self.chosen_id().to_owned();
         self.apply_font(&chosen);
@@ -487,9 +489,11 @@ impl Themes {
         if !self.effects {
             return None;
         }
+        // A CSS theme brings its own levels; every other theme takes the
+        // window's, so each has the same controls.
         let effects = if let Some(css) = self.css.iter().find(|css| css.id == self.chosen_id()) {
             css.look.effects.clone()
-        } else if matches!(self.chosen_id(), "recore" | "recore-light") {
+        } else {
             recore_css::Effects {
                 scanlines: self.recore.scanlines,
                 grain: self.recore.grain,
@@ -500,8 +504,6 @@ impl Themes {
                 avatar_filter: None,
                 avatar_scanline: if self.recore.avatar_filter { 0.14 } else { 0.0 },
             }
-        } else {
-            return None;
         };
         let grain = if self.low_power { 0.0 } else { effects.grain };
         let moving = self.motion() != Motion::Off;
@@ -539,7 +541,7 @@ impl Themes {
     /// Decodes the chosen CSS theme's background picture, if it names one
     /// ReCore can read, and keeps how far it is dimmed.
     fn load_background(&mut self) {
-        if matches!(self.chosen_id(), "recore" | "recore-light") {
+        if self.chosen_css().is_none() {
             self.set_background_picture(
                 self.recore
                     .background
@@ -612,15 +614,6 @@ impl Themes {
 
     /// Loads the fonts a theme carries and draws with its family.
     fn apply_font(&self, id: &str) {
-        let based_on_recore = self
-            .custom
-            .iter()
-            .find(|custom| custom.id == id)
-            .is_some_and(|custom| matches!(custom.base, "recore" | "recore-light"));
-        if matches!(id, "recore" | "recore-light") || based_on_recore {
-            fonts::set_family(recore_family(&self.recore.font));
-            return;
-        }
         if let Some(css) = self.css.iter().find(|css| css.id == id) {
             for font in &css.fonts {
                 fonts::load(&font.family, font.bytes.clone());
@@ -629,8 +622,21 @@ impl Themes {
                 fonts::set_family(Some(family));
                 return;
             }
+            fonts::set_family(None);
+            return;
         }
-        fonts::set_family(None);
+        // ReCore's own type, a theme built on it, or any theme whose font
+        // the person chose here.
+        let based_on_recore = self
+            .custom
+            .iter()
+            .find(|custom| custom.id == id)
+            .is_some_and(|custom| matches!(custom.base, "recore" | "recore-light"));
+        if matches!(id, "recore" | "recore-light") || based_on_recore || self.recore.font_chosen {
+            fonts::set_family(recore_family(&self.recore.font));
+        } else {
+            fonts::set_family(None);
+        }
     }
 
     /// Where the themes folder is, making it if it isn't there.
