@@ -874,11 +874,15 @@ fn watch(
         {
             decoder = Some(Decoder::new(frame.codec)?);
         }
-        let Some(decoder) = decoder.as_mut() else {
-            continue;
-        };
-        let picture = match decoder.decode(&frame.data) {
-            Ok(Some(picture)) => picture,
+        let decoded = decoder
+            .as_mut()
+            .expect("a decoder was just made")
+            .decode(&frame.data);
+        let picture = match decoded {
+            Ok(Some(picture)) => {
+                failures = 0;
+                picture
+            }
             Ok(None) => continue,
             Err(error) => {
                 failures += 1;
@@ -891,6 +895,11 @@ fn watch(
                         size = frame.data.len(),
                         "a stream frame didn't decode"
                     );
+                }
+                // A decoder that keeps failing starts over with the next
+                // keyframe rather than staying stuck on the stream.
+                if failures.is_multiple_of(8) {
+                    decoder = None;
                 }
                 receiver.request_keyframe();
                 continue;

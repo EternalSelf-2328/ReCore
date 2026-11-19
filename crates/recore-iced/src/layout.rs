@@ -214,8 +214,12 @@ pub struct Prefs {
     /// pictures, and the GIF picker opens in Favorites.
     pub plain_folders: Option<bool>,
     pub gif_favorites_first: Option<bool>,
-    /// The language Translate puts a message in, as Google names it.
+    /// The language Translate treats as the one written in (none: let
+    /// Google detect it), the language it puts messages in, and whether a
+    /// message is translated before it's sent.
+    pub translate_source: Option<String>,
     pub translate_target: Option<String>,
+    pub translate_send: Option<bool>,
     /// Appearance's profile switches, and nameplates.
     pub nameplates: Option<bool>,
     pub profile_effects: Option<bool>,
