@@ -108,6 +108,7 @@ use recore_iced_kit::sheet;
 mod shell;
 mod sidebar;
 mod signin;
+mod spelling;
 mod status;
 use recore_iced_kit::style;
 mod keybinds;

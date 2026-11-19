@@ -82,6 +82,7 @@ pub enum Pref {
     GpuRendering(bool),
     GpuEncoding(bool),
     StreamerMode(bool),
+    WordSuggestions(bool),
     Zoom(usize),
     CloseToTray(bool),
     MultipleWindows(bool),
@@ -91,6 +92,7 @@ pub enum Pref {
     ShowIdle(bool),
     HideBlocked(bool),
     CheckUpdates(bool),
+    InstallUpdates(bool),
     Nightlies(bool),
     StartOnSignIn(bool),
     DiscordLinks(bool),
@@ -124,6 +126,7 @@ impl Pref {
                 | Self::GpuRendering(_)
                 | Self::GpuEncoding(_)
                 | Self::StreamerMode(_)
+                | Self::WordSuggestions(_)
                 | Self::CloseToTray(_)
                 | Self::MultipleWindows(_)
                 | Self::DeveloperMode(_)
@@ -132,6 +135,7 @@ impl Pref {
                 | Self::ShowIdle(_)
                 | Self::HideBlocked(_)
                 | Self::CheckUpdates(_)
+                | Self::InstallUpdates(_)
                 | Self::Nightlies(_)
                 | Self::StartOnSignIn(_)
                 | Self::DiscordLinks(_)
@@ -381,6 +385,10 @@ impl Settings {
                 prefs.streamer_mode = Some(on);
                 cx.keep("streamer_mode", on);
             }
+            Pref::WordSuggestions(on) => {
+                prefs.word_suggestions = Some(on);
+                cx.keep("word_suggestions", on);
+            }
             Pref::Zoom(index) => {
                 let Some((level, _)) = ZOOM_SIZES.get(index) else {
                     return;
@@ -410,11 +418,15 @@ impl Settings {
                 cx.dispatch(Action::HideBlocked(on));
             }
             Pref::CheckUpdates(on) => {
-                prefs.check_for_updates = on;
+                prefs.check_for_updates = Some(on);
                 cx.keep("check_for_updates", on);
                 if on {
                     cx.request(Request::LookForUpdates(true));
                 }
+            }
+            Pref::InstallUpdates(on) => {
+                prefs.install_updates = Some(on);
+                cx.keep("install_updates", on);
             }
             Pref::Nightlies(on) => {
                 prefs.update_nightlies = on;

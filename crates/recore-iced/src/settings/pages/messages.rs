@@ -113,6 +113,20 @@ impl<'a> Page<'a> {
                 ),
             ]),
             form::group([
+                form::heading(theme, "WRITING"),
+                switch(
+                    "Suggest accented words",
+                    prefs.word_suggestions.unwrap_or(true),
+                    Some(pref(Pref::WordSuggestions(
+                        !prefs.word_suggestions.unwrap_or(true),
+                    ))),
+                )
+                .description(
+                    "While you write, a word missing its accents is offered under the composer; Tab takes it, and nothing changes on its own.",
+                )
+                .view(self.cx.look),
+            ]),
+            form::group([
                 form::heading(theme, "LANGUAGE YOU WRITE IN"),
                 form::dropdown(
                     std::iter::once("Detect automatically".to_owned())

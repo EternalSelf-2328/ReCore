@@ -60,8 +60,10 @@ pub struct Composer {
     /// edit's own field.
     pub editing: Option<String>,
     pub edit: crate::field::Draft,
-    /// The suggestions over the field typed in last.
+    /// The suggestions over the field typed in last, and the spelling
+    /// suggestion under it.
     pub suggest: crate::suggest::Suggest,
+    pub spelling: Option<crate::spelling::Suggestion>,
     /// The composer written in last, the channel's or the thread's.
     pub writing_last: Writing,
 }
@@ -87,6 +89,9 @@ pub enum Event {
     Pasted(Writing, Option<String>),
     /// A suggestion clicked, by its place.
     Suggestion(usize),
+    /// The spelling suggestion under the composer, taken or dismissed.
+    Spelling,
+    DismissSpelling,
     CancelReply,
     TogglePing,
     /// The message request's Accept (true) or Ignore.
@@ -200,6 +205,14 @@ pub fn update(app: &mut App, event: Event) -> Task<Message> {
                 crate::suggest::choose_suggestion(app, which),
                 operation::focus(crate::thread::field_id(which)),
             ])
+        }
+        Event::Spelling => {
+            crate::spelling::apply(app);
+            operation::focus(COMPOSER)
+        }
+        Event::DismissSpelling => {
+            app.composer.spelling = None;
+            operation::focus(COMPOSER)
         }
         Event::CancelReply => {
             app.client.dispatch(Action::CancelCompose);
@@ -417,7 +430,15 @@ fn field_event(app: &mut App, which: Writing, event: field::Event) -> Task<Messa
             }
             Task::none()
         }
-        field::Event::Choose => crate::suggest::choose_suggestion(app, which),
+        field::Event::Choose => {
+            if which == Writing::Draft
+                && crate::suggest::suggestion_count(app) == 0
+                && crate::spelling::apply(app)
+            {
+                return Task::none();
+            }
+            crate::suggest::choose_suggestion(app, which)
+        }
         field::Event::Escape => {
             if crate::suggest::dismiss_suggestions(app) {
                 return Task::none();
@@ -673,6 +694,10 @@ pub fn edited(app: &mut App, which: Writing, text: String, caret: usize) {
         writing(app.ctx(), which).caret()
     };
     crate::suggest::caret_moved(app, which, &kept, caret);
+    app.composer.spelling = (which == Writing::Draft
+        && app.layout.prefs.word_suggestions.unwrap_or(true))
+    .then(|| crate::spelling::for_draft(&kept, caret))
+    .flatten();
 }
 
 /// The core's draft or edit takes a field's text.
@@ -862,6 +887,11 @@ pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
         if let Some((label, ping)) = reply_label(ctx.state.compose()) {
             compose = compose.push(reply_bar(ctx, label, ping));
         }
+        if ctx.layout.prefs.word_suggestions.unwrap_or(true)
+            && let Some(suggestion) = crate::spelling::current(ctx.composer)
+        {
+            compose = compose.push(spelling_bar(ctx, suggestion));
+        }
         compose = compose.push(if look.locked {
             locked_bar(ctx)
         } else {
@@ -888,6 +918,41 @@ pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
         .into()
 }
 
+/// The word under the composer's caret, offered with its accents: Tab takes
+/// it, and so does a press on it.
+fn spelling_bar<'a>(
+    ctx: crate::ctx::Ctx<'a>,
+    suggestion: &'a crate::spelling::Suggestion,
+) -> Element<'a, Message> {
+    let theme = ctx.look.theme;
+    let radius = if theme.square { 0.0 } else { 4.0 };
+    let line = row![
+        text("Did you mean").size(12).color(theme.muted),
+        button(
+            text(suggestion.fixed())
+                .size(13)
+                .font(BOLD())
+                .color(theme.accent)
+        )
+        .padding([1, 5])
+        .on_press(Message::Write(Event::Spelling))
+        .style(lit_style(None, theme.wash(0.08), radius)),
+        text("Tab").size(11).color(theme.faint),
+        button(ctx.look.glyph(Icon::X, 12, theme.faint))
+            .padding(2)
+            .on_press(Message::Write(Event::DismissSpelling))
+            .style(lit_style(None, theme.wash(0.08), radius)),
+    ]
+    .spacing(6)
+    .align_y(Alignment::Center);
+    container(line)
+        .height(28)
+        .padding(Padding::ZERO.left(8).right(4))
+        .width(Length::Fill)
+        .align_y(Alignment::Center)
+        .style(move |_| crate::style::fill(theme.sunken))
+        .into()
+}
 /// The box with the field and its buttons, and the suggestions over it.
 fn composer_box<'a>(ctx: crate::ctx::Ctx<'a>, look: &Look) -> Element<'a, Message> {
     let theme = ctx.look.theme;
@@ -933,6 +998,10 @@ fn composer_box<'a>(ctx: crate::ctx::Ctx<'a>, look: &Look) -> Element<'a, Messag
     })
     .enabled(look.enabled)
     .pastes()
+    .spelling(
+        ctx.layout.prefs.word_suggestions.unwrap_or(true)
+            && crate::spelling::current(ctx.composer).is_some(),
+    )
     .tabs(commanding)
     .suggesting(crate::suggest::suggesting(ctx, Writing::Draft));
     // Always in a column after the same kind of widget, so the field
