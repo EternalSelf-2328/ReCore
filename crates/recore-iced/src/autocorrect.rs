@@ -85,9 +85,17 @@ struct Word {
     /// The word as the list writes it, lowercased.
     text: Box<str>,
     /// The word with its accents taken off, the form typed on a keyboard
-    /// without them.
-    folded: Box<str>,
+    /// without them; `None` when that is `text` itself, as most words are,
+    /// so a list doesn't keep every word twice.
+    folded: Option<Box<str>>,
     count: u64,
+}
+
+impl Word {
+    /// The spelling compared for accents: the folded one, or the word's own.
+    fn folded(&self) -> &str {
+        self.folded.as_deref().unwrap_or(&self.text)
+    }
 }
 
 /// What the model is doing for the chosen language.
@@ -95,6 +103,8 @@ struct Word {
 pub enum Status {
     /// No model is downloaded; Spanish accents are all there is.
     Missing,
+    /// The lists have no word list for this language: nothing to download.
+    Unsupported,
     Downloading,
     Ready {
         words: usize,
@@ -123,6 +133,15 @@ pub enum Event {
 impl Autocorrect {
     /// The model kept for `language`, or the state of its download.
     pub fn load(root: &Path, language: String) -> Self {
+        // A language the lists don't have has nothing to download, whatever
+        // its folder holds.
+        if source(&language).is_none() {
+            return Self {
+                language,
+                model: None,
+                status: Status::Unsupported,
+            };
+        }
         let path = model_path(root, &language);
         let (model, status) = match fs::read_to_string(&path) {
             Ok(text) => match Model::parse(&language, &text) {
@@ -165,20 +184,39 @@ impl Autocorrect {
 
 /// The language autocorrect uses: the one Messages says messages are written
 /// in, or else the desktop's language, and English when neither is one the
-/// lists have.
+/// lists have. A desktop language the lists lack stays named as it is, so
+/// Settings can say there's no list for it rather than offering English's.
 pub fn language(prefs: &crate::layout::Prefs) -> String {
     prefs
         .translate_source
         .as_deref()
         .and_then(normalize)
         .or_else(system_language)
+        .or_else(desktop_base)
         .unwrap_or_else(|| "en".to_owned())
+}
+
+/// The language part of a locale, as `es_ES.UTF-8` or `zh-Hant-TW` names it.
+fn base(code: &str) -> Option<String> {
+    let code = code.to_ascii_lowercase().replace('_', "-");
+    let code = code.split(['.', '@']).next().unwrap_or(&code);
+    let base = code.split('-').next().unwrap_or(code);
+    (!base.is_empty() && base != "c" && base != "posix").then(|| base.to_owned())
 }
 
 /// `code` as one of [`LANGUAGES`]' codes, if the lists have it.
 fn normalize(code: &str) -> Option<String> {
     let code = code.to_ascii_lowercase().replace('_', "-");
     let code = code.split(['.', '@']).next().unwrap_or(&code);
+    // The lists have Simplified Chinese only; Traditional isn't it.
+    if code.starts_with("zh")
+        && (code.contains("tw")
+            || code.contains("hk")
+            || code.contains("mo")
+            || code.contains("hant"))
+    {
+        return None;
+    }
     let base = code.split('-').next().unwrap_or(code);
     let code = match base {
         "zh" => "zh-CN",
@@ -198,6 +236,22 @@ fn system_language() -> Option<String> {
         };
         for part in value.split(':') {
             if let Some(code) = normalize(part) {
+                return Some(code);
+            }
+        }
+    }
+    None
+}
+
+/// The desktop's language even when the lists don't have it, so the window
+/// can name what it has no list for.
+fn desktop_base() -> Option<String> {
+    for variable in ["LC_ALL", "LC_MESSAGES", "LANG", "LANGUAGE"] {
+        let Ok(value) = env::var(variable) else {
+            continue;
+        };
+        for part in value.split(':') {
+            if let Some(code) = base(part) {
                 return Some(code);
             }
         }
@@ -246,8 +300,11 @@ impl Model {
             for letter in folded.chars() {
                 *used.entry(letter).or_insert(0u32) += 1;
             }
+            // Most words have no accent to take off, and keeping one string
+            // for both is a megabyte of a 50,000-word list.
+            let folded = (folded != lower).then(|| folded.into_boxed_str());
             words.push(Word {
-                folded: folded.into_boxed_str(),
+                folded,
                 text: lower.into_boxed_str(),
                 count,
             });
@@ -258,8 +315,8 @@ impl Model {
         // The most written word of a folded spelling comes first, so it's
         // the one offered; the order is otherwise stable for the search.
         words.sort_unstable_by(|this, that| {
-            this.folded
-                .cmp(&that.folded)
+            this.folded()
+                .cmp(that.folded())
                 .then_with(|| that.count.cmp(&this.count))
         });
         let mut by_text = (0..words.len() as u32).collect::<Vec<_>>();
@@ -287,11 +344,9 @@ impl Model {
 
     /// The most written word whose letters are `folded`'s.
     fn folded_at(&self, folded: &str) -> Option<&Word> {
-        let at = self
-            .words
-            .partition_point(|word| word.folded.as_ref() < folded);
+        let at = self.words.partition_point(|word| word.folded() < folded);
         let word = self.words.get(at)?;
-        (word.folded.as_ref() == folded).then_some(word)
+        (word.folded() == folded).then_some(word)
     }
 
     /// The word written `text`, if the language has it.
@@ -382,8 +437,18 @@ impl Model {
 
 /// The word offered under the composer, if the model or the built-in
 /// Spanish list knows one: the word at the caret with its accents, or else
-/// the word just finished with a typo.
+/// the word just finished with a typo. An offer dismissed with its ✕ isn't
+/// made again while that word stands where it was.
 pub fn for_draft(app: &App, text: &str, caret: usize) -> Option<Suggestion> {
+    let suggestion = offer(app, text, caret)?;
+    let dismissed = app.composer.spelling_off.as_ref();
+    (!dismissed
+        .is_some_and(|(at, word)| *at == suggestion.at() && suggestion.word() == word.as_str()))
+    .then_some(suggestion)
+}
+
+/// The offer the model or the list makes, before a dismissal is weighed.
+fn offer(app: &App, text: &str, caret: usize) -> Option<Suggestion> {
     let language = app.autocorrect.language.as_str();
     let model = app.autocorrect.model.as_deref();
     if let Some(model) = model
@@ -457,7 +522,7 @@ fn download(app: &mut App) -> Task<Message> {
     }
     let language = app.autocorrect.language.clone();
     let Some((folder, file)) = source(&language) else {
-        app.autocorrect.status = Status::Failed("The lists have no such language.".to_owned());
+        app.autocorrect.status = Status::Unsupported;
         return Task::none();
     };
     let url = format!("{SOURCE}/{folder}/{file}");
@@ -631,5 +696,18 @@ qeu 195
         assert_eq!(normalize("es_ES.UTF-8").as_deref(), Some("es"));
         assert_eq!(normalize("zh_CN.UTF-8").as_deref(), Some("zh-CN"));
         assert_eq!(normalize("pt_BR.UTF-8").as_deref(), Some("pt"));
+    }
+
+    #[test]
+    fn a_language_the_lists_lack_has_nothing_to_download() {
+        // The lists have Simplified Chinese, and Traditional isn't it.
+        assert_eq!(normalize("zh_TW.UTF-8"), None);
+        assert_eq!(normalize("zh-Hant"), None);
+        let folder = tempfile::tempdir().expect("a folder");
+        let autocorrect = Autocorrect::load(folder.path(), "ca".into());
+        assert_eq!(autocorrect.status, Status::Unsupported);
+        assert!(autocorrect.model.is_none());
+        assert_eq!(base("ca_ES.UTF-8").as_deref(), Some("ca"));
+        assert_eq!(base("C.UTF-8"), None, "a locale that names no language");
     }
 }

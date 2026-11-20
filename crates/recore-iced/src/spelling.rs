@@ -184,6 +184,11 @@ pub struct Suggestion {
 }
 
 impl Suggestion {
+    /// Where the word starts, in the draft's bytes.
+    pub fn at(&self) -> usize {
+        self.at
+    }
+
     /// The letters written.
     pub fn word(&self) -> &str {
         &self.word
@@ -351,6 +356,7 @@ pub fn current(composer: &crate::composer::Composer) -> Option<&Suggestion> {
 
 /// Takes the suggestion under the composer, if it still matches the draft.
 pub fn apply(app: &mut App) -> bool {
+    app.composer.spelling_off = None;
     let Some(suggestion) = app.composer.spelling.take() else {
         return false;
     };

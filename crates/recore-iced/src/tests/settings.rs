@@ -99,6 +99,21 @@ fn messages_offer_the_autocorrect_model_for_the_language_written_in() {
 }
 
 #[test]
+fn messages_say_when_the_lists_have_no_model_for_the_language() {
+    let (mut app, _folder) = preview();
+    app.autocorrect = crate::autocorrect::Autocorrect::load(app.client.root(), "ca".into());
+    open(&mut app, Section::Messages);
+    assert!(shows(
+        &app,
+        "The word lists have no model for the language you write in, so autocorrect offers nothing in it."
+    ));
+    assert!(
+        !shows(&app, "Download ca model"),
+        "there's nothing to download"
+    );
+}
+
+#[test]
 fn the_accent_suggestions_switch_turns_them_off() {
     let (mut app, _folder) = preview();
     open(&mut app, Section::Messages);

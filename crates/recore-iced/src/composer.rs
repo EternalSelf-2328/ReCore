@@ -64,6 +64,9 @@ pub struct Composer {
     /// suggestion under it.
     pub suggest: crate::suggest::Suggest,
     pub spelling: Option<crate::spelling::Suggestion>,
+    /// The offer dismissed by its ✕, as its place and its word: the same
+    /// one isn't offered again while that word stands there.
+    pub spelling_off: Option<(usize, String)>,
     /// The composer written in last, the channel's or the thread's.
     pub writing_last: Writing,
 }
@@ -211,7 +214,11 @@ pub fn update(app: &mut App, event: Event) -> Task<Message> {
             operation::focus(COMPOSER)
         }
         Event::DismissSpelling => {
-            app.composer.spelling = None;
+            app.composer.spelling_off = app
+                .composer
+                .spelling
+                .take()
+                .map(|suggestion| (suggestion.at(), suggestion.word().to_owned()));
             operation::focus(COMPOSER)
         }
         Event::CancelReply => {

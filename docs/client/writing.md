@@ -30,13 +30,17 @@ is dropped. Words like `esta`/`está` and `el`/`él` are left to the sentence.
 
 A downloaded word list (`autocorrect.rs`) corrects common typos as well, in
 the language Messages says messages are written in, or the desktop's when
-that's automatic, where that language is written with an alphabet. It is optional: Messages' "Autocorrect while writing"
-turns the offers off, and its "Autocorrect model" downloads the list for the
-chosen language when asked, from
-[FrequencyWords](https://github.com/hermitdave/FrequencyWords) (CC BY-SA 4.0,
-built from OpenSubtitles). The list stays in `autocorrect/` in the data
-folder and nothing is sent while typing. Without it, only the Spanish
-accents are offered.
+that's automatic, where that language is written with an alphabet. The
+offers are optional: Messages' "Autocorrect while writing" turns them off,
+and its "Autocorrect model" downloads the list for the chosen language when
+asked, from [FrequencyWords](https://github.com/hermitdave/FrequencyWords)
+(CC BY-SA 4.0, built from OpenSubtitles). The list stays in `autocorrect/`
+in the data folder and nothing is sent while typing. The ✕ beside an offer
+dismisses it for that word where it stands; another word, or the same word
+written again elsewhere, is offered as ever. Without a list, only the
+Spanish accents are offered, and a language the lists don't have (Traditional
+Chinese, or a desktop language outside the twelve) gets no model, which
+Messages says.
 
 Files go with the next message (`uploads.rs`) from the system's file
 dialog (the + where nothing else can start, or the + menu's "Upload a

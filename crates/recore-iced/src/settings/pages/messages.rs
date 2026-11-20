@@ -266,11 +266,14 @@ impl<'a> Page<'a> {
         ];
         match &autocorrect.status {
             Status::Missing => {
+                let fallback = if autocorrect.language.starts_with("es") {
+                    "Without it, autocorrect only offers Spanish accents."
+                } else {
+                    "Without it, autocorrect offers nothing."
+                };
                 parts.push(form::note(
                     theme,
-                    format!(
-                        "The {language} model isn't downloaded. Without it, autocorrect only offers Spanish accents."
-                    ),
+                    format!("The {language} model isn't downloaded. {fallback}"),
                 ));
                 parts.push(
                     action(
@@ -282,6 +285,10 @@ impl<'a> Page<'a> {
                     .into(),
                 );
             }
+            Status::Unsupported => parts.push(form::note(
+                theme,
+                "The word lists have no model for the language you write in, so autocorrect offers nothing in it.",
+            )),
             Status::Downloading => parts.push(form::note(
                 theme,
                 format!("Downloading the {language} model..."),

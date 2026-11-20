@@ -209,6 +209,29 @@ fn a_word_missing_its_accent_is_offered_under_the_composer_and_tab_takes_it() {
 }
 
 #[test]
+fn a_dismissed_offer_stays_away_while_its_word_stands() {
+    let (mut app, _folder) = preview();
+    app.autocorrect.language = "es".into();
+    app.composer.draft.replace("pasion", 6);
+    let text = app.composer.draft.text();
+    let caret = app.composer.draft.caret();
+    app.composer.spelling = crate::autocorrect::for_draft(&app, &text, caret);
+    assert!(shows(&app, "Did you mean"), "the offer");
+    let _ = app.update(Message::Write(crate::composer::Event::DismissSpelling));
+    assert!(app.composer.spelling.is_none(), "the ✕ takes it away");
+    let text = app.composer.draft.text();
+    let caret = app.composer.draft.caret();
+    assert!(
+        crate::autocorrect::for_draft(&app, &text, caret).is_none(),
+        "and typing on doesn't bring it back for that word"
+    );
+    assert!(
+        crate::autocorrect::for_draft(&app, "cancion", 7).is_some(),
+        "another word is still offered"
+    );
+}
+
+#[test]
 fn a_word_an_input_method_is_still_composing_is_offered_and_tab_takes_it() {
     let (mut app, _folder) = preview();
     app.autocorrect.language = "es".into();
