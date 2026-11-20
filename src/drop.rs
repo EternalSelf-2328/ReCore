@@ -39,6 +39,9 @@ enum Source {
     X11(x11rb::rust_connection::RustConnection, u32),
     #[cfg(windows)]
     Win32(isize),
+    /// No pointer-tracking surface on this platform; `of` never makes one.
+    #[cfg(not(any(target_os = "linux", windows)))]
+    Unsupported,
 }
 
 impl Pointer {
@@ -96,6 +99,8 @@ impl Pointer {
                 }
                 (f64::from(point.x), f64::from(point.y))
             }
+            #[cfg(not(any(target_os = "linux", windows)))]
+            Source::Unsupported => return None,
         };
         Some(Drag::Moved {
             x: x / self.scale,

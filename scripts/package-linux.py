@@ -54,13 +54,12 @@ def main():
 
         appdir = temporary / "AppDir"
         shutil.copytree(parts / "AppDir", appdir, symlinks=True)
-        # The themes the client offers beside ReCore, ReCore Paper and the
-        # person's own; shipped inside the AppImage so a fresh install has
-        # the designed themes without a download.
+        # nix/package.nix installs the bundled themes into share/recore;
+        # the AppDir copies that share tree. Do not write into it here: Nix
+        # store files are read-only, and they are already complete.
         themes = appdir / "usr/share/recore/themes"
-        themes.mkdir(parents=True, exist_ok=True)
-        for theme in sorted((ROOT / "themes").glob("*.theme.css")):
-            shutil.copy2(theme, themes / theme.name)
+        if not themes.is_dir():
+            raise SystemExit(f"{themes} is missing; nix/package.nix should install the themes")
         for directory in [appdir, *(path for path in appdir.rglob("*") if path.is_dir() and not path.is_symlink())]:
             directory.chmod(0o755)
         executable = appdir / "usr/bin/recore"

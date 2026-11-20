@@ -13,6 +13,9 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+#[cfg(not(any(target_os = "linux", windows)))]
+use std::collections::HashMap;
+
 pub use recore_core::keybinds::*;
 use recore_core::runtime::BackgroundRuntime;
 
