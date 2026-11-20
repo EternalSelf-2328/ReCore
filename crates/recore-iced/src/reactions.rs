@@ -31,6 +31,8 @@ const ROW: f32 = 52.0;
 pub enum Event {
     /// Another reaction, or answer, by its key.
     Choose(String),
+    /// The chosen reaction's normal people, or its super ones.
+    Super(bool),
     Remove(String),
     Close,
     Scrolled(Scroll),
@@ -51,6 +53,10 @@ impl Reactions {
             Event::Choose(key) => {
                 self.scroll = None;
                 cx.dispatch(Action::ShowReactors(key));
+            }
+            Event::Super(burst) => {
+                self.scroll = None;
+                cx.dispatch(Action::ShowSuperReactors(burst));
             }
             Event::Remove(user) => cx.dispatch(Action::RemoveReactor(user)),
             Event::Close => {
@@ -130,6 +136,15 @@ impl<'a> View<'a> {
             ..Padding::ZERO
         });
         let message = state.message(&window.item);
+        let burst = if window.poll {
+            0
+        } else {
+            state
+                .window_reactions()
+                .into_iter()
+                .find(|reaction| reaction.key == window.key)
+                .map_or(0, |reaction| reaction.burst)
+        };
         if window.poll {
             for answer in state.window_answers() {
                 let key = answer.id.to_string();
@@ -143,6 +158,7 @@ impl<'a> View<'a> {
                     Some(answer.text.as_str()),
                     answer.votes,
                     key,
+                    false,
                 ));
             }
         } else {
@@ -153,9 +169,43 @@ impl<'a> View<'a> {
                     None,
                     reaction.count,
                     reaction.key.clone(),
+                    reaction.burst > 0,
                 ));
             }
         }
+        let filters = (burst > 0).then(|| {
+            let mut buttons = row![].spacing(8).padding(Padding {
+                left: 24.0,
+                right: 16.0,
+                bottom: 8.0,
+                ..Padding::ZERO
+            });
+            for (label, super_reacted, chosen) in [
+                ("Normal", false, !window.burst),
+                ("Super", true, window.burst),
+            ] {
+                let mut face = row![].spacing(6).align_y(Alignment::Center);
+                if super_reacted {
+                    face = face.push(self.cx.look.glyph(Icon::StarFilled, 12, theme.accent));
+                }
+                face = face.push(text(label).size(13).color(if chosen {
+                    theme.accent
+                } else {
+                    theme.secondary
+                }));
+                buttons = buttons.push(
+                    button(face)
+                        .padding([4, 10])
+                        .on_press(Message::Reactions(Event::Super(super_reacted)))
+                        .style(move |_, _| button::Style {
+                            background: chosen.then_some(theme.active.into()),
+                            border: crate::style::round(8),
+                            ..Default::default()
+                        }),
+                );
+            }
+            buttons
+        });
         let side = if window.poll { 220.0 } else { 98.0 };
         let pills = row![
             scroll_view(pills)
@@ -228,20 +278,21 @@ impl<'a> View<'a> {
             .height(Length::Fill)
             .on_scroll(|viewport| Message::Reactions(Event::Scrolled(Scroll::of(viewport))))
             .style(scrollbar(theme));
-        let body = column![
-            head,
-            bar(theme.line, Length::Fill, 1),
+        let mut body = column![head, bar(theme.line, Length::Fill, 1)].padding(Padding {
+            top: 16.0,
+            ..Padding::ZERO
+        });
+        if let Some(filters) = filters {
+            body = body.push(filters);
+        }
+        body = body.push(
             row![pills, people]
                 .padding(Padding {
                     left: 24.0,
                     ..Padding::ZERO
                 })
                 .height(Length::Fill),
-        ]
-        .padding(Padding {
-            top: 16.0,
-            ..Padding::ZERO
-        });
+        );
         let width = 600.0_f32.min(self.cx.look.window.width - 48.0);
         let height = 720.0_f32.min(self.cx.look.window.height - 96.0);
         Some(dialog(
@@ -261,6 +312,7 @@ impl<'a> View<'a> {
         name: Option<&'a str>,
         count: usize,
         key: String,
+        burst: bool,
     ) -> Element<'a, Message> {
         let theme = self.cx.look.theme;
         let mut face = row![].spacing(8).align_y(Alignment::Center);
@@ -282,6 +334,9 @@ impl<'a> View<'a> {
                 .font(BOLD())
                 .color(theme.text),
         );
+        if burst {
+            face = face.push(self.cx.look.glyph(Icon::StarFilled, 12, theme.accent));
+        }
         let (active, hover) = (theme.active, theme.hover);
         column![
             button(

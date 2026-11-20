@@ -957,7 +957,7 @@ async fn lists_who_reacted_as_discords_client_does() {
             .collect()
     };
     let first = discord
-        .reactors(guild, general, &id, "🎉", None, 2)
+        .reactors(guild, general, &id, "🎉", None, 2, false)
         .await
         .unwrap();
     assert_eq!(
@@ -968,7 +968,7 @@ async fn lists_who_reacted_as_discords_client_does() {
         ]
     );
     let rest = discord
-        .reactors(guild, general, &id, "🎉", Some(&first[1].id), 100)
+        .reactors(guild, general, &id, "🎉", Some(&first[1].id), 100, false)
         .await
         .unwrap();
     assert_eq!(
@@ -978,13 +978,30 @@ async fn lists_who_reacted_as_discords_client_does() {
         ["Carol", "Dave"]
     );
     assert!(!rest[0].avatar.is_empty());
+    let burst = discord
+        .reactors(guild, general, &id, "🎉", None, 100, true)
+        .await
+        .unwrap();
+    assert_eq!(
+        burst
+            .iter()
+            .map(|person| person.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Alice", "Dave"],
+        "super reactions list apart"
+    );
     let pages = self::control(server, "GET", "/_control/reactor-pages", "");
     assert!(pages.contains("limit=2&type=0"), "{pages}");
+    assert!(pages.contains("type=1"), "{pages}");
     assert!(pages.contains(&format!("after={}", first[1].id)), "{pages}");
 
-    // A moderator removes Dave's.
+    // A moderator removes Dave's normal and super reactions.
     discord
-        .remove_reaction(general, &id, "🎉", &rest[1].id)
+        .remove_reaction(general, &id, "🎉", &rest[1].id, false)
+        .await
+        .unwrap();
+    discord
+        .remove_reaction(general, &id, "🎉", &burst[1].id, true)
         .await
         .unwrap();
     let removed = self::control(server, "GET", "/_control/reactor-removals", "");

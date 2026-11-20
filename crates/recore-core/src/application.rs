@@ -1976,6 +1976,9 @@ pub enum Action {
     CloseReactions,
     /// Show who reacted with another of the window's reactions.
     ShowReactors(String),
+    /// Show only the super reactions of the reaction the Reactions window
+    /// lists, or its normal ones again.
+    ShowSuperReactors(bool),
     /// Load the window's next page of people.
     MoreReactors,
     /// Remove someone's reaction in the window, by user id: this
@@ -3690,6 +3693,7 @@ impl Application {
             Action::ShowReactions { item, key } => self.show_reactions(item, key),
             Action::CloseReactions => self.close_reactions(),
             Action::ShowReactors(key) => self.show_reactors(key),
+            Action::ShowSuperReactors(burst) => self.show_super_reactors(burst),
             Action::MoreReactors => self.more_reactors(),
             Action::RemoveReactor(user) => self.remove_reactor(user),
             Action::ShowThreads(shown) => self.show_threads(shown),
@@ -4480,9 +4484,10 @@ impl Application {
                 key,
                 after,
                 limit,
+                burst,
                 result,
                 ..
-            } => self.reactors_came(item, key, after, limit, result),
+            } => self.reactors_came(item, key, after, limit, burst, result),
             Event::Threads {
                 room,
                 query,

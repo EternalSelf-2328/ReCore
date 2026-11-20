@@ -584,6 +584,7 @@ impl Matrix {
                 key,
                 after,
                 limit,
+                ..
             } => {
                 let result = match active_timeline(open.as_ref(), &room) {
                     Some(timeline) => {
@@ -597,6 +598,7 @@ impl Matrix {
                     key,
                     after,
                     limit,
+                    burst: false,
                     result,
                 });
             }

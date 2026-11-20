@@ -1344,7 +1344,13 @@ function contentType(filename: string): string {
 
 // --- Messages ---------------------------------------------------------------
 
-type Reaction = { name: string; id: string | null; users: Set<string> };
+type Reaction = {
+  name: string;
+  id: string | null;
+  users: Set<string>;
+  /** Who super reacted, which Discord counts apart from the normal users. */
+  burstUsers?: Set<string>;
+};
 type Poll = {
   question: string;
   answers: { id: number; text: string; emoji?: { id: string | null; name: string } }[];
@@ -1495,16 +1501,19 @@ function wireMessage(message: Message, origin: string, nested = false): Record<s
     };
   }
   if (message.reactions.length) {
-    wire.reactions = message.reactions.map((reaction) => ({
-      emoji: { id: reaction.id, name: reaction.name },
-      count: reaction.users.size,
-      count_details: { burst: 0, normal: reaction.users.size },
-      burst_colors: [],
-      me_burst: false,
-      burst_me: false,
-      me: reaction.users.has(ALICE),
-      burst_count: 0,
-    }));
+    wire.reactions = message.reactions.map((reaction) => {
+      const burst = reaction.burstUsers ?? new Set<string>();
+      return {
+        emoji: { id: reaction.id, name: reaction.name },
+        count: reaction.users.size + burst.size,
+        count_details: { burst: burst.size, normal: reaction.users.size },
+        burst_colors: [],
+        me_burst: burst.has(ALICE),
+        burst_me: false,
+        me: reaction.users.has(ALICE),
+        burst_count: burst.size,
+      };
+    });
   }
   if (message.poll) wire.poll = wirePoll(message.poll);
   const result = message.pollResult ? byId.get(message.pollResult) : undefined;
@@ -1713,7 +1722,7 @@ for (let index = 0; index < extra; index++) {
     const newest = post(GENERAL, users.bob, sample(index), ms, { files });
     const everyone = [ALICE, users.bob.id, users.carol.id, users.dave.id];
     newest.reactions.push(
-      { name: "🎉", id: null, users: new Set(everyone) },
+      { name: "🎉", id: null, users: new Set(everyone), burstUsers: new Set([ALICE, users.dave.id]) },
       { name: "😂", id: null, users: new Set([users.bob.id, users.dave.id]) },
       { name: "❤️", id: null, users: new Set([users.carol.id]) },
     );
@@ -6638,25 +6647,29 @@ async function api(req: Request, path: string, origin: string): Promise<Response
   }
 
   // A moderator removing someone's reaction: /{emoji}/{type}/{user}.
-  if (method === "DELETE" && (m = path.match(/^\/channels\/(\d+)\/messages\/(\d+)\/reactions\/([^/]+)\/[01]\/(\d+)$/))) {
+  if (method === "DELETE" && (m = path.match(/^\/channels\/(\d+)\/messages\/(\d+)\/reactions\/([^/]+)\/([01])\/(\d+)$/))) {
     const message = byId.get(m[2]!);
     if (!message || message.channel !== m[1]) return notFound("Unknown Message", 10008);
     const [name, id = null] = decodeURIComponent(m[3]!).split(":");
     const reaction = message.reactions.find((r) => r.name === name && r.id === id);
-    const user = m[4]!;
-    if (!reaction?.users.delete(user)) return empty();
-    if (reaction.users.size === 0) message.reactions.splice(message.reactions.indexOf(reaction), 1);
+    const burst = m[4] === "1";
+    const users = burst ? reaction?.burstUsers : reaction?.users;
+    const user = m[5]!;
+    if (!users?.delete(user)) return empty();
+    if (reaction!.users.size === 0 && (reaction!.burstUsers?.size ?? 0) === 0) {
+      message.reactions.splice(message.reactions.indexOf(reaction!), 1);
+    }
     reactorRemovals.push(`${message.id} ${name} ${user}`);
     dispatch("MESSAGE_REACTION_REMOVE", {
       user_id: user, channel_id: message.channel, message_id: message.id, ...guildOf(message.channel),
-      emoji: { id, name }, burst: false, type: 0,
+      emoji: { id, name }, burst, type: burst ? 1 : 0,
     });
     return empty();
   }
 
   // Who reacted with an emoji, as Discord pages them: by user id, from
-  // after ?after, up to ?limit (25 unless it says, 100 at most). Burst
-  // reactions (?type=1) are none here.
+  // after ?after, up to ?limit (25 unless it says, 100 at most); ?type=1
+  // lists who super reacted.
   if (method === "GET" && (m = path.match(/^\/channels\/(\d+)\/messages\/(\d+)\/reactions\/([^/]+)$/))) {
     const message = byId.get(m[2]!);
     if (!message || message.channel !== m[1]) return notFound("Unknown Message", 10008);
@@ -6664,10 +6677,10 @@ async function api(req: Request, path: string, origin: string): Promise<Response
     const reaction = message.reactions.find((r) => r.name === name && r.id === id);
     if (!reaction) return notFound("Unknown Emoji", 10014);
     reactorPages.push(`${m[2]} ${decodeURIComponent(m[3]!)} ${url.search}`);
-    if (url.searchParams.get("type") === "1") return json([]);
+    const users = url.searchParams.get("type") === "1" ? (reaction.burstUsers ?? new Set()) : reaction.users;
     const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit") ?? 25)));
     const after = BigInt(url.searchParams.get("after") ?? 0);
-    const page = [...reaction.users]
+    const page = [...users]
       .map((user) => userById.get(user)!)
       .filter((user) => BigInt(user.id) > after)
       .sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? -1 : 1))

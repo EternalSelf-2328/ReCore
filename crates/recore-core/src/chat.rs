@@ -2309,13 +2309,15 @@ pub enum Command {
         key: String,
     },
     /// Who reacted to an item with `key`: up to `limit` of them, after the
-    /// one with id `after`. [`Event::Reactors`] follows.
+    /// one with id `after`, counting only super reactions when `burst`.
+    /// [`Event::Reactors`] follows.
     Reactors {
         room: String,
         item: String,
         key: String,
         after: Option<String>,
         limit: u32,
+        burst: bool,
     },
     /// Vote for `answers` of a Discord poll in place of this account's vote;
     /// none takes it back.
@@ -2344,12 +2346,14 @@ pub enum Command {
         after: Option<String>,
         limit: u32,
     },
-    /// Remove someone else's reaction to an item, as a Discord moderator.
+    /// Remove someone's reaction to an item, as a Discord moderator or its
+    /// owner; `burst` takes a super reaction rather than a normal one.
     RemoveReactor {
         room: String,
         item: String,
         key: String,
         user: String,
+        burst: bool,
     },
     Delete {
         room: String,
@@ -4779,6 +4783,7 @@ pub enum Event {
         key: String,
         after: Option<String>,
         limit: u32,
+        burst: bool,
         result: Result<Vec<Reactor>, String>,
     },
     /// [`Command::SendPoll`]'s poll went up in `room`, or why it didn't.

@@ -597,6 +597,7 @@ fn a_reactions_tooltip_and_window_ask_for_who_reacted() {
         key: "🎉".into(),
         after: None,
         limit: TIP_PEOPLE,
+        burst: false,
         result: Ok(vec![
             person("a", true),
             person("b", false),
@@ -635,6 +636,7 @@ fn a_reactions_tooltip_and_window_ask_for_who_reacted() {
         key: "🎉".into(),
         after: None,
         limit: TIP_PEOPLE,
+        burst: false,
         result: Ok(vec![person("a", true)]),
     });
     assert!(app.state.reactions.as_ref().unwrap().people.is_empty());
@@ -644,6 +646,7 @@ fn a_reactions_tooltip_and_window_ask_for_who_reacted() {
         key: "🎉".into(),
         after: None,
         limit: 100,
+        burst: false,
         result: Ok(vec![person("a", true), person("b", false)]),
     });
     // Fewer than a page: no one's after them, whatever the count.
@@ -667,6 +670,133 @@ fn a_reactions_tooltip_and_window_ask_for_who_reacted() {
     assert!(app.state.reactions.as_ref().unwrap().people.is_empty());
     app.dispatch(Action::CloseReactions);
     assert!(app.state.reactions.is_none());
+}
+
+#[test]
+fn a_reactions_window_lists_super_reactors_apart() {
+    use crate::chat::Reactor;
+    let mut app = connected();
+    let mut reacted = message("e:$bob", false);
+    reacted.reactions = vec![Reaction {
+        key: "🎉".into(),
+        count: 7,
+        burst: 3,
+        mine: false,
+        mine_burst: false,
+    }];
+    app.apply(Event::Timeline {
+        room: "dm".into(),
+        messages: timeline(vec![reacted]),
+    });
+    let person = |id: &str, me| Reactor {
+        id: id.into(),
+        name: id.to_uppercase(),
+        me,
+        ..Default::default()
+    };
+
+    // Opening it asks for the four normal reactions, not all seven.
+    let effects = app.dispatch(Action::ShowReactions {
+        item: "e:$bob".into(),
+        key: None,
+    });
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::Backend(Command::Reactors {
+            key,
+            burst: false,
+            ..
+        })] if key == "🎉"
+    ));
+    assert!(app.state.more_reactors());
+    app.apply(Event::Reactors {
+        room: "dm".into(),
+        item: "e:$bob".into(),
+        key: "🎉".into(),
+        after: None,
+        limit: 100,
+        burst: false,
+        result: Ok(vec![
+            person("a", false),
+            person("b", false),
+            person("c", false),
+            person("d", false),
+        ]),
+    });
+    assert!(!app.state.more_reactors(), "all four normal ones came");
+
+    // Its three super reactions list apart, and a normal page already on
+    // its way doesn't join them.
+    let effects = app.dispatch(Action::ShowSuperReactors(true));
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::Backend(Command::Reactors { burst: true, .. })]
+    ));
+    assert!(app.state.reactions.as_ref().unwrap().people.is_empty());
+    assert!(app.state.more_reactors());
+    app.apply(Event::Reactors {
+        room: "dm".into(),
+        item: "e:$bob".into(),
+        key: "🎉".into(),
+        after: None,
+        limit: 100,
+        burst: false,
+        result: Ok(vec![person("old", false)]),
+    });
+    assert!(app.state.reactions.as_ref().unwrap().people.is_empty());
+    app.apply(Event::Reactors {
+        room: "dm".into(),
+        item: "e:$bob".into(),
+        key: "🎉".into(),
+        after: None,
+        limit: 100,
+        burst: true,
+        result: Ok(vec![
+            person("x", true),
+            person("y", false),
+            person("z", false),
+        ]),
+    });
+    assert_eq!(app.state.reactions.as_ref().unwrap().people.len(), 3);
+    assert!(!app.state.more_reactors(), "all three super ones came");
+    assert!(matches!(
+        app.dispatch(Action::RemoveReactor("x".into())).as_slice(),
+        [Effect::Backend(Command::RemoveReactor {
+            user,
+            burst: true,
+            ..
+        })] if user == "x"
+    ));
+
+    // Normal asks again from the start.
+    assert!(matches!(
+        app.dispatch(Action::ShowSuperReactors(false)).as_slice(),
+        [Effect::Backend(Command::Reactors { burst: false, .. })]
+    ));
+
+    // A reaction with only super reactions opens on them.
+    let mut only = connected();
+    let mut message = message("e:$bob", false);
+    message.reactions = vec![Reaction {
+        key: "🔥".into(),
+        count: 3,
+        burst: 3,
+        mine: false,
+        mine_burst: false,
+    }];
+    only.apply(Event::Timeline {
+        room: "dm".into(),
+        messages: timeline(vec![message]),
+    });
+    let effects = only.dispatch(Action::ShowReactions {
+        item: "e:$bob".into(),
+        key: None,
+    });
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::Backend(Command::Reactors { burst: true, .. })]
+    ));
+    assert!(only.state.reactions.as_ref().unwrap().burst);
 }
 
 #[test]

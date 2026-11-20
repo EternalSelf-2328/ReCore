@@ -244,7 +244,7 @@ fn view_reactions_opens_from_a_messages_menu_and_escape_closes_it() {
                         Reaction {
                             key: "🎉".into(),
                             count: 5,
-                            burst: 0,
+                            burst: 2,
                             mine: false,
                             mine_burst: false,
                         },
@@ -274,6 +274,16 @@ fn view_reactions_opens_from_a_messages_menu_and_escape_closes_it() {
             "its tabs count them"
         );
     }
+    // The reaction's super reactions list apart, as Discord's window does.
+    assert!(shows(&app, "Normal") && shows(&app, "Super"));
+    interact(&mut app, |ui| {
+        ui.click("Super").expect("Super");
+    });
+    assert!(app.client.state().reactions.as_ref().expect("window").burst);
+    interact(&mut app, |ui| {
+        ui.click("Normal").expect("Normal");
+    });
+    assert!(!app.client.state().reactions.as_ref().expect("window").burst);
     let _ = app.update(Message::Key(
         keyboard::Key::Named(key::Named::Escape),
         keyboard::Modifiers::default(),

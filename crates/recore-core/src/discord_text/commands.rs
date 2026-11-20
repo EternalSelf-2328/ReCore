@@ -304,8 +304,9 @@ pub fn command(
             key,
             after,
             limit,
+            burst,
             ..
-        } => channel.reactors(discord, events, item, key, after, limit),
+        } => channel.reactors(discord, events, item, key, after, limit, burst),
         Command::Vote { item, answers, .. } => channel.vote(discord, done, &item, answers),
         Command::EndPoll { item, .. } => channel.end_poll(discord, done, &item),
         Command::Voters {
@@ -316,8 +317,12 @@ pub fn command(
             ..
         } => channel.voters(discord, events, item, answer, after, limit),
         Command::RemoveReactor {
-            item, key, user, ..
-        } => channel.remove_reactor(discord, done, &item, &key, user),
+            item,
+            key,
+            user,
+            burst,
+            ..
+        } => channel.remove_reactor(discord, done, &item, &key, user, burst),
         Command::Delete { item, .. } => channel.delete(discord, done, &item),
         Command::Pin { item, pinned, .. } => channel.pin(discord, done, &item, pinned),
         Command::Retry { item, .. } => {

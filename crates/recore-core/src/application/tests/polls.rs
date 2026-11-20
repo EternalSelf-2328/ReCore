@@ -242,6 +242,7 @@ fn votes_go_to_discord_and_the_window_lists_who_voted() {
         key: "1".into(),
         after: None,
         limit: 100,
+        burst: false,
         result: Ok(vec![crate::chat::Reactor {
             id: "a".into(),
             me: true,

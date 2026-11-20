@@ -1012,6 +1012,7 @@ impl OpenChannel {
         item: &str,
         key: &str,
         user: String,
+        burst: bool,
     ) {
         let Some(message) =
             sent_id(item).and_then(|id| self.message(id.parse().unwrap_or_default()))
@@ -1029,7 +1030,10 @@ impl OpenChannel {
         let (discord, done) = (discord.clone(), done.clone());
         let (room, channel, id) = (self.room.clone(), self.channel.clone(), message.id.clone());
         tokio::spawn(async move {
-            if let Err(error) = discord.remove_reaction(&channel, &id, &emoji, &user).await {
+            if let Err(error) = discord
+                .remove_reaction(&channel, &id, &emoji, &user, burst)
+                .await
+            {
                 let _ = done.send(Done::Failed {
                     room,
                     message: format!("Couldn't remove the reaction: {error}"),
@@ -1048,6 +1052,7 @@ impl OpenChannel {
         key: String,
         after: Option<String>,
         limit: u32,
+        burst: bool,
     ) {
         let emoji = sent_id(&item)
             .and_then(|id| self.message(id.parse().unwrap_or_default()))
@@ -1066,6 +1071,7 @@ impl OpenChannel {
                 key,
                 after,
                 limit,
+                burst,
                 result: Err("That reaction is gone.".into()),
             });
             return;
@@ -1074,7 +1080,15 @@ impl OpenChannel {
         let (guild, channel) = (self.guild.clone(), self.channel.clone());
         tokio::spawn(async move {
             let result = discord
-                .reactors(&guild, &channel, &id, &emoji, after.as_deref(), limit)
+                .reactors(
+                    &guild,
+                    &channel,
+                    &id,
+                    &emoji,
+                    after.as_deref(),
+                    limit,
+                    burst,
+                )
                 .await
                 .map(|people| {
                     people
@@ -1098,6 +1112,7 @@ impl OpenChannel {
                 key,
                 after,
                 limit,
+                burst,
                 result,
             });
         });
@@ -1165,6 +1180,7 @@ impl OpenChannel {
                 key,
                 after,
                 limit,
+                burst: false,
                 result: Err("That poll is gone.".into()),
             });
             return;
@@ -1197,6 +1213,7 @@ impl OpenChannel {
                 key,
                 after,
                 limit,
+                burst: false,
                 result,
             });
         });

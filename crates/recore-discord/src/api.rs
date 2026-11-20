@@ -933,9 +933,11 @@ impl Api {
         message: &str,
         emoji: &str,
         user: &str,
+        burst: bool,
     ) -> Result<()> {
+        let kind = u8::from(burst);
         let path = format!(
-            "/channels/{channel}/messages/{message}/reactions/{}/0/{user}?location=Message&burst=false",
+            "/channels/{channel}/messages/{message}/reactions/{}/{kind}/{user}?location=Message&burst={burst}",
             encode(emoji)
         );
         self.empty(self.request(Method::DELETE, &path)).await
@@ -943,7 +945,8 @@ impl Api {
 
     /// Who reacted to a message with `emoji` (itself, or `name:id` for a
     /// custom one), as user objects: up to `limit`, by user id, after the
-    /// user `after`. Super reactions aren't among them.
+    /// user `after`; only super reactions when `burst`, else only normal
+    /// ones.
     pub async fn reactors(
         &self,
         channel: &str,
@@ -951,9 +954,11 @@ impl Api {
         emoji: &str,
         after: Option<&str>,
         limit: u32,
+        burst: bool,
     ) -> Result<Vec<Value>> {
+        let kind = u8::from(burst);
         let mut path = format!(
-            "/channels/{channel}/messages/{message}/reactions/{}?limit={limit}&type=0",
+            "/channels/{channel}/messages/{message}/reactions/{}?limit={limit}&type={kind}",
             encode(emoji)
         );
         if let Some(after) = after {

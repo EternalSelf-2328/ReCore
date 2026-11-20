@@ -200,7 +200,9 @@ slash command, where one may write, is written in the composer
   View Reactions opens who reacted (`reactions.rs`): the reactions down
   the left, the most first, and the people with the one chosen, a page at
   a time as the list nears its end; one's own reaction, or as a moderator
-  anyone's, comes off from its row.
+  anyone's, comes off from its row. A reaction with super reactions offers
+  Normal and Super above its people, with a star on the Super one; a
+  super-only reaction opens on them.
   Forward opens Discord's dialog (`forward.rs`): up to five conversations
   the core finds, an optional message, the slowmode warning, Send.
 - The keyboard steps through messages (`timeline/keys.rs`): Alt+Up from the

@@ -223,12 +223,14 @@ ReCore is back, rather than showing an error.
 - Who reacted comes as Discord's client asks for it: `GET
   /channels/{c}/messages/{m}/reactions/{emoji}?limit=3&type=0` for a
   reaction's tooltip, and `limit=100` with `after`, the last user id, for each
-  page of the Reactions window. Users come by id; those not known in the
-  server are asked for over the gateway first, so the names are server
-  nicknames, as Discord's client shows them. A moderator removes someone's
-  reaction with `DELETE …/reactions/{emoji}/0/{user}?location=Message&burst=false`.
-  Super reactions count with the rest, and their chip carries a star in
-  the accent; who super reacted isn't listed apart yet.
+  page of the Reactions window; `type=1` lists who super reacted, and the
+  window offers Normal and Super for a reaction that has both. Users come
+  by id; those not known in the server are asked for over the gateway first,
+  so the names are server nicknames, as Discord's client shows them. A
+  moderator removes someone's reaction with `DELETE
+  …/reactions/{emoji}/0/{user}?location=Message&burst=false`, or `burst=true`
+  for a super one. Super reactions count with the rest, and their chip and
+  the window's row carry a star in the accent.
 - Notices take a message's place as Discord's do, each with its icon: joins,
   pins, group additions and removals, channel name and icon changes, boosts
   and the levels they reach, channel follows, Discovery warnings, Stage

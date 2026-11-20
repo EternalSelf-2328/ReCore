@@ -36,6 +36,8 @@ pub struct ReactionsWindow {
     pub poll: bool,
     /// The reaction whose people show, or the poll answer's id.
     pub key: String,
+    /// It lists who super reacted, rather than who reacted normally.
+    pub burst: bool,
     pub people: Vec<Reactor>,
     pub loading: bool,
     /// A page came short: there's no one after it, whatever the count says.
@@ -64,6 +66,7 @@ impl ReactionsWindow {
                 key: self.key.clone(),
                 after,
                 limit: REACTOR_PAGE,
+                burst: self.burst,
             },
         }
     }
@@ -114,8 +117,13 @@ impl AppState {
                     .find(|answer| answer.id.to_string() == window.key)
                     .map(|answer| answer.votes)
             } else {
-                self.reaction(&window.item, &window.key)
-                    .map(|reaction| reaction.count)
+                self.reaction(&window.item, &window.key).map(|reaction| {
+                    if window.burst {
+                        reaction.burst
+                    } else {
+                        reaction.count.saturating_sub(reaction.burst)
+                    }
+                })
             };
             !window.ended && count.is_some_and(|count| count > window.people.len())
         })
@@ -177,6 +185,7 @@ impl Application {
             key,
             after: None,
             limit: TIP_PEOPLE,
+            burst: false,
         })]
     }
 
@@ -238,13 +247,59 @@ impl Application {
         vec![]
     }
 
-    /// Show who reacted with another of the window's reactions.
+    /// Show who reacted with another of the window's reactions. A reaction
+    /// with only super reactions opens on those, as Discord's does.
     pub(super) fn show_reactors(&mut self, key: String) -> Vec<Effect> {
+        let Some(item) = self
+            .state
+            .reactions
+            .as_ref()
+            .map(|window| window.item.clone())
+        else {
+            return vec![];
+        };
+        let only_burst = self
+            .state
+            .reaction(&item, &key)
+            .is_some_and(|reaction| reaction.burst > 0 && reaction.burst >= reaction.count);
         let preview = self.state.preview;
         let Some(window) = &mut self.state.reactions else {
             return vec![];
         };
         window.key = key;
+        window.burst = only_burst;
+        window.people.clear();
+        window.ended = false;
+        window.error = None;
+        window.loading = !preview;
+        if preview {
+            return vec![];
+        }
+        vec![Effect::Backend(window.page(None))]
+    }
+
+    /// List the window's super reactors, or its normal ones again.
+    pub(super) fn show_super_reactors(&mut self, burst: bool) -> Vec<Effect> {
+        let Some((item, key)) = self
+            .state
+            .reactions
+            .as_ref()
+            .map(|window| (window.item.clone(), window.key.clone()))
+        else {
+            return vec![];
+        };
+        let has_burst = self
+            .state
+            .reaction(&item, &key)
+            .is_some_and(|reaction| reaction.burst > 0);
+        let preview = self.state.preview;
+        let Some(window) = &mut self.state.reactions else {
+            return vec![];
+        };
+        if window.poll || window.burst == burst || (burst && !has_burst) {
+            return vec![];
+        }
+        window.burst = burst;
         window.people.clear();
         window.ended = false;
         window.error = None;
@@ -279,13 +334,14 @@ impl Application {
             return vec![];
         };
         let mine = window.people[at].me;
+        let burst = window.burst;
         // A vote is taken back from its poll, not here.
         if window.poll || (!mine && !window.can_remove) {
             return vec![];
         }
         window.people.remove(at);
         let (room, item, key) = (window.room.clone(), window.item.clone(), window.key.clone());
-        if mine {
+        if mine && !burst {
             return self.react(item, key);
         }
         vec![Effect::Backend(Command::RemoveReactor {
@@ -293,6 +349,7 @@ impl Application {
             item,
             key,
             user,
+            burst,
         })]
     }
 
@@ -303,12 +360,14 @@ impl Application {
         key: String,
         after: Option<String>,
         limit: u32,
+        burst: bool,
         result: Result<Vec<Reactor>, String>,
     ) {
         if limit == REACTOR_PAGE
             && let Some(window) = &mut self.state.reactions
             && window.item == item
             && window.key == key
+            && window.burst == burst
             && window.loading
             && window.people.last().map(|person| &person.id) == after.as_ref()
         {
@@ -328,6 +387,7 @@ impl Application {
                 .is_ok_and(|people| people.len() < REACTOR_PAGE as usize);
         }
         if limit == TIP_PEOPLE
+            && !burst
             && after.is_none()
             && let Some(tip) = self
                 .state

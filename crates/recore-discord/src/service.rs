@@ -1242,8 +1242,12 @@ impl Discord {
         emoji: &str,
         after: Option<&str>,
         limit: u32,
+        burst: bool,
     ) -> Result<Vec<Reactor>> {
-        let users = self.api.reactors(channel, id, emoji, after, limit).await?;
+        let users = self
+            .api
+            .reactors(channel, id, emoji, after, limit, burst)
+            .await?;
         Ok(self.people(guild, &users).await)
     }
 
@@ -2574,8 +2578,11 @@ impl Discord {
         id: &str,
         emoji: &str,
         user: &str,
+        burst: bool,
     ) -> Result<()> {
-        self.api.remove_reaction(channel, id, emoji, user).await
+        self.api
+            .remove_reaction(channel, id, emoji, user, burst)
+            .await
     }
 
     /// Adds or removes this account's reaction; `emoji` is in the API's form.
