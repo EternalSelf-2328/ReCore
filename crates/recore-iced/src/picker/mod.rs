@@ -64,6 +64,8 @@ pub enum Event {
     Pick(usize),
     /// A tile's star.
     Star(usize),
+    /// A custom emoji's `:name:`, for the clipboard.
+    CopyName(String),
     /// A section on the rail, by its place.
     Jump(usize),
     /// The pointer came onto a section on the rail, or left it.
@@ -332,6 +334,7 @@ impl Picker {
                 cx.touch();
                 Task::none()
             }
+            Event::CopyName(name) => iced::clipboard::write(name),
             Event::Back => self.gifs_back(cx),
             Event::Close => self.ask_close(cx),
             Event::Term(term) => self.gif_term(term, cx),

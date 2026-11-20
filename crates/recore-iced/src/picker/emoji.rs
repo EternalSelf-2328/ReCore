@@ -127,6 +127,15 @@ impl Face {
     }
 }
 
+/// What copying a custom emoji writes: its `:name:`, as Discord's messages
+/// take it. A Unicode emoji has no such name to copy.
+fn copy_text(face: &Face) -> Option<&str> {
+    match face {
+        Face::Custom(emoji) => Some(&emoji.text),
+        Face::Unicode(_) => None,
+    }
+}
+
 /// What a section's heading and rail button show.
 pub enum Mark {
     Star,
@@ -679,13 +688,27 @@ impl<'a> View<'a> {
             .rail_hover
             .and_then(|index| tab.grid.sections.get(index));
         let foot: Element<'a, Message> = match (pointed, section) {
-            (Some(face), _) => row![
-                self.face_view(tab, face, 30.0, 26, 1.0),
-                kit::foot_words(names::title(&face.key()), true, theme)
-            ]
-            .spacing(10)
-            .align_y(Alignment::Center)
-            .into(),
+            (Some(face), _) => {
+                let mut foot = row![
+                    self.face_view(tab, face, 30.0, 26, 1.0),
+                    kit::foot_words(names::title(&face.key()), true, theme)
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center);
+                if let Some(name) = copy_text(face) {
+                    let copy = button(
+                        self.cx
+                            .look
+                            .glyph(Icon::Copy, 16, theme.secondary)
+                            .boxed(28),
+                    )
+                    .padding(0)
+                    .on_press(Message::Picker(Event::CopyName(name.to_owned())))
+                    .style(lit_style(None, theme.hover, 6.0));
+                    foot = foot.push(Space::new().width(Length::Fill)).push(copy);
+                }
+                foot.into()
+            }
             (None, Some(section)) => row![
                 self.section_mark(tab, &section.mark, 30.0, 26),
                 kit::foot_words(section.name.clone(), true, theme)
@@ -718,5 +741,23 @@ impl<'a> View<'a> {
             .borrow_mut()
             .retain(|key, _| used.contains(key));
         view.into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_custom_emoji_copies_as_its_name() {
+        let face = Face::Custom(CustomEmoji {
+            text: ":party:".into(),
+            id: "5".into(),
+            animated: true,
+            usable: true,
+            picture: "https://cdn/emojis/5.gif".into(),
+        });
+        assert_eq!(copy_text(&face), Some(":party:"));
+        assert_eq!(copy_text(&Face::Unicode("😀")), None);
     }
 }

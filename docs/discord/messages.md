@@ -457,10 +457,12 @@ ReCore is back, rather than showing an error.
   (`recore:emoji/` and the emoji's code points, or `c/`
   and a custom emoji's id), as a mention follows its own.
   The picker, suggestions and reaction buttons show the picture itself; a
-  quiet square holds each place until its picture arrives. A message of only
-  emoji, up to 30, shows them large, as Discord does. Without Nitro, the
-  picker offers only the open server's emoji, none animated, and sending
-  turns `:name:` into Discord's `<:name:id>` only for those.
+  quiet square holds each place until its picture arrives. Pointing at a
+  custom emoji in the picker shows its `:name:` in the foot with a Copy
+  button, which puts that name on the clipboard. A message of only emoji, up
+  to 30, shows them large, as Discord does. Without Nitro, the picker offers
+  only the open server's emoji, none animated, and sending turns `:name:`
+  into Discord's `<:name:id>` only for those.
 - The emoji picker's Favorites and the start of its Frequently used are the
   account's own, as every Discord client of it shows them: `favorite_emojis`,
   `emoji_frecency` and, for a reaction's picker, `emoji_reaction_frecency` in
