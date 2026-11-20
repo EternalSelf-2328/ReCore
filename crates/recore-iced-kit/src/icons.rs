@@ -420,3 +420,25 @@ impl Icon {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Icon;
+
+    #[test]
+    fn reaction_and_thread_icons_are_pixel_glyphs() {
+        // ReCore's own icons are ReCord's 16 by 16 pixel records, drawn
+        // without smoothing; these mark super reactions and threads.
+        for icon in [Icon::StarFilled, Icon::Thread, Icon::Lock] {
+            let svg = icon.svg();
+            assert!(
+                svg.contains(r#"viewBox="0 0 16 16""#),
+                "{icon:?} isn't a 16 by 16 glyph"
+            );
+            assert!(
+                svg.contains(r#"shape-rendering="crispEdges""#),
+                "{icon:?} would be smoothed"
+            );
+        }
+    }
+}

@@ -346,27 +346,32 @@ impl Application {
                     },
                 );
             }
-            if let Some((_, archived, locked, mine)) = self.thread_details(id)
-                && (mine || self.manages_thread(id))
+            if self.state.discord_online
+                && let Some((_, archived, locked, mine)) = self.thread_details(id)
             {
-                let at = usize::from(choices.first() == Some(&MenuChoice::MarkRead));
-                choices.insert(
-                    at,
-                    if archived {
-                        MenuChoice::OpenThread
-                    } else {
-                        MenuChoice::CloseThread
-                    },
-                );
-                if archived {
+                let manages = self.manages_thread(id);
+                // Discord's creator may close or open their thread, but only
+                // Manage Threads may lock or unlock it.
+                if mine || manages {
+                    let at = usize::from(choices.first() == Some(&MenuChoice::MarkRead));
                     choices.insert(
-                        at + 1,
-                        if locked {
-                            MenuChoice::UnlockThread
+                        at,
+                        if archived {
+                            MenuChoice::OpenThread
                         } else {
-                            MenuChoice::LockThread
+                            MenuChoice::CloseThread
                         },
                     );
+                    if manages && archived {
+                        choices.insert(
+                            at + 1,
+                            if locked {
+                                MenuChoice::UnlockThread
+                            } else {
+                                MenuChoice::LockThread
+                            },
+                        );
+                    }
                 }
             }
             return choices;
@@ -495,14 +500,24 @@ impl Application {
 
     /// Closes a Discord thread, which archives it, or opens it again, or
     /// locks or unlocks it, from its menu. Discord sends the change back as
-    /// CHANNEL_UPDATE, which shows it.
+    /// THREAD_UPDATE, which shows it.
     pub(super) fn edit_thread(
         &self,
         room: String,
         archived: Option<bool>,
         locked: Option<bool>,
     ) -> Vec<Effect> {
-        if !self.state.discord_online || self.thread_details(&room).is_none() {
+        let choice = match (archived, locked) {
+            (Some(true), _) => MenuChoice::CloseThread,
+            (Some(false), _) => MenuChoice::OpenThread,
+            (None, Some(true)) => MenuChoice::LockThread,
+            (None, Some(false)) => MenuChoice::UnlockThread,
+            (None, None) => return vec![],
+        };
+        // As with joining, the menu says whether this account may do it now:
+        // Discord may be away, the thread may have changed, or this account
+        // may lack Manage Threads.
+        if !self.menu_choices(&room).contains(&choice) {
             return vec![];
         }
         vec![Effect::Backend(Command::Discord(

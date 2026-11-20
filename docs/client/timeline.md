@@ -67,10 +67,11 @@ waits for its retry.
 A message shows the line above it (the reply it quotes, or who used the
 command it answers), the author line, its text, `(edited)`, its pictures,
 a file's card (its name and size), link previews and bots' cards (a bar of
-their colour, site, author, title, description, fields, pictures,
-thumbnail and footer), stickers, a poll, a voice message, an app's
-components, and reactions. The author line has the name (in its role
-colour, else the brightest white), the server tag, a green star for an
+their colour, site, author with their 20px icon and name opening its link,
+title, description, fields, pictures, thumbnail, and footer with its icon),
+stickers, a poll, a voice message, an app's components, and reactions.
+The author line has the name (in its role colour, else the brightest white),
+the server tag, a green star for an
 author who joined the server in the last week (`new_member`; not a bot, not
 one who left and came back, and not in a server itself under a week old, as
 Discord's client marks them), and, in a forum post, an "OP" tag for the

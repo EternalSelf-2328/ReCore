@@ -54,6 +54,9 @@ pub(super) fn embed<'a>(
     laid: &'a EmbedText,
 ) -> Element<'a, Message> {
     let theme = ctx.look.theme;
+    // ReCore's square theme squares the author's and footer's icons too,
+    // as it squares avatars.
+    let icon_radius = if theme.square { 0.0 } else { 10.0 };
     let small = |size: f32, ink: Color| Look {
         size,
         line_height: (size * 1.3).round(),
@@ -96,7 +99,7 @@ pub(super) fn embed<'a>(
                 ctx.shot(
                     Shot::new(Some(icon), Size::new(20.0, 20.0))
                         .fit(Fit::Contain)
-                        .radius(10.0),
+                        .radius(icon_radius),
                 ),
             );
         }
@@ -186,7 +189,7 @@ pub(super) fn embed<'a>(
                 ctx.shot(
                     Shot::new(Some(icon), Size::new(20.0, 20.0))
                         .fit(Fit::Contain)
-                        .radius(10.0),
+                        .radius(icon_radius),
                 ),
             );
         }

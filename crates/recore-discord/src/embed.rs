@@ -89,21 +89,28 @@ fn picture(value: &Value, shown: Shown, thumbnail: bool) -> Option<Attachment> {
     })
 }
 
-/// An author's or footer's icon, which Discord sends as a proxy of a
-/// square picture without dimensions; it shows at 20px.
+/// The size an author's or footer's icon is downloaded at: twice the 20px
+/// it shows at, for high-DPI displays.
+const ICON_SIZE: u64 = 40;
+
+/// An author's or footer's icon, which Discord sends through its media proxy
+/// as a square picture without dimensions; it shows at 20px.
 fn icon(value: &Value, shown: Shown) -> Option<Attachment> {
-    let source = value["icon_url"].as_str();
-    let proxy = value["proxy_url"].as_str();
-    let url = proxy.or(source)?;
-    let name = file_name(source.unwrap_or(url)).unwrap_or("icon.png");
+    // Discord names the proxy of an author's or footer's icon
+    // `proxy_icon_url`, unlike a picture's `proxy_url`. An icon without one
+    // stays out: `icon_url` names a site ReCore never contacts.
+    let proxy = value["proxy_icon_url"].as_str()?;
+    let separator = if proxy.contains('?') { '&' } else { '?' };
+    let preview = format!("{proxy}{separator}width={ICON_SIZE}&height={ICON_SIZE}");
+    let name = file_name(value["icon_url"].as_str().unwrap_or(proxy)).unwrap_or("icon.png");
     Some(Attachment {
         name: name.to_owned(),
         size: None,
-        url: url.into(),
+        url: proxy.into(),
         image: true,
         dimensions: None,
-        preview_url: Some(url.to_owned()),
-        view_url: Some(url.to_owned()),
+        preview_url: Some(preview.clone()),
+        view_url: Some(preview),
         still_url: None,
         video_url: None,
         link_url: None,
@@ -360,14 +367,12 @@ mod tests {
             "author": {
                 "name": "Ann", "url": "https://example.com/ann",
                 "icon_url": "https://example.com/ann.png",
-                "proxy_url": "https://images-ext-1.discordapp.net/external/x/https/example.com/ann.png",
-                "width": 20, "height": 20,
+                "proxy_icon_url": "https://images-ext-1.discordapp.net/external/x/https/example.com/ann.png",
             },
             "footer": {
                 "text": "Example",
                 "icon_url": "https://example.com/footer.png",
-                "proxy_url": "https://images-ext-1.discordapp.net/external/x/https/example.com/footer.png",
-                "width": 20, "height": 20,
+                "proxy_icon_url": "https://images-ext-1.discordapp.net/external/x/https/example.com/footer.png",
             },
         }]));
         assert_eq!(
@@ -386,6 +391,22 @@ mod tests {
                 ("footer.png", Shown::FooterIcon(0), true),
             ]
         );
+        let proxy = "https://images-ext-1.discordapp.net/external/x/https/example.com";
+        assert_eq!(&*parsed.pictures[0].url, format!("{proxy}/ann.png"));
+        let preview = format!("{proxy}/ann.png?width=40&height=40");
+        assert_eq!(
+            parsed.pictures[0].preview_url.as_deref(),
+            Some(preview.as_str())
+        );
+        // Without a proxy the icon stays out, rather than having ReCore
+        // contact the site the card links to.
+        let unproxied = parse(&json!([{
+            "type": "rich", "title": "A card",
+            "author": {
+                "name": "Ann", "icon_url": "https://example.com/ann.png",
+            },
+        }]));
+        assert!(unproxied.pictures.is_empty());
     }
 
     #[test]

@@ -45,6 +45,53 @@ async fn joins_and_leaves_threads_as_discords_client_does() {
     );
 }
 
+/// A thread's creator closes it from its menu, then opens it again, as
+/// Discord's client does; part of [`talks_to_the_fake_server`], whose
+/// session it shares.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "starts testing/fake_discord.ts with bun; run scripts/test-fake-discord"]
+async fn closes_and_opens_threads_as_discords_client_does() {
+    let fixture = Fixture::start("closes_and_opens_threads_as_discords_client_does").await;
+    let discord = &fixture.discord;
+    let guild = fixture.guild.as_str();
+    let general = fixture.general.as_str();
+    let latest = discord
+        .history(guild, general, Span::Latest)
+        .await
+        .unwrap()
+        .messages;
+    let message = latest.last().unwrap().id.clone();
+    let thread = discord
+        .start_thread(
+            guild,
+            general,
+            Some(&message),
+            "Closing time",
+            false,
+            "Message",
+        )
+        .await
+        .unwrap();
+    let archived = |snapshot: &Snapshot| {
+        snapshot.servers[0]
+            .threads
+            .iter()
+            .find(|listed| listed.id == thread)
+            .and_then(|listed| listed.thread.as_deref())
+            .map(|details| details.archived)
+    };
+    discord
+        .edit_thread(&thread, Some(true), None)
+        .await
+        .unwrap();
+    snapshot_where(discord, |snapshot| archived(snapshot) == Some(true)).await;
+    discord
+        .edit_thread(&thread, Some(false), None)
+        .await
+        .unwrap();
+    snapshot_where(discord, |snapshot| archived(snapshot) == Some(false)).await;
+}
+
 /// A forum's posts and what their cards show, as Discord's client loads
 /// them; part of [`talks_to_the_fake_server`], whose session it shares.
 #[tokio::test(flavor = "multi_thread")]

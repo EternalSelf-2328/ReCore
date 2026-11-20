@@ -7304,8 +7304,32 @@ async function api(req: Request, path: string, origin: string): Promise<Response
     }
     return empty();
   }
-  if (method === "GET" && (m = path.match(/^\/channels\/(\d+)$/)) && threads.has(m[1]!)) {
-    return json(wireThread(threads.get(m[1]!)!));
+  if ((m = path.match(/^\/channels\/(\d+)$/)) && threads.has(m[1]!)) {
+    const thread = threads.get(m[1]!)!;
+    if (method === "GET") return json(wireThread(thread));
+    if (method === "PATCH") {
+      const body: any = await req.json().catch(() => ({}));
+      const valid = ["archived", "locked"].every(
+        (key) => !(key in body) || typeof body[key] === "boolean",
+      );
+      if (!valid) return json({ message: "Invalid Form Body", code: 50035 }, 400);
+      // Discord's creator may archive or unarchive their thread; locking,
+      // unlocking and editing anyone else's thread take Manage Threads.
+      const manages = (serverPermissions(ALICE) & BigInt(bit(34))) !== 0n;
+      if (thread.owner.id !== ALICE && !manages) {
+        return json({ message: "Missing Permissions", code: 50013 }, 403);
+      }
+      if ("locked" in body && !manages) {
+        return json({ message: "Missing Permissions", code: 50013 }, 403);
+      }
+      if ("archived" in body) {
+        thread.archived = body.archived;
+        thread.archiveChanged = Date.now();
+      }
+      if ("locked" in body) thread.locked = body.locked;
+      dispatch("THREAD_UPDATE", wireThread(thread));
+      return json(wireThread(thread));
+    }
   }
   const envServer = (m = path.match(/^\/channels\/(\d+)$/)) ? world?.channelGuild.get(m[1]!) : undefined;
   if (method === "GET" && envServer) return json(envGuild(envServer).channels.find((channel) => channel.id === m![1]));

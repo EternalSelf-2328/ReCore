@@ -3089,7 +3089,8 @@ pub enum DiscordCommand {
         location: &'static str,
     },
     /// Close a Discord thread, which archives it, or open it again, and
-    /// lock or unlock it; the fields left out stay as they are.
+    /// lock or unlock it; Discord sends THREAD_UPDATE. The fields left out
+    /// stay as they are.
     EditThread {
         room: String,
         archived: Option<bool>,

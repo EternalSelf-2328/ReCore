@@ -383,6 +383,34 @@ mod tests {
     }
 
     #[test]
+    fn super_reactions_keep_their_burst_flag() {
+        let names = RwLock::default();
+        let reaction = |event: Event| {
+            let data = json!({
+                "channel_id": "10",
+                "message_id": "20",
+                "user_id": "3",
+                "burst": true,
+                "emoji": {"id": null, "name": "🔥"},
+            });
+            live_events("3", None, &names, &event, &data, None)
+                .into_iter()
+                .map(|live| match live {
+                    Live::Reaction {
+                        burst, me, added, ..
+                    } => (burst, me, added),
+                    other => panic!("not a reaction: {other:?}"),
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(reaction(Event::MessageReactionAdd), [(true, true, true)]);
+        assert_eq!(
+            reaction(Event::MessageReactionRemove),
+            [(true, true, false)]
+        );
+    }
+
+    #[test]
     fn votes_come_one_for_each_person_and_answer() {
         let names = RwLock::default();
         let votes = |event: Event, data: Value| -> Vec<_> {

@@ -120,32 +120,46 @@ fn discord_threads_open_once_listed() {
 
 #[test]
 #[cfg(feature = "discord")]
-fn a_threads_creator_closes_opens_and_locks_it_from_its_menu() {
+fn a_threads_creator_closes_and_opens_it_while_managers_lock_it() {
     use recore_discord::{
-        ready::{Channel, Server, Thread},
+        ready::{Channel, Server, Thread, permission::MANAGE_THREADS},
         service::{Snapshot, Status},
     };
-    let snapshot = |archived, locked| Snapshot {
+    // This account, `user`, starts the thread unless it's `manager`: then
+    // it's someone else's, and its role may manage threads.
+    let snapshot = |user: &str, archived, locked, manager| Snapshot {
         status: Status::Online,
-        user_id: Some("1".into()),
-        servers: vec![MarkedServer::from(Server {
-            id: "10".into(),
-            name: "Test".into(),
-            threads: vec![Channel {
-                id: "30".into(),
-                name: "Plans".into(),
-                parent: Some("21".into()),
-                thread: Some(Box::new(Thread {
-                    owner: Some("1".into()),
-                    joined: true,
-                    archived,
-                    locked,
+        user_id: Some(user.into()),
+        servers: vec![MarkedServer {
+            server: Arc::new(Server {
+                id: "10".into(),
+                name: "Test".into(),
+                roles: if manager {
+                    std::collections::HashMap::from([("20".to_owned(), MANAGE_THREADS)])
+                } else {
+                    std::collections::HashMap::new()
+                }
+                .into(),
+                threads: vec![Channel {
+                    id: "30".into(),
+                    name: "Plans".into(),
+                    parent: Some("21".into()),
+                    thread: Some(Box::new(Thread {
+                        owner: Some("1".into()),
+                        joined: true,
+                        archived,
+                        locked,
+                        ..Default::default()
+                    })),
                     ..Default::default()
-                })),
+                }],
                 ..Default::default()
-            }],
-            ..Default::default()
-        })],
+            }),
+            marks: Arc::new(ServerMarks {
+                roles: if manager { vec!["20".into()] } else { vec![] },
+                ..Default::default()
+            }),
+        }],
         ..Default::default()
     };
     let mut app = connected();
@@ -158,7 +172,8 @@ fn a_threads_creator_closes_opens_and_locks_it_from_its_menu() {
         }],
         servers: vec![],
     }));
-    app.apply(discord_event(snapshot(false, false)));
+    // The creator closes it, and may open it again, but not lock it.
+    app.apply(discord_event(snapshot("1", false, false, false)));
     let choices = app.menu_choices("discord:10:30");
     assert!(choices.contains(&MenuChoice::CloseThread));
     assert!(!choices.contains(&MenuChoice::LockThread), "only archived");
@@ -175,12 +190,23 @@ fn a_threads_creator_closes_opens_and_locks_it_from_its_menu() {
             locked: None,
         }))] if room == "discord:10:30"
     ));
+    app.apply(discord_event(snapshot("1", true, false, false)));
+    let choices = app.menu_choices("discord:10:30");
+    assert!(choices.contains(&MenuChoice::OpenThread));
+    assert!(!choices.contains(&MenuChoice::LockThread), "not a manager");
+    assert!(!choices.contains(&MenuChoice::CloseThread));
+    let effects = app.dispatch(Action::EditThread {
+        room: "discord:10:30".into(),
+        archived: None,
+        locked: Some(true),
+    });
+    assert!(effects.is_empty(), "a creator may not lock");
 
-    app.apply(discord_event(snapshot(true, false)));
+    // A manager closes, opens, locks and unlocks someone else's thread.
+    app.apply(discord_event(snapshot("2", true, false, true)));
     let choices = app.menu_choices("discord:10:30");
     assert!(choices.contains(&MenuChoice::OpenThread));
     assert!(choices.contains(&MenuChoice::LockThread));
-    assert!(!choices.contains(&MenuChoice::CloseThread));
     let effects = app.dispatch(Action::EditThread {
         room: "discord:10:30".into(),
         archived: None,
@@ -194,30 +220,38 @@ fn a_threads_creator_closes_opens_and_locks_it_from_its_menu() {
             locked: Some(true),
         }))] if room == "discord:10:30"
     ));
+    app.apply(discord_event(snapshot("2", true, true, true)));
+    let choices = app.menu_choices("discord:10:30");
+    assert!(choices.contains(&MenuChoice::UnlockThread));
+    assert!(!choices.contains(&MenuChoice::LockThread));
+    let effects = app.dispatch(Action::EditThread {
+        room: "discord:10:30".into(),
+        archived: None,
+        locked: Some(false),
+    });
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::Backend(Command::Discord(DiscordCommand::EditThread {
+            room,
+            archived: None,
+            locked: Some(false),
+        }))] if room == "discord:10:30"
+    ));
+
     // Someone else's thread offers none of it without Manage Threads.
-    let mut theirs = connected();
-    theirs.apply(discord_event(Snapshot {
-        status: Status::Online,
-        user_id: Some("2".into()),
-        servers: vec![MarkedServer::from(Server {
-            id: "10".into(),
-            name: "Test".into(),
-            threads: vec![Channel {
-                id: "30".into(),
-                name: "Plans".into(),
-                parent: Some("21".into()),
-                thread: Some(Box::new(Thread {
-                    owner: Some("1".into()),
-                    ..Default::default()
-                })),
-                ..Default::default()
-            }],
-            ..Default::default()
-        })],
-        ..Default::default()
-    }));
-    let choices = theirs.menu_choices("discord:10:30");
+    app.apply(discord_event(snapshot("3", true, false, false)));
+    let choices = app.menu_choices("discord:10:30");
     assert!(!choices.contains(&MenuChoice::CloseThread));
+    assert!(!choices.contains(&MenuChoice::OpenThread));
+    assert!(!choices.contains(&MenuChoice::LockThread));
+    assert!(!choices.contains(&MenuChoice::UnlockThread));
+
+    // Nor does it while Discord is away, even for its creator.
+    let mut offline = snapshot("1", true, false, false);
+    offline.status = Status::Offline("Not connected".into());
+    app.apply(discord_event(offline));
+    let choices = app.menu_choices("discord:10:30");
+    assert!(!choices.contains(&MenuChoice::OpenThread));
     assert!(!choices.contains(&MenuChoice::LockThread));
 }
 
