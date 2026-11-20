@@ -66,12 +66,16 @@ The fork adds:
 - **An optional autocorrect word list** for the language you write in,
   downloaded on request from Messages and kept on the device; without it,
   Spanish accents are still offered under the composer.
-- **ReCord's sounds** as the `ReCord` sound set in Settings → Sounds:
-  call and message sounds, plus interface feedback for hover, menus,
-  navigation, typing, send, Escape and the boot signal, with a master
-  interface volume and switches for hover, typing and boot.
+- **ReCord's sounds** as the `ReCord` sound theme in Settings → Sounds,
+  alongside Kenney's UI sets and the twelve UI SFX themes ReCord's plugin
+  offers: call, message and interface sounds, with a theme for every sound,
+  per-sound themes over the shared one, a Play button and a master volume.
 - **A CSS theme interpreter** for the common Discord theme sources: colours,
-  accents, fonts, radius, backgrounds and ReCord's `--rl-*` options. See
+  accents, fonts, radius, backgrounds, local and remote imports, and ReCord's
+  `--rl-*` options. Each theme's variables become controls in Appearance with
+  labels, groups, defaults and choices read from the variable names, the
+  theme's comments, `@property` rules and BetterDiscord `@var` metadata, plus
+  recommended/changed filters and a URL importer for large ones. See
   [docs/themes.md](docs/themes.md).
 
 ## Backgrounds
@@ -192,10 +196,15 @@ palettes are in `crates/recore-core/src/theme.rs`.
 - **Yapfast**, the client this is forked from, by wiredtenshi and its
   contributors: GPL-3.0-or-later. The full upstream history is in this
   repository.
+- **Ambxst**, the Quickshell desktop shell by Axenide, whose Material You
+  palette and rounded-panel language inspired `themes/Ambxst.theme.css`:
+  AGPL-3.0. The theme file is ReCore's own; no Ambxst code is copied.
 - **ReCord**, the theme this fork is built around, by leriart: theme code
   Apache-2.0, companion plugin GPL-3.0-or-later. The signal-pack WAVs are
   CC0 1.0, original synthesized audio, with the licence in
-  `crates/recore-core/sounds/record/ui/LICENSE.txt`. Pixel Operator by Jayvee
+  `crates/recore-core/sounds/record/ui/LICENSE.txt`; the Kenney and UI SFX
+  packs are CC0 1.0, with their licences in
+  `crates/recore-core/sounds/packs/`. Pixel Operator by Jayvee
   Enaguas (HarvettFox96), CC0 1.0; the licence is in
   `crates/recore-iced-kit/fonts/LICENSE-PixelOperator.txt`.
 - Yapfast's bundled palettes and assets keep their own licences, as the

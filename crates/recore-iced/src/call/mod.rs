@@ -397,7 +397,7 @@ pub(crate) fn play(app: &App, sound: Sound) {
         return;
     }
     recore_core::sounds::play(
-        app.layout.voice.sound_set,
+        app.layout.voice.set_for(sound),
         sound,
         app.layout.voice.sound_gain(sound),
         voice.speaker.as_deref(),

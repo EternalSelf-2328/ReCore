@@ -12,7 +12,10 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    fs,
     path::{Path, PathBuf},
+    sync::Mutex,
+    time::Duration,
 };
 
 use iced::Color;
@@ -156,12 +159,15 @@ pub struct Themes {
     pub background: Option<iced::widget::image::Handle>,
     pub background_picture: Option<std::sync::Arc<recore_core::chat::Picture>>,
     pub background_dim: f32,
+    /// The theme files' fingerprint when they were last read.
+    fingerprint: u64,
 }
 
 impl Themes {
     /// The themes `layout` keeps, and the CSS themes in `root`'s themes
     /// folder and the clients' own.
     pub fn read(root: &Path, layout: &Layout) -> Self {
+        set_remote_cache_dir(root);
         let mut custom = layout.custom_themes.clone();
         palette::tidy(&mut custom);
         let folders = theme_folders(root);
@@ -184,20 +190,60 @@ impl Themes {
             background: None,
             background_picture: None,
             background_dim: 0.0,
+            fingerprint: 0,
         };
-        themes.reload();
+        themes.reload_local();
         themes
     }
 
-    /// Reads the CSS themes again, keeping the chosen one if it's still there.
+    /// Reads the CSS themes again, keeping the chosen one if it's still
+    /// there. Reload CSS uses this and follows every theme's remote imports.
     pub fn reload(&mut self) {
-        let scan = recore_css::scan(&self.folders);
+        self.reload_with(true);
+    }
+
+    /// Reads the local theme files only, then follows the chosen theme's
+    /// remote imports. This is what starting the window does: a folder full
+    /// of remote themes no longer waits for every base to download before
+    /// the first frame. Choosing a theme fills its imports in.
+    pub fn reload_local(&mut self) {
+        self.reload_with(false);
+    }
+
+    fn reload_with(&mut self, remote_all: bool) {
+        let scan = if remote_all {
+            let mut fetched: BTreeMap<String, Option<Vec<u8>>> = BTreeMap::new();
+            recore_css::scan_with_imports(&self.folders, &mut |url| {
+                fetched
+                    .entry(url.to_owned())
+                    .or_insert_with(|| fetch_remote(url))
+                    .clone()
+            })
+        } else {
+            recore_css::scan(&self.folders)
+        };
         self.css = scan.themes;
         self.problems = scan.problems;
+        self.fingerprint = recore_css::theme_files_fingerprint(&self.folders);
         self.apply_overrides();
+        if !remote_all {
+            let chosen = self.chosen_id().to_owned();
+            if self.chosen_css().is_some() {
+                self.reload_one(&chosen);
+            } else {
+                self.apply_font(&chosen);
+                self.load_background();
+            }
+            return;
+        }
         let chosen = self.chosen_id().to_owned();
         self.apply_font(&chosen);
         self.load_background();
+    }
+
+    /// Whether a theme file was added, removed or saved since the last read.
+    pub fn files_changed(&self) -> bool {
+        recore_css::theme_files_fingerprint(&self.folders) != self.fingerprint
     }
 
     /// Re-reads each CSS theme that has options the person changed, so its
@@ -223,8 +269,12 @@ impl Themes {
                     .collect(),
                 ..recore_css::Options::default()
             };
-            if let Ok(reloaded) = recore_css::load_with(path, &options) {
+            if let Ok(reloaded) =
+                recore_css::load_with_imports(path, &options, &mut |url| fetch_remote(url))
+            {
+                let id = theme.id.clone();
                 *theme = reloaded;
+                theme.id = id;
             }
         }
     }
@@ -275,6 +325,30 @@ impl Themes {
         self.reload_one(id);
     }
 
+    /// Forgets one changed option, restoring the theme's own value.
+    pub fn clear_option(&mut self, root: &Path, id: &str, name: &str) {
+        let mut names = std::collections::BTreeSet::new();
+        names.insert(name.to_owned());
+        self.clear_named(root, id, &names);
+    }
+
+    /// Forgets the changed options in `names`, restoring the theme's values.
+    pub fn clear_named(
+        &mut self,
+        root: &Path,
+        id: &str,
+        names: &std::collections::BTreeSet<String>,
+    ) {
+        if let Some(changed) = self.overrides.get_mut(id) {
+            changed.retain(|name, _| !names.contains(name));
+            if changed.is_empty() {
+                self.overrides.remove(id);
+            }
+            layout::store(root, "css_options", &self.overrides);
+            self.reload_one(id);
+        }
+    }
+
     /// Forgets every changed option of the CSS theme `id`.
     pub fn clear_options(&mut self, root: &Path, id: &str) {
         self.overrides.remove(id);
@@ -305,8 +379,12 @@ impl Themes {
                 .unwrap_or_default(),
             ..recore_css::Options::default()
         };
-        if let Ok(reloaded) = recore_css::load_with(path, &options) {
+        if let Ok(reloaded) =
+            recore_css::load_with_imports(path, &options, &mut |url| fetch_remote(url))
+        {
+            let id = self.css[index].id.clone();
             self.css[index] = reloaded;
+            self.css[index].id = id;
         }
         let chosen = self.chosen_id().to_owned();
         self.apply_font(&chosen);
@@ -527,8 +605,12 @@ impl Themes {
     pub fn choose(&mut self, root: &Path, id: &str) {
         self.chosen = Some(id.to_owned());
         layout::store(root, "theme", id);
-        self.apply_font(id);
-        self.load_background();
+        if self.css.iter().any(|css| css.id == id) {
+            self.reload_one(id);
+        } else {
+            self.apply_font(id);
+            self.load_background();
+        }
     }
 
     /// Decodes the chosen CSS theme's background picture, if it names one
@@ -556,6 +638,9 @@ impl Themes {
                     recore_core::chat::decode_picture(bytes, BACKGROUND_WIDTH, BACKGROUND_HEIGHT)
                 }
                 Some(recore_css::Image::File(path)) => load_picture_file(path),
+                Some(recore_css::Image::Url(url)) => {
+                    remote_picture(url, BACKGROUND_WIDTH, BACKGROUND_HEIGHT)
+                }
                 _ => None,
             };
             (dim, background)
@@ -662,6 +747,298 @@ const BACKGROUND_HEIGHT: u32 = 720;
 /// keep their animation, which the window's picture players step.
 fn load_picture_file(path: &Path) -> Option<recore_core::chat::Picture> {
     recore_core::chat::decode_picture_at(path, BACKGROUND_WIDTH, BACKGROUND_HEIGHT)
+}
+
+/// Downloads a picture a CSS theme names on the web and decodes it like a
+/// local one.
+fn remote_picture(url: &str, width: u32, height: u32) -> Option<recore_core::chat::Picture> {
+    let Some(bytes) = fetch_remote(url) else {
+        tracing::warn!(%url, "a theme's remote background picture did not download");
+        return None;
+    };
+    recore_core::chat::decode_picture(&bytes, width, height)
+}
+
+/// The most a theme's remote file may be: enough for a long stylesheet or a
+/// font, not enough to hold the window while a stray address answers.
+const REMOTE_LIMIT: usize = 8 * 1024 * 1024;
+
+/// How long a downloaded theme file stays in memory, so Reload CSS doesn't
+/// ask the web for the same base theme over and over.
+const REMOTE_TTL: Duration = Duration::from_secs(600);
+/// How many remote files are kept: a folder of themes that share a base.
+const REMOTE_KEEP: usize = 64;
+
+type RemoteCache = Mutex<BTreeMap<String, (std::time::Instant, Vec<u8>)>>;
+
+fn remote_cache() -> &'static RemoteCache {
+    static CACHE: std::sync::OnceLock<RemoteCache> = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(BTreeMap::new()))
+}
+
+/// The folder remote theme files are kept in across starts. It follows the
+/// data folder, so a theme works offline after its first load.
+fn remote_cache_dir() -> &'static Mutex<Option<PathBuf>> {
+    static DIR: std::sync::OnceLock<Mutex<Option<PathBuf>>> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| Mutex::new(None))
+}
+
+fn set_remote_cache_dir(root: &Path) {
+    if let Ok(mut dir) = remote_cache_dir().lock() {
+        *dir = Some(root.join("theme-cache"));
+    }
+}
+
+/// After a connection fails, other downloads wait this long before trying:
+/// an offline machine should not stall startup once per import.
+const REMOTE_RETRY: Duration = Duration::from_secs(30);
+
+fn offline_until() -> &'static std::sync::Mutex<Option<std::time::Instant>> {
+    static UNTIL: std::sync::OnceLock<std::sync::Mutex<Option<std::time::Instant>>> =
+        std::sync::OnceLock::new();
+    UNTIL.get_or_init(|| std::sync::Mutex::new(None))
+}
+
+fn remote_offline() -> bool {
+    offline_until()
+        .lock()
+        .ok()
+        .and_then(|until| *until)
+        .is_some_and(|until| std::time::Instant::now() < until)
+}
+
+/// Forgets the remote theme files downloaded so far, so Reload CSS sees a
+/// changed base theme at once.
+pub fn clear_remote_cache() {
+    if let Ok(mut cache) = remote_cache().lock() {
+        cache.clear();
+    }
+    if let Ok(mut until) = offline_until().lock() {
+        *until = None;
+    }
+    if let Ok(dir) = remote_cache_dir().lock()
+        && let Some(dir) = dir.as_ref()
+    {
+        let _ = fs::remove_dir_all(dir);
+    }
+}
+
+/// Downloads `url` for the CSS interpreter: the remote `@import`s, fonts and
+/// pictures a theme names. It runs on a thread of its own so that the
+/// blocking client never starts a second runtime inside the window's.
+fn fetch_remote(url: &str) -> Option<Vec<u8>> {
+    let lower = url.to_ascii_lowercase();
+    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+        return None;
+    }
+    if let Ok(mut cache) = remote_cache().lock()
+        && let Some((at, bytes)) = cache.get_mut(url)
+    {
+        if at.elapsed() < REMOTE_TTL {
+            *at = std::time::Instant::now();
+            return Some(bytes.clone());
+        }
+    }
+    let disk = disk_cache_read(url);
+    let fallback = if disk.is_some() {
+        disk.clone()
+    } else {
+        disk_cache_read_any(url)
+    };
+    if let Some(bytes) = &disk
+        && let Ok(mut cache) = remote_cache().lock()
+    {
+        cache.insert(url.to_owned(), (std::time::Instant::now(), bytes.clone()));
+    }
+    if remote_offline() {
+        return fallback;
+    }
+    let url_owned = url.to_owned();
+    let fetched = std::thread::Builder::new()
+        .name("recore-theme-fetch".into())
+        .spawn(move || {
+            let _ = recore_core::init_tls();
+            let client = reqwest::blocking::Client::builder()
+                .timeout(Duration::from_secs(10))
+                .user_agent(concat!("ReCore/", env!("CARGO_PKG_VERSION")))
+                .build()
+                .ok()?;
+            let response = match client.get(&url_owned).send() {
+                Ok(response) => response,
+                Err(error) => {
+                    tracing::warn!(url = %url_owned, error = %error, "a theme's remote file did not connect");
+                    if let Ok(mut until) = offline_until().lock() {
+                        *until = Some(std::time::Instant::now() + REMOTE_RETRY);
+                    }
+                    return None;
+                }
+            };
+            if !response.status().is_success() {
+                tracing::warn!(url = %url_owned, status = %response.status(), "a theme's remote file did not download");
+                return None;
+            }
+            if response
+                .content_length()
+                .is_some_and(|length| length > REMOTE_LIMIT as u64)
+            {
+                tracing::warn!(url = %url_owned, "a theme's remote file is too large");
+                return None;
+            }
+            let bytes = response.bytes().ok()?;
+            if let Ok(mut until) = offline_until().lock() {
+                *until = None;
+            }
+            if bytes.len() > REMOTE_LIMIT {
+                tracing::warn!(url = %url_owned, "a theme's remote file is too large");
+                return None;
+            }
+            Some(bytes.to_vec())
+        })
+        .ok()?;
+    let fetched = match fetched.join().ok().flatten() {
+        Some(bytes) => bytes,
+        None => return fallback,
+    };
+    disk_cache_write(url, &fetched);
+    if let Ok(mut cache) = remote_cache().lock() {
+        if cache.len() >= REMOTE_KEEP
+            && let Some(oldest) = cache
+                .iter()
+                .min_by_key(|(_, (at, _))| *at)
+                .map(|(url, _)| url.clone())
+        {
+            cache.remove(&oldest);
+        }
+        cache.insert(url.to_owned(), (std::time::Instant::now(), fetched.clone()));
+    }
+    Some(fetched)
+}
+
+/// Downloads a theme URL into `folder` and returns the file it wrote. The
+/// CSS keeps its remote imports; they are read by the interpreter as usual.
+pub fn import_theme(folder: &Path, url: &str) -> Result<PathBuf, String> {
+    let bytes = fetch_remote(url).ok_or_else(|| {
+        "The theme did not download. Check the address and the connection.".to_owned()
+    })?;
+    if bytes.is_empty() {
+        return Err("The theme downloaded empty.".to_owned());
+    }
+    fs::create_dir_all(folder)
+        .map_err(|error| format!("Could not make the themes folder: {error}"))?;
+    let mut name = url
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(url)
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or("")
+        .to_owned();
+    name = name
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_') {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    if name.is_empty() || name == "-" {
+        name = "imported.theme.css".to_owned();
+    } else if !name.to_ascii_lowercase().ends_with(".css") {
+        name.push_str(".theme.css");
+    }
+    let mut path = folder.join(name);
+    let mut number = 2;
+    while path.exists() {
+        let stem = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("imported");
+        path = folder.join(format!("{stem}-{number}.theme.css"));
+        number += 1;
+    }
+    fs::write(&path, bytes).map_err(|error| format!("Could not save the theme: {error}"))?;
+    Ok(path)
+}
+
+/// A stable file name for a URL, without pulling in a hash dependency.
+fn remote_key(url: &str) -> String {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    for byte in url.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{hash:016x}")
+}
+
+fn disk_cache_path(url: &str) -> Option<PathBuf> {
+    let dir = remote_cache_dir().lock().ok()?.as_ref().cloned()?;
+    Some(dir.join(format!("{}.bin", remote_key(url))))
+}
+
+fn disk_cache_read(url: &str) -> Option<Vec<u8>> {
+    let path = disk_cache_path(url)?;
+    let meta = fs::metadata(&path).ok()?;
+    if meta.len() > REMOTE_LIMIT as u64 {
+        let _ = fs::remove_file(&path);
+        return None;
+    }
+    if meta
+        .modified()
+        .ok()
+        .and_then(|modified| modified.elapsed().ok())
+        .is_some_and(|age| age > REMOTE_TTL)
+    {
+        return None;
+    }
+    fs::read(path)
+        .ok()
+        .filter(|bytes| bytes.len() <= REMOTE_LIMIT)
+}
+
+/// The cached copy even after its TTL, used as an offline fallback.
+fn disk_cache_read_any(url: &str) -> Option<Vec<u8>> {
+    let path = disk_cache_path(url)?;
+    let meta = fs::metadata(&path).ok()?;
+    if meta.len() > REMOTE_LIMIT as u64 {
+        return None;
+    }
+    fs::read(path)
+        .ok()
+        .filter(|bytes| bytes.len() <= REMOTE_LIMIT)
+}
+
+fn disk_cache_write(url: &str, bytes: &[u8]) {
+    let Some(path) = disk_cache_path(url) else {
+        return;
+    };
+    let Some(parent) = path.parent() else {
+        return;
+    };
+    if fs::create_dir_all(parent).is_err() {
+        return;
+    }
+    let temporary = path.with_extension("part");
+    if fs::write(&temporary, bytes).is_ok() {
+        let _ = fs::rename(&temporary, &path);
+    }
+    // Keep the folder from growing without limit when someone cycles through
+    // many remote bases.
+    if let Ok(entries) = fs::read_dir(parent) {
+        let mut files: Vec<_> = entries
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().is_some_and(|extension| extension == "bin"))
+            .collect();
+        if files.len() > 128 {
+            files.sort_by_key(|path| fs::metadata(path).and_then(|meta| meta.modified()).ok());
+            for old in files.iter().take(files.len() - 128) {
+                let _ = fs::remove_file(old);
+            }
+        }
+    }
 }
 
 /// The family ReCore's own theme draws with.
@@ -881,6 +1258,7 @@ mod tests {
             background: None,
             background_picture: None,
             background_dim: 0.0,
+            fingerprint: 0,
         }
         .shown();
         assert_eq!(recore.accent, crate::style::hex(0xe94221));
@@ -901,6 +1279,7 @@ mod tests {
                 background: None,
                 background_picture: None,
                 background_dim: 0.0,
+                fingerprint: 0,
             }
         }
         .shown();

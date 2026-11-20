@@ -14,6 +14,12 @@
 //! nodes to match here. Themes load their colours, fonts, radius, background
 //! picture and the ReCord effects they name; the rest is kept in the file for
 //! people, not painted.
+//!
+//! `@import`s are local by default. [`load_with_imports`] and
+//! [`scan_with_imports`] take a fetch callback and also read `http:` and
+//! `https:` imports, their nested imports and remote `@font-face` files.
+//! A remote picture is returned as [`Image::Url`] for the caller to fetch
+//! when it shows the theme.
 
 use crate::{base64, color, css};
 use std::{
@@ -234,13 +240,19 @@ pub fn load(path: impl AsRef<Path>) -> Result<ThemeFile, String> {
     load_with(path, &Options::default())
 }
 
-/// Reads a theme file with `options`.
-pub fn load_with(path: impl AsRef<Path>, options: &Options) -> Result<ThemeFile, String> {
+/// Reads a theme file with `options`, downloading the `http:` and `https:`
+/// imports and fonts it names through `fetch`. A remote picture stays an
+/// [`Image::Url`], which the caller fetches when it shows the theme.
+pub fn load_with_imports(
+    path: impl AsRef<Path>,
+    options: &Options,
+    fetch: &mut dyn FnMut(&str) -> Option<Vec<u8>>,
+) -> Result<ThemeFile, String> {
     let path = path.as_ref();
     let css = fs::read_to_string(path)
         .map_err(|error| format!("could not read {}: {error}", path.display()))?;
     let directory = path.parent().map(Path::to_path_buf);
-    let mut theme = load_str(&css, directory.as_deref(), options)?;
+    let mut theme = load_str_with_imports(&css, directory.as_deref(), options, fetch)?;
     theme.path = Some(path.to_path_buf());
     if theme.name == "CSS theme"
         && let Some(stem) = path.file_stem().and_then(|stem| stem.to_str())
@@ -251,6 +263,11 @@ pub fn load_with(path: impl AsRef<Path>, options: &Options) -> Result<ThemeFile,
     Ok(theme)
 }
 
+/// Reads a theme file with `options`.
+pub fn load_with(path: impl AsRef<Path>, options: &Options) -> Result<ThemeFile, String> {
+    load_with_imports(path, options, &mut |_| None)
+}
+
 /// Reads the CSS `css`, with `directory` as the base for its imports, fonts
 /// and pictures.
 pub fn load_str(
@@ -258,18 +275,56 @@ pub fn load_str(
     directory: Option<&Path>,
     options: &Options,
 ) -> Result<ThemeFile, String> {
+    load_str_with_imports(css, directory, options, &mut |_| None)
+}
+
+/// [`load_str`], downloading remote imports and fonts through `fetch`.
+pub fn load_str_with_imports(
+    css: &str,
+    directory: Option<&Path>,
+    options: &Options,
+    fetch: &mut dyn FnMut(&str) -> Option<Vec<u8>>,
+) -> Result<ThemeFile, String> {
     let meta = Meta::read(css);
     let mut warnings = Vec::new();
     let sheet = css::parse_in(css, directory, &mut |base, path| {
-        read_import(base, path, &mut warnings)
+        if is_remote(path) || base.is_some_and(remote_path) {
+            let url = remote_target(base, path);
+            match fetch(&url) {
+                Some(bytes) => match String::from_utf8(bytes) {
+                    Ok(text) => Some((text, PathBuf::from(url))),
+                    Err(_) => {
+                        warnings.push(format!("the @import {url} is not UTF-8 CSS"));
+                        None
+                    }
+                },
+                None => None,
+            }
+        } else {
+            read_import(base, path, &mut warnings)
+        }
     });
     let mut fonts = Vec::new();
     if options.fonts {
         for face in &sheet.fonts {
-            if let Some(bytes) = face
-                .data
-                .clone()
-                .or_else(|| read_font(directory, &face.source, &mut warnings))
+            let mut bytes = face.data.clone();
+            if bytes.is_none() {
+                if let Some(url) = remote_source(&face.source, face.origin.as_deref()) {
+                    bytes = fetch(&url);
+                    if bytes.is_none() {
+                        warnings.push(format!("could not download the font {url}"));
+                    }
+                } else if !face.origin.as_deref().is_some_and(is_remote) {
+                    let base = face
+                        .origin
+                        .as_deref()
+                        .filter(|origin| !is_remote(origin))
+                        .map(Path::new)
+                        .or(directory);
+                    bytes = read_font(base, &face.source, &mut warnings);
+                }
+            }
+            if let Some(bytes) = bytes
                 && !bytes.is_empty()
             {
                 fonts.push(Font {
@@ -301,7 +356,7 @@ pub fn load_str(
             });
         }
         let tint = vars
-            .first_color(&["--rl-tint"], dark)
+            .first_color(&["--rl-tint"], !dark)
             .unwrap_or(accent.ink())
             .hex();
         vars.insert(&css::Declaration {
@@ -337,7 +392,17 @@ pub fn load_str(
     look.font_family = native.font_family.clone().or(look.font_family);
     look.font_size = native.font_size.or(look.font_size);
     look.letter_spacing = native.letter_spacing.or(look.letter_spacing);
-    let specs = crate::options::detect(&vars, dark);
+    let mut specs = crate::options::merge(
+        crate::options::detect_with_notes(&vars, dark, &sheet.notes, &sheet.properties),
+        crate::options::detect_with_notes(
+            &collected.vars(!dark),
+            !dark,
+            &sheet.notes,
+            &sheet.properties,
+        ),
+        !dark,
+    );
+    crate::options::apply_meta(&mut specs, &meta.vars);
     let name = meta.name.clone().unwrap_or_else(|| "CSS theme".to_owned());
     Ok(ThemeFile {
         id: format!("css:{}", slug(&name)),
@@ -355,6 +420,91 @@ pub fn load_str(
         options: specs,
         warnings,
     })
+}
+
+/// Whether `path` was written as an absolute web address.
+fn is_remote(path: &str) -> bool {
+    path.get(..7)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("http://"))
+        || path
+            .get(..8)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("https://"))
+        || path.starts_with("//")
+}
+
+fn remote_path(path: &Path) -> bool {
+    is_remote(&path.to_string_lossy())
+}
+
+/// The web address a remote import names, resolved against the remote file
+/// that imports it.
+fn remote_target(base: Option<&Path>, path: &str) -> String {
+    if path.starts_with("//") {
+        return format!("https:{path}");
+    }
+    if is_remote(path) {
+        return path.to_owned();
+    }
+    let Some(base) = base.filter(|base| remote_path(base)) else {
+        return path.to_owned();
+    };
+    let base = base.to_string_lossy();
+    let scheme = base.split("://").next().unwrap_or("https");
+    if let Some(path) = path.strip_prefix('/') {
+        let host = base
+            .split("://")
+            .nth(1)
+            .unwrap_or("")
+            .split('/')
+            .next()
+            .unwrap_or("");
+        return format!("{scheme}://{host}/{path}");
+    }
+    normalize_remote(&format!("{}/{}", base.trim_end_matches('/'), path))
+}
+
+/// Collapses `./` and `../` in a web address, as a server would.
+fn normalize_remote(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url.to_owned();
+    };
+    let Some((host, path)) = rest.split_once('/') else {
+        return url.to_owned();
+    };
+    let mut segments: Vec<&str> = Vec::new();
+    for segment in path.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." => {
+                segments.pop();
+            }
+            segment => segments.push(segment),
+        }
+    }
+    if segments.is_empty() {
+        format!("{scheme}://{host}")
+    } else {
+        format!("{scheme}://{host}/{}", segments.join("/"))
+    }
+}
+
+/// The first `url(...)` in a `src` or `background` value when it is a web
+/// address, resolved against a remote stylesheet's own folder.
+fn remote_source(source: &str, origin: Option<&str>) -> Option<String> {
+    let start = css::find_ignore_case(source, "url(")?;
+    let rest = &source[start + 4..];
+    let end = rest.find(')')?;
+    let path = rest[..end].trim().trim_matches(['"', '\'']);
+    if path.starts_with("data:") {
+        return None;
+    }
+    if is_remote(path) {
+        return Some(remote_target(None, path));
+    }
+    if origin.is_some_and(is_remote) && !path.starts_with("file://") {
+        return Some(remote_target(origin.map(Path::new), path));
+    }
+    None
 }
 
 fn read_import(
@@ -387,14 +537,15 @@ fn read_font(
     source: &str,
     warnings: &mut Vec<String>,
 ) -> Option<Vec<u8>> {
-    let start = source.find("url(")?;
+    let start = css::find_ignore_case(source, "url(")?;
     let rest = &source[start + 4..];
     let end = rest.find(')')?;
     let path = rest[..end].trim().trim_matches(['"', '\'']);
-    if path.starts_with("http://") || path.starts_with("https://") {
-        warnings.push(format!("font {path} is on the web; not read"));
+    if is_remote(path) {
+        // The caller downloads remote fonts; a missing fetcher leaves none.
         return None;
     }
+    let path = path.trim_start_matches("file://");
     let full = resolve_path(directory, path)?;
     match fs::read(&full) {
         Ok(bytes) => Some(bytes),
@@ -408,43 +559,53 @@ fn read_font(
     }
 }
 
-/// Every declaration that writes on the root, split by the appearance it
-/// applies to, in source order.
+/// Every declaration that writes on the root, with the appearance it applies
+/// to, in source order: `None` for both, `Some(true)` for the dark palette and
+/// `Some(false)` for the light one.
 #[derive(Default)]
 struct Collected {
-    base: Vec<css::Declaration>,
-    dark: Vec<css::Declaration>,
-    light: Vec<css::Declaration>,
+    entries: Vec<Entry>,
+}
+
+struct Entry {
+    declaration: css::Declaration,
+    dark: Option<bool>,
+    specificity: u32,
+    order: usize,
+    origin: Option<String>,
+    layer: Option<u32>,
 }
 
 fn collect(sheet: &Stylesheet) -> Collected {
     let mut collected = Collected::default();
+    let mut order = 0usize;
     for rule in &sheet.rules {
         for selector in &rule.selectors {
-            let Some(scope) = css::root_selector(selector, true) else {
+            let Some((selector_dark, specificity)) =
+                css::root_selector_with_specificity(selector, true)
+            else {
                 continue;
             };
             let explicit = selector_is_explicit(selector);
-            let mut dark = scope;
-            if let Some(scheme) = rule.color_scheme {
-                // A rule under `prefers-color-scheme: light` writes the light
-                // palette even when its selector is `:root`.
-                if scheme != dark && !explicit {
-                    dark = scheme;
-                } else if scheme != dark {
-                    continue;
-                }
-            }
-            let target = if explicit || rule.color_scheme.is_some() {
-                if dark {
-                    &mut collected.dark
-                } else {
-                    &mut collected.light
-                }
-            } else {
-                &mut collected.base
+            let scope = match (explicit.then_some(selector_dark), rule.color_scheme) {
+                // `.theme-light` inside `prefers-color-scheme: dark` can never
+                // apply, and neither can the other way around.
+                (Some(a), Some(b)) if a != b => continue,
+                (Some(dark), _) => Some(dark),
+                (None, Some(dark)) => Some(dark),
+                (None, None) => None,
             };
-            target.extend(rule.declarations.iter().cloned());
+            for declaration in &rule.declarations {
+                collected.entries.push(Entry {
+                    declaration: declaration.clone(),
+                    dark: scope,
+                    specificity,
+                    order,
+                    origin: rule.origin.clone(),
+                    layer: rule.layer,
+                });
+                order += 1;
+            }
         }
     }
     collected
@@ -465,45 +626,94 @@ fn selector_is_explicit(selector: &str) -> bool {
         || lower.contains("data-rl-mode='dark'")
 }
 
+impl Entry {
+    /// CSS layers outrank specificity: a later layer beats an earlier one,
+    /// and unlayered rules beat every layer. The weight packs the layer in
+    /// above the selector's specificity.
+    fn layer_specificity(&self) -> u32 {
+        let layer = self.layer.map_or(1_000_000_000, |rank| {
+            rank.saturating_add(1).saturating_mul(1_000_000)
+        });
+        layer.saturating_add(self.specificity.min(999_999))
+    }
+}
+
 impl Collected {
-    fn vars(&self, dark: bool) -> css::Vars {
+    /// The cascade for `dark`.
+    fn vars_with(&self, dark: bool) -> css::Vars {
         let mut vars = css::Vars::default();
-        for declaration in &self.base {
-            vars.insert(declaration);
-        }
-        for declaration in if dark { &self.dark } else { &self.light } {
-            vars.insert(declaration);
+        for entry in &self.entries {
+            if entry.dark.is_some_and(|scope| scope != dark) {
+                continue;
+            }
+            vars.insert_weighted(
+                &entry.declaration,
+                entry.layer_specificity(),
+                entry.order,
+                entry.origin.as_deref(),
+            );
         }
         vars
     }
 
+    fn vars(&self, dark: bool) -> css::Vars {
+        self.vars_with(dark)
+    }
+
     /// The appearance the theme asks for: an explicit `color-scheme`, then
-    /// the ground it paints.
+    /// the ground it paints. The base declarations are read as light first,
+    /// then the dark set, then the light set.
     fn appearance(&self) -> Option<bool> {
         let mut vars = css::Vars::default();
-        for declaration in &self.base {
-            vars.insert(declaration);
-        }
-        if let Some(scheme) = vars.get("color-scheme") {
-            if scheme.eq_ignore_ascii_case("light") {
-                return Some(false);
+        for entry in &self.entries {
+            if entry.dark.is_none() {
+                vars.insert_weighted(
+                    &entry.declaration,
+                    entry.layer_specificity(),
+                    entry.order,
+                    entry.origin.as_deref(),
+                );
             }
-            if scheme.eq_ignore_ascii_case("dark") {
+        }
+        if let Some(dark) = appearance_of(&vars, true) {
+            return Some(dark);
+        }
+        let dark_vars = self.vars_with(true);
+        if let Some(dark) = appearance_of(&dark_vars, false) {
+            return Some(dark);
+        }
+        let light_vars = self.vars_with(false);
+        appearance_of(&light_vars, true)
+    }
+}
+
+/// The appearance a set of root declarations names: `color-scheme`, then the
+/// brightness of the ground. `light` chooses `light-dark()`'s branch.
+fn appearance_of(vars: &css::Vars, light: bool) -> Option<bool> {
+    if let Some(scheme) = vars.get("color-scheme") {
+        let lower = scheme.to_ascii_lowercase();
+        for word in lower.split_whitespace() {
+            if word == "dark" {
                 return Some(true);
             }
+            if word == "light" {
+                return Some(false);
+            }
         }
-        let background = vars.first_color(
-            &[
-                "--background-primary",
-                "--background-base-lower",
-                "--chat-background",
-                "--background",
-                "--background-secondary",
-            ],
-            true,
-        )?;
-        Some(background.is_dark())
     }
+    let background = vars.first_color(
+        &[
+            "--background-primary",
+            "--background-base-lower",
+            "--chat-background",
+            "--background",
+            "--background-secondary",
+            "--backgroundsecondary",
+            "--backgroundprimary",
+        ],
+        light,
+    )?;
+    Some(background.is_dark())
 }
 
 fn choose_dark(collected: &Collected, mode: Mode, warnings: &mut Vec<String>) -> bool {
@@ -514,10 +724,11 @@ fn choose_dark(collected: &Collected, mode: Mode, warnings: &mut Vec<String>) ->
             if let Some(dark) = collected.appearance() {
                 return dark;
             }
-            if !collected.dark.is_empty() && collected.light.is_empty() {
-                return true;
-            }
-            if collected.dark.is_empty() && !collected.light.is_empty() {
+            let has_light = collected
+                .entries
+                .iter()
+                .any(|entry| entry.dark == Some(false));
+            if has_light {
                 return false;
             }
             warnings.push(
@@ -543,7 +754,7 @@ fn over(vars: &css::Vars, names: &[&str], light: bool, ground: Rgba) -> Option<R
         .map(|color| color.over(ground))
 }
 
-/// A px length in a custom property.
+/// A px, rem or em length in a custom property.
 fn length(vars: &css::Vars, names: &[&str]) -> Option<f32> {
     for name in names {
         let Some(raw) = vars.get(name) else {
@@ -552,15 +763,24 @@ fn length(vars: &css::Vars, names: &[&str]) -> Option<f32> {
         let Some(value) = vars.resolve(raw) else {
             continue;
         };
-        let value = value.trim().trim_end_matches("px");
-        if let Ok(value) = value.parse::<f32>() {
+        let value = value.trim().to_ascii_lowercase();
+        let value = if let Some(number) = value.strip_suffix("rem") {
+            number.trim().parse::<f32>().ok().map(|value| value * 16.0)
+        } else if let Some(number) = value.strip_suffix("em") {
+            number.trim().parse::<f32>().ok().map(|value| value * 16.0)
+        } else if let Some(number) = value.strip_suffix("px") {
+            number.trim().parse::<f32>().ok()
+        } else {
+            value.parse::<f32>().ok()
+        };
+        if let Some(value) = value {
             return Some(value);
         }
     }
     None
 }
 
-/// A percentage custom property as 0..1 (`25` or `25%`).
+/// A percentage custom property as 0..1 (`25`, `25%` or `0.25`).
 fn fraction(vars: &css::Vars, names: &[&str]) -> Option<f32> {
     for name in names {
         let Some(raw) = vars.get(name) else {
@@ -575,10 +795,33 @@ fn fraction(vars: &css::Vars, names: &[&str]) -> Option<f32> {
                 return Some((value / 100.0).clamp(0.0, 1.0));
             }
         } else if let Ok(value) = value.parse::<f32>() {
-            return Some(value.clamp(0.0, 1.0));
+            // ReCord writes 0.25; older themes write 25 for the same level.
+            return Some(if value > 1.0 {
+                (value / 100.0).clamp(0.0, 1.0)
+            } else {
+                value.clamp(0.0, 1.0)
+            });
         }
     }
     None
+}
+
+/// A CSS duration in seconds (`6s`, `250ms` or `0`).
+fn duration(vars: &css::Vars, name: &str) -> Option<f32> {
+    let raw = vars.get(name)?;
+    let value = vars.resolve(raw)?;
+    let value = value.trim().to_ascii_lowercase();
+    if let Some(number) = value.strip_suffix("ms") {
+        number
+            .trim()
+            .parse::<f32>()
+            .ok()
+            .map(|value| value / 1000.0)
+    } else if let Some(number) = value.strip_suffix('s') {
+        number.trim().parse::<f32>().ok()
+    } else {
+        value.parse::<f32>().ok()
+    }
 }
 
 fn image(vars: &css::Vars, directory: Option<&Path>, names: &[&str]) -> Option<Image> {
@@ -592,24 +835,39 @@ fn image(vars: &css::Vars, directory: Option<&Path>, names: &[&str]) -> Option<I
         if value.trim().eq_ignore_ascii_case("none") {
             continue;
         }
-        let Some(start) = value.find("url(") else {
-            continue;
+        let path = if let Some(start) = css::find_ignore_case(&value, "url(") {
+            let rest = &value[start + 4..];
+            let Some(end) = rest.find(')') else {
+                continue;
+            };
+            rest[..end].trim().trim_matches(['"', '\''])
+        } else {
+            // A field the window wrote may hold the path without `url()`.
+            let path = value.trim().trim_matches(['"', '\'']);
+            if path.is_empty() {
+                continue;
+            }
+            path
         };
-        let rest = &value[start + 4..];
-        let Some(end) = rest.find(')') else {
-            continue;
-        };
-        let path = rest[..end].trim().trim_matches(['"', '\'']);
+        let origin = vars.origin(name);
+        let path = path.trim().trim_start_matches("file://");
         if path.starts_with("data:") {
             if let Some(bytes) = css_data_uri(path) {
                 return Some(Image::Data(bytes));
             }
-        } else if path.starts_with("http://") || path.starts_with("https://") {
-            return Some(Image::Url(path.to_owned()));
-        } else if let Some(full) = resolve_path(directory, path)
-            && full.exists()
-        {
-            return Some(Image::File(full));
+        } else if is_remote(path) {
+            return Some(Image::Url(remote_target(None, path)));
+        } else if origin.is_some_and(is_remote) {
+            // A relative picture in a downloaded stylesheet is downloaded
+            // from beside it, not looked for on this machine.
+            return Some(Image::Url(remote_target(origin.map(Path::new), path)));
+        } else {
+            let base = origin.filter(|origin| !is_remote(origin)).map(Path::new);
+            if let Some(full) = resolve_path(base.or(directory), path)
+                && full.exists()
+            {
+                return Some(Image::File(full));
+            }
         }
     }
     None
@@ -649,12 +907,13 @@ fn percent_decode(text: &str) -> Vec<u8> {
 
 /// Maps a theme's custom properties onto ReCore's colours.
 pub fn palette(vars: &css::Vars, dark: bool) -> Palette {
-    let light = dark;
+    let light = !dark;
     // The modern Discord tokens, then the ones before Discord's 2024 redesign.
     let ground = pick(
         vars,
         &[
             "--background-primary",
+            "--backgroundprimary",
             "--background-base-lower",
             "--chat-background",
             "--background",
@@ -662,6 +921,7 @@ pub fn palette(vars: &css::Vars, dark: bool) -> Palette {
         light,
         &[
             "--background-secondary",
+            "--backgroundsecondary",
             "--background-base-lowest",
             "--background-tertiary",
         ],
@@ -673,9 +933,14 @@ pub fn palette(vars: &css::Vars, dark: bool) -> Palette {
     );
     let text = pick(
         vars,
-        &["--text-normal", "--text-default", "--header-primary"],
+        &[
+            "--text-normal",
+            "--text-default",
+            "--header-primary",
+            "--textbrightest",
+        ],
         light,
-        &["--primary-100", "--text-strong", "--white"],
+        &["--primary-100", "--text-strong", "--textbright", "--white"],
         ground.ink(),
     );
     let accent = pick(
@@ -686,9 +951,10 @@ pub fn palette(vars: &css::Vars, dark: bool) -> Palette {
             "--control-primary-background-default",
             "--background-brand",
             "--blurple-50",
+            "--accentcolor",
         ],
         light,
-        &["--brand-360", "--text-brand"],
+        &["--brand-360", "--text-brand", "--accentcolor2"],
         Rgba::rgb(0x58, 0x65, 0xf2),
     );
     let wash = if dark {
@@ -700,12 +966,17 @@ pub fn palette(vars: &css::Vars, dark: bool) -> Palette {
         vars,
         &[
             "--background-floating",
+            "--backgroundfloating",
             "--background-surface-high",
             "--card-background-default",
             "--background-nested-floating",
         ],
         light,
-        &["--background-secondary-alt", "--background-secondary"],
+        &[
+            "--background-secondary-alt",
+            "--background-secondary",
+            "--backgroundsecondary",
+        ],
         ground.mix(wash, 0.06),
     );
     let field = pick(
@@ -713,10 +984,16 @@ pub fn palette(vars: &css::Vars, dark: bool) -> Palette {
         &[
             "--channeltextarea-background",
             "--input-background-default",
+            "--backgroundcode",
             "--background-code",
         ],
         light,
-        &["--background-secondary-alt", "--background-tertiary"],
+        &[
+            "--background-secondary-alt",
+            "--backgroundsecondaryalt",
+            "--background-tertiary",
+            "--backgroundtertiary",
+        ],
         ground.mix(if dark { Rgba::rgb(0, 0, 0) } else { wash }, 0.05),
     );
     let sunken = pick(
@@ -724,21 +1001,23 @@ pub fn palette(vars: &css::Vars, dark: bool) -> Palette {
         &[
             "--background-base-lowest",
             "--background-tertiary",
+            "--backgroundtertiary",
             "--background-accent",
         ],
         light,
-        &["--background-secondary-alt"],
+        &["--background-secondary-alt", "--backgroundsecondaryalt"],
         ground.mix(if dark { Rgba::rgb(0, 0, 0) } else { wash }, 0.08),
     );
     let sidebar = pick(
         vars,
         &[
             "--background-secondary",
+            "--backgroundsecondary",
             "--background-base-low",
             "--panel-bg",
         ],
         light,
-        &["--background-secondary-alt"],
+        &["--background-secondary-alt", "--backgroundsecondaryalt"],
         ground.mix(wash, 0.03),
     );
     let line = pick(
@@ -790,6 +1069,7 @@ pub fn palette(vars: &css::Vars, dark: bool) -> Palette {
             "--control-critical-primary-background-default",
             "--red-400",
             "--danger",
+            "--dangercolor",
         ],
         light,
         &["--red-500"],
@@ -806,39 +1086,49 @@ pub fn palette(vars: &css::Vars, dark: bool) -> Palette {
         &["--header-secondary", "--text-muted", "--interactive-normal"],
         light,
         &["--text-subtle"],
-        text.mix(ground, 0.65),
+        text.mix(ground, 0.35),
     );
     let muted = pick(
         vars,
         &["--text-muted", "--interactive-normal", "--channels-default"],
         light,
         &["--interactive-muted"],
-        text.mix(ground, 0.48),
+        text.mix(ground, 0.52),
     );
     let faint = pick(
         vars,
         &["--text-subtle", "--interactive-muted", "--channel-icon"],
         light,
         &[],
-        text.mix(ground, 0.35),
+        text.mix(ground, 0.65),
     );
     let live = pick(
         vars,
-        &["--status-positive", "--green-360", "--online"],
+        &[
+            "--status-positive",
+            "--green-360",
+            "--online",
+            "--successcolor",
+        ],
         light,
         &["--status-green"],
         Rgba::rgb(0x23, 0xa5, 0x5a),
     );
     let loud = pick(
         vars,
-        &["--status-warning", "--yellow-300", "--idle"],
+        &[
+            "--status-warning",
+            "--yellow-300",
+            "--idle",
+            "--warningcolor",
+        ],
         light,
         &["--status-yellow"],
         Rgba::rgb(0xf0, 0xb2, 0x32),
     );
     let link = pick(
         vars,
-        &["--text-link", "--link", "--brand-360"],
+        &["--text-link", "--link", "--brand-360", "--linkcolor"],
         light,
         &["--text-brand"],
         accent,
@@ -890,7 +1180,7 @@ pub fn palette(vars: &css::Vars, dark: bool) -> Palette {
     // ReCord's own palette, when the file is ReCord: it has a more precise
     // mapping for every part than the generic Discord tokens above.
     if vars.contains("--rl-ink") {
-        return record_palette(vars, light);
+        return record_palette(vars, dark);
     }
 
     Palette {
@@ -973,7 +1263,7 @@ pub fn palette(vars: &css::Vars, dark: bool) -> Palette {
 
 /// ReCord's `--rl-*` tokens, which name every part it paints.
 fn record_palette(vars: &css::Vars, dark: bool) -> Palette {
-    let light = dark;
+    let light = !dark;
     let color = |name: &str, fallback: Rgba| vars.first_color(&[name], light).unwrap_or(fallback);
     let ink = color(
         "--rl-ink",
@@ -1007,15 +1297,6 @@ fn record_palette(vars: &css::Vars, dark: bool) -> Palette {
             Rgba::rgb(0xdc, 0xcd, 0xb2)
         },
     );
-    let high = color("--rl-high", raised.mix(ink, 0.2));
-    let line = color(
-        "--rl-line",
-        if dark {
-            Rgba::rgb(0x2c, 0x24, 0x1d)
-        } else {
-            Rgba::rgb(0xb7, 0xa3, 0x83)
-        },
-    );
     let text = color(
         "--rl-bone",
         if dark {
@@ -1024,9 +1305,18 @@ fn record_palette(vars: &css::Vars, dark: bool) -> Palette {
             Rgba::rgb(0x2a, 0x1d, 0x14)
         },
     );
-    let secondary = color("--rl-smoke", text.mix(ink, 0.62));
+    let high = color("--rl-high", raised.mix(text, 0.12));
+    let line = color(
+        "--rl-line",
+        if dark {
+            Rgba::rgb(0x2c, 0x24, 0x1d)
+        } else {
+            Rgba::rgb(0xb7, 0xa3, 0x83)
+        },
+    );
+    let secondary = color("--rl-smoke", text.mix(ink, 0.38));
     let muted = color("--rl-ash", text.mix(ink, 0.5));
-    let faint = color("--rl-faint", text.mix(ink, 0.38));
+    let faint = color("--rl-faint", text.mix(ink, 0.62));
     let accent = color("--rl-signal", Rgba::rgb(0xe9, 0x42, 0x21));
     let accent_hover = color("--rl-signal-hot", accent.mix(color("--rl-tint", text), 0.2));
     let danger = color("--rl-red", Rgba::rgb(0xff, 0x46, 0x26));
@@ -1133,6 +1423,7 @@ fn look(
     let font_family = vars
         .get("--font-primary")
         .or_else(|| vars.get("--rl-font"))
+        .or_else(|| vars.get("--font"))
         .and_then(|value| vars.resolve(value))
         .and_then(|value| first_family(&value));
     if let Some(family) = &font_family
@@ -1156,20 +1447,28 @@ fn look(
         "subtle" => Motion::Subtle,
         _ => Motion::Full,
     };
-    let effects = Effects {
+    let mut effects = Effects {
         scanlines: fraction(vars, &["--rl-scanline-opacity"]).unwrap_or(0.0),
         grain: fraction(vars, &["--rl-grain-opacity"]).unwrap_or(0.0),
         vignette: fraction(vars, &["--rl-vignette-opacity"]).unwrap_or(0.0),
-        flicker: vars
-            .resolve(vars.get("--rl-flicker-duration").unwrap_or("0s"))
-            .is_some_and(|value| value.trim() != "0s" && value.trim() != "0"),
+        flicker: duration(vars, "--rl-flicker-duration").is_some_and(|seconds| seconds > 0.0),
         beam: fraction(vars, &["--rl-beam-opacity"]).is_some_and(|value| value > 0.0),
         frame: fraction(vars, &["--rl-frame-opacity"]).unwrap_or(0.0),
         avatar_filter: vars
             .resolve(vars.get("--rl-avatar-filter").unwrap_or("none"))
-            .filter(|value| value != "none"),
+            .filter(|value| !value.eq_ignore_ascii_case("none")),
         avatar_scanline: fraction(vars, &["--rl-avatar-scanline"]).unwrap_or(0.0),
     };
+    // ReCord's low power drops the moving and static noise; scanlines and the
+    // vignette stay, as they do in the theme.
+    if vars
+        .resolve(vars.get("--rl-lite").unwrap_or("off"))
+        .is_some_and(|value| value.eq_ignore_ascii_case("on"))
+    {
+        effects.grain = 0.0;
+        effects.beam = false;
+        effects.flicker = false;
+    }
     Look {
         font_family,
         font_size: length(vars, &["--font-size", "--text-size"]),
@@ -1231,47 +1530,147 @@ fn first_family(value: &str) -> Option<String> {
 fn system_family(family: &str) -> bool {
     matches!(
         family.to_ascii_lowercase().as_str(),
-        "courier new" | "consolas" | "monospace" | "system-ui"
+        "courier new"
+            | "consolas"
+            | "monospace"
+            | "system-ui"
+            | "roboto"
+            | "roboto condensed"
+            | "noto sans"
+            | "inter"
+            | "arial"
+            | "helvetica"
+            | "segoe ui"
+            | "ubuntu"
+            | "cantarell"
+            | "dejavu sans"
     )
+}
+
+/// A cheap fingerprint of the theme files in `directories`: their paths,
+/// sizes and modification times. The window uses it to reload when a theme
+/// file is saved outside ReCore.
+pub fn theme_files_fingerprint(directories: &[PathBuf]) -> u64 {
+    let mut files = Vec::new();
+    for directory in directories {
+        let _ = collect_css_files(directory, 0, &mut files);
+    }
+    files.sort();
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    for path in files {
+        let canonical = fs::canonicalize(&path).unwrap_or(path);
+        let meta = fs::metadata(&canonical).ok();
+        let len = meta.as_ref().map_or(0, fs::Metadata::len);
+        let modified = meta
+            .and_then(|meta| meta.modified().ok())
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |time| time.as_nanos());
+        for byte in canonical.to_string_lossy().as_bytes() {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        hash ^= len;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        hash ^= modified as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
 }
 
 /// Reads every `.css` theme in `directories`, in name order, skipping the ones
 /// already read and the ones that fail (kept in [`Scan::problems`]).
 pub fn scan(directories: &[PathBuf]) -> Scan {
-    let mut scan = Scan::default();
-    let mut seen = BTreeSet::new();
-    let mut ids = BTreeSet::new();
-    for directory in directories {
-        let entries = match fs::read_dir(directory) {
-            Ok(entries) => entries,
-            Err(error) => {
-                scan.problems.push(Problem {
-                    path: directory.clone(),
-                    message: format!("could not read the themes folder: {error}"),
-                });
+    scan_with_imports(directories, &mut |_| None)
+}
+
+/// Finds `.css` files in the folder and in its own subfolders, which theme
+/// packs often use. Hidden folders, dependency trees and build caches are
+/// left alone.
+fn collect_css_files(
+    directory: &Path,
+    depth: usize,
+    files: &mut Vec<PathBuf>,
+) -> std::io::Result<()> {
+    if depth > 4 {
+        return Ok(());
+    }
+    for entry in fs::read_dir(directory)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with('.') {
+            continue;
+        }
+        let path = entry.path();
+        if path.is_dir() {
+            if matches!(
+                name.as_ref(),
+                "node_modules" | "target" | ".git" | ".cache" | "vendor"
+            ) {
                 continue;
             }
-        };
-        let mut files: Vec<PathBuf> = entries
-            .flatten()
-            .map(|entry| entry.path())
-            .filter(|path| {
-                path.is_file()
-                    && path
-                        .extension()
-                        .is_some_and(|extension| extension.eq_ignore_ascii_case("css"))
-                    && !path
-                        .file_name()
-                        .is_some_and(|name| name.to_string_lossy().starts_with('.'))
-            })
-            .collect();
+            // A folder inside a theme pack may not be readable; keep the
+            // files already found rather than failing the whole folder.
+            let _ = collect_css_files(&path, depth + 1, files);
+        } else if path.is_file()
+            && path
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("css"))
+        {
+            files.push(path);
+        }
+    }
+    Ok(())
+}
+
+/// A cheap content fingerprint, so the same theme copied into Vesktop's and
+/// ReCore's folders appears once.
+fn theme_fingerprint(path: &Path) -> Option<u64> {
+    let bytes = fs::read(path).ok()?;
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    for byte in &bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    Some(hash ^ (bytes.len() as u64))
+}
+
+/// [`scan`], downloading each theme's remote imports and fonts through
+/// `fetch`.
+pub fn scan_with_imports(
+    directories: &[PathBuf],
+    fetch: &mut dyn FnMut(&str) -> Option<Vec<u8>>,
+) -> Scan {
+    let mut scan = Scan::default();
+    let mut seen = BTreeSet::new();
+    let mut seen_content = BTreeSet::new();
+    let mut ids = BTreeSet::new();
+    for directory in directories {
+        if !directory.exists() {
+            // Most people don't have every client installed; a folder that
+            // isn't there is not a theme that failed to read.
+            continue;
+        }
+        let mut files = Vec::new();
+        if let Err(error) = collect_css_files(directory, 0, &mut files) {
+            scan.problems.push(Problem {
+                path: directory.clone(),
+                message: format!("could not read the themes folder: {error}"),
+            });
+            continue;
+        }
         files.sort();
         for path in files {
             let canonical = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
             if !seen.insert(canonical.clone()) {
                 continue;
             }
-            match load(&path) {
+            if let Some(fingerprint) = theme_fingerprint(&path)
+                && !seen_content.insert(fingerprint)
+            {
+                continue;
+            }
+            match load_with_imports(&path, &Options::default(), fetch) {
                 Ok(mut theme) => {
                     let base = theme.id.clone();
                     let mut number = 2;
@@ -1293,11 +1692,19 @@ pub fn scan(directories: &[PathBuf]) -> Scan {
 pub fn theme_folders() -> Vec<PathBuf> {
     let mut folders = Vec::new();
     if let Some(config) = config_directory() {
-        for name in ["Vencord", "vesktop", "Equicord", "BetterDiscord", "Legcord"] {
+        for name in [
+            "Vencord",
+            "vesktop",
+            "Equicord",
+            "Equibop",
+            "BetterDiscord",
+            "Legcord",
+            "Dorion",
+            "GoofCord",
+            "replugged",
+        ] {
             folders.push(config.join(name).join("themes"));
         }
-        folders.push(config.join("Vencord").join("themes"));
-        folders.push(config.join("vesktop").join("themes"));
     }
     folders
 }
@@ -1454,6 +1861,22 @@ html.theme-light:not([data-rl-mode="dark"]) {
     }
 
     #[test]
+    fn cascade_layers_beat_specificity_and_unlayered_wins_over_all() {
+        let css = r#"
+        @layer base {
+            .theme-dark:root { --background-primary: #111111; --background-secondary: #444444; }
+        }
+        @layer theme {
+            :root { --background-primary: #222222; }
+        }
+        :root { --background-secondary: #333333; }
+        "#;
+        let theme = load_str(css, None, &Options::with_mode(Mode::Dark)).unwrap();
+        assert_eq!(theme.palette.chat, Rgba::rgb(0x22, 0x22, 0x22));
+        assert_eq!(theme.palette.sidebar, Rgba::rgb(0x33, 0x33, 0x33));
+    }
+
+    #[test]
     fn auto_picks_dark_for_a_dark_ground_and_light_for_a_light_one() {
         let dark = load_str(
             ":root{--background-primary:#111;--text-normal:#eee}",
@@ -1508,6 +1931,279 @@ html.theme-light:not([data-rl-mode="dark"]) {
         options.accent = Some(Rgba::rgb(0x3d, 0xdc, 0x97));
         let theme = load_str(RECORD, None, &options).unwrap();
         assert_eq!(theme.palette.accent, Rgba::rgb(0x3d, 0xdc, 0x97));
+    }
+
+    #[test]
+    fn light_dark_follows_the_chosen_appearance() {
+        let css = r#"
+        :root { color-scheme: light dark;
+            --background-primary: light-dark(#fff8f7, #1a1111);
+            --text-normal: light-dark(#221a19, #f1dedd);
+            --brand-experiment: #904a46; }
+        .theme-light { color-scheme: light; }
+        "#;
+        let dark = load_str(css, None, &Options::with_mode(Mode::Dark)).unwrap();
+        assert_eq!(dark.palette.chat, Rgba::rgb(0x1a, 0x11, 0x11));
+        assert_eq!(dark.palette.text, Rgba::rgb(0xf1, 0xde, 0xdd));
+        let light = load_str(css, None, &Options::with_mode(Mode::Light)).unwrap();
+        assert_eq!(light.palette.chat, Rgba::rgb(0xff, 0xf8, 0xf7));
+        assert_eq!(light.palette.text, Rgba::rgb(0x22, 0x1a, 0x19));
+    }
+
+    #[test]
+    fn discord_recolors_triplet_tokens_become_colours() {
+        let css = r#"
+        :root {
+            --backgroundprimary: 30, 30, 30;
+            --backgroundsecondary: 20, 20, 20;
+            --backgroundsecondaryalt: 15, 15, 15;
+            --backgroundfloating: 0, 0, 0;
+            --textbrightest: 255, 255, 255;
+            --accentcolor: 255, 179, 174;
+            --font: "Roboto Condensed", sans-serif;
+        }
+        "#;
+        let theme = load_str(css, None, &Options::with_mode(Mode::Dark)).unwrap();
+        assert_eq!(theme.palette.chat, Rgba::rgb(0x1e, 0x1e, 0x1e));
+        assert_eq!(theme.palette.sidebar, Rgba::rgb(0x14, 0x14, 0x14));
+        assert_eq!(theme.palette.rail, Rgba::rgb(0x0f, 0x0f, 0x0f));
+        assert_eq!(theme.palette.raised, Rgba::rgb(0, 0, 0));
+        assert_eq!(theme.palette.text, Rgba::rgb(255, 255, 255));
+        assert_eq!(theme.palette.accent, Rgba::rgb(255, 179, 174));
+        assert_eq!(theme.look.font_family.as_deref(), Some("Roboto Condensed"));
+    }
+
+    #[test]
+    fn the_dark_rule_after_root_wins_and_root_after_dark_wins() {
+        let after_root = load_str(
+            ":root { --background-primary: #111111; } .theme-dark { --background-primary: #222222; }",
+            None,
+            &Options::with_mode(Mode::Dark),
+        )
+        .unwrap();
+        assert_eq!(after_root.palette.chat, Rgba::rgb(0x22, 0x22, 0x22));
+        let after_dark = load_str(
+            ".theme-dark { --background-primary: #222222; } :root { --background-primary: #111111; }",
+            None,
+            &Options::with_mode(Mode::Dark),
+        )
+        .unwrap();
+        assert_eq!(after_dark.palette.chat, Rgba::rgb(0x11, 0x11, 0x11));
+    }
+
+    #[test]
+    fn an_important_rule_beats_higher_specificity() {
+        let theme = load_str(
+            ":root { --background-primary: #111111 !important; } \
+             #app-mount { --background-primary: #222222; }",
+            None,
+            &Options::with_mode(Mode::Dark),
+        )
+        .unwrap();
+        assert_eq!(theme.palette.chat, Rgba::rgb(0x11, 0x11, 0x11));
+    }
+
+    #[test]
+    fn the_bundled_ambxst_theme_reads_as_its_palette() {
+        let css = include_str!("../../../themes/Ambxst.theme.css");
+        let dark = load_str(css, None, &Options::with_mode(Mode::Dark)).unwrap();
+        assert_eq!(dark.name, "Ambxst");
+        assert_eq!(dark.palette.chat, Rgba::rgb(0x1a, 0x11, 0x11));
+        assert_eq!(dark.palette.sidebar, Rgba::rgb(0x23, 0x19, 0x19));
+        assert_eq!(dark.palette.accent, Rgba::rgb(0xff, 0xb3, 0xae));
+        assert_eq!(dark.palette.text, Rgba::rgb(0xf1, 0xde, 0xdd));
+        assert_eq!(dark.look.radius, Some(16.0));
+        assert_eq!(dark.look.font_family.as_deref(), Some("Roboto Condensed"));
+        assert_eq!(dark.native.rail, Some(Rgba::rgb(0x14, 0x0c, 0x0c)));
+        let light = load_str(css, None, &Options::with_mode(Mode::Light)).unwrap();
+        assert_eq!(light.palette.chat, Rgba::rgb(0xff, 0xf8, 0xf7));
+        assert_eq!(light.palette.accent, Rgba::rgb(0x90, 0x4a, 0x46));
+    }
+
+    #[test]
+    fn the_bundled_record_theme_keeps_its_sidebar_background() {
+        let css = include_str!("../../../themes/ReCord.theme.css");
+        let theme = load_str(css, None, &Options::with_mode(Mode::Dark)).unwrap();
+        assert_eq!(theme.native.sidebar, Some(Rgba::rgb(0x0e, 0x10, 0x0c)));
+        assert_ne!(theme.native.sidebar, Some(Rgba::TRANSPARENT));
+    }
+
+    #[test]
+    fn remote_imports_and_their_nested_imports_are_downloaded() {
+        let mut calls = Vec::new();
+        let css =
+            "@import \"https://example.test/base/theme.css\";\n:root { --text-normal: #ffffff; }";
+        let theme = load_str_with_imports(css, None, &Options::with_mode(Mode::Dark), &mut |url| {
+            calls.push(url.to_owned());
+            match url {
+                "https://example.test/base/theme.css" => Some(
+                    b"@import \"../shared/colors.css\"; :root { --text-normal: #ffffff; }".to_vec(),
+                ),
+                "https://example.test/shared/colors.css" => Some(
+                    b":root { --background-primary: #123456; --brand-experiment: #abcdef; }"
+                        .to_vec(),
+                ),
+                _ => None,
+            }
+        })
+        .unwrap();
+        assert_eq!(
+            calls,
+            [
+                "https://example.test/base/theme.css",
+                "https://example.test/shared/colors.css"
+            ]
+        );
+        assert_eq!(theme.palette.chat, Rgba::rgb(0x12, 0x34, 0x56));
+        assert_eq!(theme.palette.accent, Rgba::rgb(0xab, 0xcd, 0xef));
+        assert_eq!(theme.palette.text, Rgba::rgb(255, 255, 255));
+        assert!(theme.warnings.is_empty(), "{:?}", theme.warnings);
+    }
+
+    #[test]
+    fn a_remote_font_is_downloaded_with_its_css() {
+        let css = r#"
+        @font-face {
+            font-family: "Remote";
+            font-weight: 700;
+            src: url("https://example.test/remote.ttf") format("truetype");
+        }
+        :root { --background-primary: #111111; --text-normal: #eeeeee; }
+        "#;
+        let theme = load_str_with_imports(css, None, &Options::with_mode(Mode::Dark), &mut |url| {
+            (url == "https://example.test/remote.ttf").then(|| vec![1, 2, 3, 4])
+        })
+        .unwrap();
+        assert_eq!(theme.fonts.len(), 1);
+        assert_eq!(theme.fonts[0].family, "Remote");
+        assert_eq!(theme.fonts[0].weight, 700);
+        assert_eq!(theme.fonts[0].bytes, [1, 2, 3, 4]);
+        assert!(theme.warnings.is_empty(), "{:?}", theme.warnings);
+    }
+
+    #[test]
+    fn a_remote_import_without_a_fetcher_warns_and_keeps_the_local_theme() {
+        let theme = load_str(
+            "@import \"https://example.test/theme.css\"; :root { --background-primary: #101010; }",
+            None,
+            &Options::with_mode(Mode::Dark),
+        )
+        .unwrap();
+        assert_eq!(theme.palette.chat, Rgba::rgb(0x10, 0x10, 0x10));
+        assert!(
+            theme
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("could not read the @import")),
+            "{:?}",
+            theme.warnings
+        );
+    }
+
+    #[test]
+    fn options_unique_to_the_other_appearance_are_still_offered() {
+        let theme = load_str(
+            ":root { --background-primary: #111111; } \
+             .theme-light { --paper-only: #123456; }",
+            None,
+            &Options::with_mode(Mode::Dark),
+        )
+        .unwrap();
+        assert!(
+            theme
+                .options
+                .iter()
+                .any(|option| option.name == "--paper-only"
+                    && matches!(option.kind, crate::OptionKind::Color { .. })),
+            "{:?}",
+            theme.options
+        );
+    }
+
+    #[test]
+    fn fonts_and_pictures_beside_an_imported_file_use_its_folder() {
+        let folder = std::env::temp_dir().join(format!(
+            "recore-css-test-{}-{}",
+            std::process::id(),
+            "relative-assets"
+        ));
+        let _ = fs::remove_dir_all(&folder);
+        fs::create_dir_all(folder.join("sub")).unwrap();
+        fs::write(
+            folder.join("main.theme.css"),
+            "@import \"sub/one.css\"; :root { --background-primary: #111111; }",
+        )
+        .unwrap();
+        fs::write(
+            folder.join("sub/one.css"),
+            r#"
+            @font-face {
+                font-family: "Beside";
+                src: local("Missing Local"), url("font.ttf") format("truetype");
+            }
+            :root { --background-image: url("picture.png"); }
+            "#,
+        )
+        .unwrap();
+        fs::write(folder.join("sub/font.ttf"), [9, 8, 7]).unwrap();
+        fs::write(folder.join("sub/picture.png"), b"not decoded here").unwrap();
+        let theme = load(folder.join("main.theme.css")).unwrap();
+        assert_eq!(theme.fonts.len(), 1);
+        assert_eq!(theme.fonts[0].family, "Beside");
+        assert_eq!(theme.fonts[0].bytes, [9, 8, 7]);
+        assert_eq!(
+            theme.look.background,
+            Some(Image::File(folder.join("sub/picture.png")))
+        );
+        fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn a_remote_import_resolves_its_relative_fonts_and_pictures() {
+        let css = "@import \"https://example.test/base/theme.css\";";
+        let theme =
+            load_str_with_imports(
+                css,
+                None,
+                &Options::with_mode(Mode::Dark),
+                &mut |url| match url {
+                    "https://example.test/base/theme.css" => Some(
+                        br#"
+                    @font-face {
+                        font-family: "Remote beside";
+                        src: url("fonts/remote.ttf") format("truetype");
+                    }
+                    :root {
+                        --background-primary: #101010;
+                        --background-image: url("images/wp.png");
+                    }
+                    "#
+                        .to_vec(),
+                    ),
+                    "https://example.test/base/fonts/remote.ttf" => Some(vec![4, 5, 6]),
+                    _ => None,
+                },
+            )
+            .unwrap();
+        assert_eq!(theme.fonts.len(), 1);
+        assert_eq!(theme.fonts[0].bytes, [4, 5, 6]);
+        assert_eq!(
+            theme.look.background,
+            Some(Image::Url("https://example.test/base/images/wp.png".into()))
+        );
+        assert!(theme.warnings.is_empty(), "{:?}", theme.warnings);
+    }
+
+    #[test]
+    fn a_bare_tag_does_not_paint_a_region() {
+        let theme = load_str(
+            "div { background: #123456; }",
+            None,
+            &Options::with_mode(Mode::Dark),
+        )
+        .unwrap();
+        assert_eq!(theme.native.rail, None);
+        assert_eq!(theme.native.chat, None);
     }
 
     #[test]
@@ -1592,6 +2288,51 @@ html.theme-light:not([data-rl-mode="dark"]) {
         assert_eq!(theme.palette.chat, Rgba::rgb(0x11, 0x11, 0x11));
         assert!(theme.warnings.is_empty(), "{:?}", theme.warnings);
         fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn bundled_css_themes_leave_nothing_in_other() {
+        for name in ["ReCord.theme.css", "Ambxst.theme.css"] {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../themes")
+                .join(name);
+            let theme = load(path).unwrap();
+            let other: Vec<_> = theme
+                .options
+                .iter()
+                .filter(|option| option.group == "Other")
+                .collect();
+            assert!(other.is_empty(), "{}: {other:?}", theme.name);
+        }
+    }
+
+    #[test]
+    fn a_theme_in_a_subfolder_is_read_and_a_duplicate_is_not() {
+        let folder = std::env::temp_dir().join(format!(
+            "recore-css-test-{}-{}",
+            std::process::id(),
+            "nested"
+        ));
+        let _ = fs::remove_dir_all(&folder);
+        fs::create_dir_all(folder.join("pack/themes")).unwrap();
+        let css = ":root { --background-primary: #123456; }";
+        fs::write(folder.join("pack/themes/nested.theme.css"), css).unwrap();
+        fs::write(folder.join("same.theme.css"), css).unwrap();
+        let scan = scan(std::slice::from_ref(&folder));
+        assert_eq!(scan.themes.len(), 1, "{:?}", scan.problems);
+        fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn a_missing_theme_folder_is_not_a_problem() {
+        let folder = std::env::temp_dir().join(format!(
+            "recore-css-test-{}-{}",
+            std::process::id(),
+            "missing"
+        ));
+        let scan = scan(&[folder]);
+        assert!(scan.themes.is_empty());
+        assert!(scan.problems.is_empty(), "{:?}", scan.problems);
     }
 
     #[test]

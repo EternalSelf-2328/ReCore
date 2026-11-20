@@ -97,6 +97,13 @@ impl App {
             subscriptions
                 .push(iced::time::every(Duration::from_millis(50)).map(|_| Message::MotionTick));
         }
+        // While Settings is open, notice a theme saved by an editor outside
+        // ReCore. The fingerprint is cheap (paths, sizes and mtimes), and
+        // the idle window does not wake for it.
+        if self.win.settings.get().is_some() {
+            subscriptions
+                .push(iced::time::every(Duration::from_secs(4)).map(|_| Message::ThemeFiles));
+        }
         // A look at the releases every six hours while the check is on.
         if self.layout.prefs.check_for_updates.unwrap_or(true) {
             subscriptions.push(

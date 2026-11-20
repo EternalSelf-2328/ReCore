@@ -29,6 +29,7 @@ jobs:
           cp -r site/. _site/
           mkdir -p _site/themes
           cp themes/ReCord.theme.css _site/themes/ReCord.theme.css
+          cp themes/Ambxst.theme.css _site/themes/Ambxst.theme.css
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

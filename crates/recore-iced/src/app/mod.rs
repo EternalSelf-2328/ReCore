@@ -269,6 +269,9 @@ impl App {
         }
         let speaker = self.client.state().voice.speaker.clone();
         recore_core::sounds::play_interface(
+            self.layout
+                .prefs
+                .interface_set(sound, self.layout.voice.sound_set),
             sound,
             self.layout.prefs.interface_gain(),
             speaker.as_deref(),
@@ -540,6 +543,64 @@ impl App {
                 Task::none()
             }
             Message::FontsLoaded => Task::none(),
+            Message::ThemeImported(result) => {
+                let note = match result {
+                    Ok(path) => {
+                        self.themes.reload_local();
+                        let canonical =
+                            std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+                        let id = self
+                            .themes
+                            .css
+                            .iter()
+                            .find(|theme| {
+                                theme.path.as_deref().is_some_and(|theme_path| {
+                                    std::fs::canonicalize(theme_path)
+                                        .unwrap_or_else(|_| theme_path.to_owned())
+                                        == canonical
+                                })
+                            })
+                            .map(|theme| theme.id.clone());
+                        if let Some(id) = id {
+                            self.themes.choose(self.client.root(), &id);
+                            self.show_theme(self.themes.shown());
+                            format!("Imported {}.", path.display())
+                        } else if let Some(problem) = self.themes.problems.iter().find(|problem| {
+                            std::fs::canonicalize(&problem.path)
+                                .unwrap_or_else(|_| problem.path.clone())
+                                == canonical
+                        }) {
+                            format!(
+                                "Saved {}, but it did not read: {}",
+                                path.display(),
+                                problem.message
+                            )
+                        } else {
+                            let _ = std::fs::remove_file(&path);
+                            "That theme is already present with the same content, so it was not added twice.".to_owned()
+                        }
+                    }
+                    Err(error) => error,
+                };
+                if let Some(settings) = self.win.settings.get_mut() {
+                    settings.theme_url_note = Some(note);
+                    settings.theme_url.clear();
+                }
+                Task::none()
+            }
+            Message::ThemeFiles => {
+                if self.themes.files_changed() {
+                    let preview = self
+                        .win
+                        .settings
+                        .get()
+                        .and_then(crate::settings::Settings::preview)
+                        .cloned();
+                    self.themes.reload_local();
+                    self.show_theme(preview.unwrap_or_else(|| self.themes.shown()));
+                }
+                Task::none()
+            }
             Message::Nothing => Task::none(),
             Message::Bell => {
                 // Under the bell, 6 px down.

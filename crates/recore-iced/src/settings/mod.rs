@@ -24,7 +24,7 @@ pub mod updates;
 pub use pages::message_size;
 pub mod voice;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::widgets::scroll_view;
 use iced::{
@@ -167,6 +167,12 @@ pub enum Drop {
     Zoom,
     /// A keybind's action, by its row.
     Keybind(usize),
+    /// The sound theme the call sounds share.
+    SoundSet,
+    /// One call sound's own sound theme, by its row.
+    SoundTheme(usize),
+    /// One interface sound's own sound theme, by its row.
+    InterfaceTheme(usize),
 }
 
 /// Settings while open.
@@ -190,6 +196,17 @@ pub struct Settings {
     /// and whether every custom property is listed or only the readable ones.
     pub css_text: BTreeMap<String, String>,
     pub show_all_css: bool,
+    /// The text filtering the chosen CSS theme's options, and the groups of
+    /// options the person opened.
+    pub css_search: String,
+    pub css_open: BTreeSet<String>,
+    /// Show only options this theme/ReCore could explain, and only those the
+    /// person changed.
+    pub css_recommended_only: bool,
+    pub css_changed_only: bool,
+    /// A theme URL being imported, and what the last import said.
+    pub theme_url: String,
+    pub theme_url_note: Option<String>,
     preview: Option<Theme>,
     /// Voice's state while it shows: the push-to-talk key being recorded,
     /// the camera being tried, the gate's meter, the entrance sounds.

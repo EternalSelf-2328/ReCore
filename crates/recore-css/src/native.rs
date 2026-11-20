@@ -56,7 +56,14 @@ const NODES: [Node; 11] = [
         role: Role::Root,
         tags: &["html", "body"],
         id: Some("app-mount"),
-        classes: &["app", "appMount", "theme-dark", "theme-light"],
+        classes: &[
+            "app",
+            "app_",
+            "appMount",
+            "appMount_",
+            "theme-dark",
+            "theme-light",
+        ],
         parent: None,
     },
     Node {
@@ -74,10 +81,10 @@ const NODES: [Node; 11] = [
             "sidebar",
             "sidebar_",
             "sidebarList_",
-            "sidebarRegion",
             "channels",
             "channelList",
             "privateChannels",
+            "privateChannels_",
         ],
         parent: Some(ROOT),
     },
@@ -90,7 +97,7 @@ const NODES: [Node; 11] = [
             "chat_",
             "chatContent_",
             "messagesWrapper",
-            "content",
+            "messagesWrapper_",
         ],
         parent: Some(ROOT),
     },
@@ -144,7 +151,6 @@ const NODES: [Node; 11] = [
             "textArea",
             "textArea_",
             "composer",
-            "form",
         ],
         parent: Some(CHAT),
     },
@@ -258,33 +264,56 @@ fn apply(style: &mut NativeStyle, write: Write<'_>, value: &str, _vars: &Vars, d
     }
     let role = write.role;
     match property.as_str() {
-        "background" | "background-color" => {
-            if let Some(color) = background_color(value, dark) {
-                set_background(style, role, write.hover, color);
+        "background" | "background-color" | "background-image" => {
+            if let Some(color) = background_color(value, !dark) {
+                // A transparent background on a collapsed wrapper lets the
+                // region's own colour through; it must not erase the region in
+                // the native window.
+                if color.a > 0 {
+                    set_background(style, role, write.hover, color);
+                }
             }
         }
         "color" => {
-            if let Some(color) = color_in(value, dark) {
+            if let Some(color) = color_in(value, !dark) {
                 set_text(style, role, color);
             }
         }
         "border-radius" => {
-            if let Some(radius) = length(value) {
+            // A radius on a region (not on a row, a button or a hover state)
+            // can stand for the window's shape; one on a card or a button
+            // must not redefine every surface.
+            if !write.hover
+                && matches!(
+                    role,
+                    Role::Root | Role::Rail | Role::Sidebar | Role::Chat | Role::Members
+                )
+                && let Some(radius) = length(value)
+            {
                 style.radius = Some(radius);
             }
         }
         "font-family" => {
-            if let Some(family) = family(value) {
+            // Typography is one setting for the whole window; only a rule on
+            // the page itself can name it. A header's font would otherwise
+            // restyle every message.
+            if matches!(role, Role::Root)
+                && let Some(family) = family(value)
+            {
                 style.font_family = Some(family);
             }
         }
         "font-size" => {
-            if let Some(size) = length(value) {
+            if matches!(role, Role::Root)
+                && let Some(size) = length(value)
+            {
                 style.font_size = Some(size);
             }
         }
         "letter-spacing" => {
-            if let Some(spacing) = length(value) {
+            if matches!(role, Role::Root)
+                && let Some(spacing) = length(value)
+            {
                 style.letter_spacing = Some(spacing);
             }
         }
@@ -324,20 +353,42 @@ fn set_text(style: &mut NativeStyle, role: Role, color: Rgba) {
     }
 }
 
-fn background_color(value: &str, dark: bool) -> Option<Rgba> {
-    if value.starts_with("url(") || value.contains("gradient(") {
+fn background_color(value: &str, light: bool) -> Option<Rgba> {
+    // A gradient is a real backdrop in the browser. The native window has
+    // no gradient painter for every region, so it keeps the first opaque
+    // stop as that region's colour rather than dropping the rule entirely.
+    if value.contains("gradient(") {
+        for part in color::split_top(value, ',') {
+            for token in part.split_whitespace() {
+                if let Some(color) = parse_color(token, light)
+                    && color.a > 0
+                {
+                    return Some(color);
+                }
+            }
+        }
         return None;
     }
-    color_in(value, dark)
+    if value.contains("url(") {
+        for token in value.split_whitespace() {
+            if let Some(color) = parse_color(token, light)
+                && color.a > 0
+            {
+                return Some(color);
+            }
+        }
+        return None;
+    }
+    color_in(value, light)
 }
 
-fn color_in(value: &str, dark: bool) -> Option<Rgba> {
-    if let Some(color) = parse_color(value, dark) {
+fn color_in(value: &str, light: bool) -> Option<Rgba> {
+    if let Some(color) = parse_color(value, light) {
         return Some(color);
     }
     // A shorthand such as `#fff 1px solid` or `1px solid #fff`.
     for token in value.split_whitespace() {
-        if let Some(color) = parse_color(token, dark) {
+        if let Some(color) = parse_color(token, light) {
             return Some(color);
         }
     }
@@ -347,8 +398,9 @@ fn color_in(value: &str, dark: bool) -> Option<Rgba> {
 fn length(value: &str) -> Option<f32> {
     let value = value.trim().trim_end_matches(';').trim();
     let first = value.split_whitespace().next()?;
+    let first_lower = first.to_ascii_lowercase();
     let number = |suffix: &str| {
-        first
+        first_lower
             .strip_suffix(suffix)
             .and_then(|number| number.trim().parse::<f32>().ok())
     };
@@ -356,7 +408,7 @@ fn length(value: &str) -> Option<f32> {
         .or_else(|| number("rem").map(|number| number * 16.0))
         .or_else(|| number("em").map(|number| number * 16.0))
         .or_else(|| number("%").map(|number| number / 100.0 * 16.0))
-        .or_else(|| first.parse::<f32>().ok())
+        .or_else(|| first_lower.parse::<f32>().ok())
 }
 
 fn family(value: &str) -> Option<String> {
@@ -390,7 +442,6 @@ fn match_selector(selector: &str, dark: bool) -> Option<(Role, bool, u32)> {
     if selector.is_empty()
         || selector.contains("::")
         || selector.starts_with('@')
-        || selector.contains(":has(")
         || selector.contains(":nth-")
         || selector.contains(":first-")
         || selector.contains(":last-")
@@ -402,11 +453,39 @@ fn match_selector(selector: &str, dark: bool) -> Option<(Role, bool, u32)> {
     if compounds.is_empty() {
         return None;
     }
+    // A bare tag or `*` is too broad to name one native region: `div` would
+    // otherwise paint the rail, and `*` the first region it meets. Root tags
+    // and the few semantic elements Discord's window wraps its regions in are
+    // safe; everything else needs a class, id or attribute to name it.
+    let identified = compounds.iter().any(|compound| {
+        compound.contains('.')
+            || compound.contains('#')
+            || compound.contains('[')
+            || compound.starts_with(":root")
+            || compound.starts_with(":where(html")
+            || compound.starts_with(":where(:root")
+            || compound.starts_with(":is(html")
+            || compound.starts_with(":is(:root")
+    });
+    if !identified {
+        let last = compounds.last()?;
+        let tag = last
+            .trim()
+            .trim_start_matches(':')
+            .split(|character: char| !character.is_ascii_alphanumeric())
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if !matches!(tag.as_str(), "html" | "body" | "main" | "aside" | "header") {
+            return None;
+        }
+    }
     let specificity = specificity(selector);
     for (index, node) in NODES.iter().enumerate() {
         let mut current = Some(index);
         let mut hover = false;
         let mut matched = true;
+        let mut first_compound = true;
         for compound in compounds.iter().rev() {
             let mut found = None;
             let mut walk = current;
@@ -421,9 +500,16 @@ fn match_selector(selector: &str, dark: bool) -> Option<(Role, bool, u32)> {
                 matched = false;
                 break;
             };
-            // Keep the node in the walk: a native region collapses several
-            // Discord wrappers (`.message` and `.messageContent_`) into one
-            // node, so a later compound may still match it.
+            // A native region collapses several Discord wrappers (`.message`
+            // and `.messageContent_`, or `.sidebar_` and `.sidebarList_`) into
+            // one node, so a wrapper compound may match the same node again.
+            // Other roles need a real ancestor, which keeps broad descendant
+            // selectors from landing on the wrong region.
+            if !first_compound && index == current.unwrap_or(usize::MAX) && !collapsed(node.role) {
+                matched = false;
+                break;
+            }
+            first_compound = false;
             current = Some(index);
         }
         if matched {
@@ -431,6 +517,14 @@ fn match_selector(selector: &str, dark: bool) -> Option<(Role, bool, u32)> {
         }
     }
     None
+}
+
+/// Roles whose synthetic node stands for several nested Discord wrappers.
+fn collapsed(role: Role) -> bool {
+    // `.message` and `.messageContent_` are one item in Discord's DOM, and
+    // `html body` is one page; the other regions have real wrappers that a
+    // selector's descendant compounds should match instead of collapsing.
+    matches!(role, Role::Root | Role::Message)
 }
 
 /// A rough CSS specificity: ids, classes/attributes/pseudo-classes, tags.
@@ -461,6 +555,18 @@ fn specificity(selector: &str) -> u32 {
         }
     }
     specificity
+}
+
+/// Whether `child` is below `ancestor` in the synthetic tree.
+fn is_descendant(child: usize, ancestor: usize) -> bool {
+    let mut current = NODES[child].parent;
+    while let Some(parent) = current {
+        if parent == ancestor {
+            return true;
+        }
+        current = NODES[parent].parent;
+    }
+    false
 }
 
 fn compound_matches(compound: &str, node: usize, dark: bool, hover: &mut bool) -> bool {
@@ -542,7 +648,35 @@ fn compound_matches(compound: &str, node: usize, dark: bool, hover: &mut bool) -
                             return false;
                         }
                     }
-                    "has" => return false,
+                    "has" => {
+                        let mut any = false;
+                        for inner in split_selectors(arguments) {
+                            let inner = inner.trim().trim_start_matches('>').trim();
+                            if inner.is_empty()
+                                || inner.contains(' ')
+                                || inner.contains('+')
+                                || inner.contains('~')
+                            {
+                                continue;
+                            }
+                            for descendant in 0..NODES.len() {
+                                if descendant == node || !is_descendant(descendant, node) {
+                                    continue;
+                                }
+                                let mut ignored = false;
+                                if compound_matches(inner, descendant, dark, &mut ignored) {
+                                    any = true;
+                                    break;
+                                }
+                            }
+                            if any {
+                                break;
+                            }
+                        }
+                        if !any {
+                            return false;
+                        }
+                    }
                     _ => return false,
                 }
                 saw_anything = true;
@@ -608,7 +742,10 @@ fn attribute_matches(attribute: &str, node: usize, dark: bool) -> bool {
     let (actual, any) = match name.as_str() {
         "class" => (
             if NODES[node].role == Role::Root {
-                format!("app appMount theme-{}", if dark { "dark" } else { "light" })
+                format!(
+                    "app app_ appMount appMount_ theme-{}",
+                    if dark { "dark" } else { "light" }
+                )
             } else {
                 NODES[node].classes.join(" ")
             },
@@ -631,9 +768,15 @@ fn attribute_matches(attribute: &str, node: usize, dark: bool) -> bool {
         vec![actual.as_str()]
     };
     match operator {
-        "=" => values
-            .iter()
-            .any(|value| value.eq_ignore_ascii_case(expected)),
+        "=" => {
+            if any {
+                actual.eq_ignore_ascii_case(expected)
+            } else {
+                values
+                    .iter()
+                    .any(|value| value.eq_ignore_ascii_case(expected))
+            }
+        }
         "~=" => {
             any && values
                 .iter()
@@ -746,6 +889,28 @@ mod tests {
     }
 
     #[test]
+    fn a_gradient_keeps_its_first_opaque_stop() {
+        let theme = dark(
+            r#"
+            .theme-dark [class*="chat_"] {
+                background: linear-gradient(180deg, #112233 0%, #445566 100%);
+            }
+            "#,
+        );
+        assert_eq!(theme.native.chat, Some(Rgba::rgb(0x11, 0x22, 0x33)));
+    }
+
+    #[test]
+    fn has_matches_a_synthetic_descendant() {
+        let theme = dark(
+            r#"
+            .theme-dark:root:has(.guilds_) { background: #102030; }
+            "#,
+        );
+        assert_eq!(theme.native.chat, Some(Rgba::rgb(0x10, 0x20, 0x30)));
+    }
+
+    #[test]
     fn the_light_and_dark_themes_choose_their_own_rules() {
         let theme = dark(
             r#"
@@ -801,7 +966,7 @@ mod tests {
         let theme = dark(
             r#"
             :root { --line: #445566; --font: "Pixel Operator", monospace; }
-            [class*="header_"] {
+            body {
                 font-family: var(--font);
                 font-size: 18px;
                 letter-spacing: 1px;

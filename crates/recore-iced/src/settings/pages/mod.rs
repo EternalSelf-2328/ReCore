@@ -5,7 +5,7 @@
 use iced::Element;
 use recore_core::{
     application::Action,
-    sounds::{Sound, SoundSet},
+    sounds::{InterfaceSound, Sound, SoundSet},
 };
 
 use super::{Event, Page, Settings};
@@ -79,6 +79,10 @@ pub enum Pref {
     AdjustEach(bool),
     EachSound(usize, u32, bool),
     PlaySound(usize),
+    SoundTheme(usize, usize),
+    InterfaceTheme(usize, usize),
+    PlayInterface(usize),
+    ResetSoundThemes,
     GpuRendering(bool),
     GpuEncoding(bool),
     StreamerMode(bool),
@@ -290,10 +294,11 @@ impl Settings {
                 cx.keep("flash_taskbar", on);
             }
             Pref::SoundSet(index) => {
+                self.open = None;
                 let set = SoundSet::ALL[index.min(SoundSet::ALL.len() - 1)];
                 cx.layout.voice.sound_set = set;
                 cx.keep("sound_set", set);
-                try_sound(cx, Sound::ALL[0]);
+                try_theme(cx, set, Sound::Join);
             }
             Pref::SoundVolume(value, done) => {
                 cx.layout.voice.sound_volume = Some(value.min(200) as u8);
@@ -360,6 +365,45 @@ impl Settings {
                 if let Some(&sound) = Sound::ALL.get(index) {
                     try_sound(cx, sound);
                 }
+            }
+            Pref::SoundTheme(index, choice) => {
+                self.open = None;
+                let Some(&sound) = Sound::ALL.get(index) else {
+                    return;
+                };
+                let themes = &mut cx.layout.voice.sound_themes;
+                if choice == 0 {
+                    themes.remove(&sound);
+                } else if let Some(&set) = SoundSet::ALL.get(choice - 1) {
+                    themes.insert(sound, set);
+                }
+                cx.keep("sound_themes", &cx.layout.voice.sound_themes);
+                try_sound(cx, sound);
+            }
+            Pref::InterfaceTheme(index, choice) => {
+                self.open = None;
+                let Some(&sound) = InterfaceSound::ALL.get(index) else {
+                    return;
+                };
+                let themes = &mut prefs.interface_themes;
+                if choice == 0 {
+                    themes.remove(&sound);
+                } else if let Some(&set) = SoundSet::ALL.get(choice - 1) {
+                    themes.insert(sound, set);
+                }
+                cx.keep("interface_themes", &cx.layout.prefs.interface_themes);
+                try_interface(cx, sound);
+            }
+            Pref::PlayInterface(index) => {
+                if let Some(&sound) = InterfaceSound::ALL.get(index) {
+                    try_interface(cx, sound);
+                }
+            }
+            Pref::ResetSoundThemes => {
+                cx.layout.voice.sound_themes.clear();
+                prefs.interface_themes.clear();
+                cx.keep("sound_themes", &cx.layout.voice.sound_themes);
+                cx.keep("interface_themes", &cx.layout.prefs.interface_themes);
             }
             Pref::GpuRendering(on) => {
                 prefs.gpu_rendering = on;
@@ -462,6 +506,9 @@ impl Settings {
 /// speakers.
 fn try_interface(cx: &Cx<'_>, sound: recore_core::sounds::InterfaceSound) {
     recore_core::sounds::play_interface(
+        cx.layout
+            .prefs
+            .interface_set(sound, cx.layout.voice.sound_set),
         sound,
         cx.layout.prefs.interface_gain(),
         cx.client.state().voice.speaker.as_deref(),
@@ -472,7 +519,19 @@ fn try_interface(cx: &Cx<'_>, sound: recore_core::sounds::InterfaceSound) {
 fn try_sound(cx: &Cx<'_>, sound: Sound) {
     let voice = &cx.state().voice;
     recore_core::sounds::play(
-        cx.layout.voice.sound_set,
+        cx.layout.voice.set_for(sound),
+        sound,
+        cx.layout.voice.sound_gain(sound),
+        voice.speaker.as_deref(),
+    );
+}
+
+/// One of ReCore's sounds in a particular set, for trying the shared theme
+/// even when this sound has an override of its own.
+fn try_theme(cx: &Cx<'_>, set: SoundSet, sound: Sound) {
+    let voice = &cx.state().voice;
+    recore_core::sounds::play(
+        set,
         sound,
         cx.layout.voice.sound_gain(sound),
         voice.speaker.as_deref(),

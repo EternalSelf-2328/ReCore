@@ -76,8 +76,9 @@ recording. Each change is kept at once in
   written in (downloaded on request and kept locally, with its
   FrequencyWords attribution), and the language Translate puts a message
   in.
-- Notifications, Sounds (the set, which plays a sound when chosen, the
-  volume, and each sound's own with its play button) and Advanced.
+- Notifications, Sounds (the shared sound theme, which plays a sound when
+  chosen, the volume, each sound's own theme and volume with its play
+  button, and the interface sounds) and Advanced.
   Advanced holds Start when you sign in, Open Discord
   links in ReCore (outside the preview), Close to tray, saying where
   there's no tray, and the renderer's switch: while it differs from the

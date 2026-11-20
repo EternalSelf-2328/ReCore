@@ -49,6 +49,19 @@ in over 260 ms, unread rail marks pulse, and speaking rings breathe. These
 are native iced animations, not DOM/CSS animations: Discord selectors whose
 targets do not exist in a native client are still not painted.
 
+## Ambxst
+
+[`themes/Ambxst.theme.css`](../themes/Ambxst.theme.css) is a Discord theme
+inspired by [Axenide's Ambxst](https://github.com/Axenide/Ambxst): its default
+Material You palette (warm charcoal, rose `#ffb3ae`, pastel secondary and
+tertiary tones), 16 px rounded panels and Roboto Condensed, in a dark and a
+paper-light set. It is a complete theme for Vencord, Vesktop, Equicord,
+BetterDiscord and Legcord as well as a CSS theme ReCore reads: the same file
+carries Discord's tokens, ReCore's `--rl-*` palette and the native region
+rules. It turns ReCord's CRT layer off and keeps the window's rounded,
+shadowed Material surfaces. Drop it in the themes folder like any other
+`.theme.css` file; it has no remote imports.
+
 ## CSS themes
 
 ReCore reads the themes Vencord, Vesktop, Equicord, BetterDiscord, Legcord
@@ -61,12 +74,21 @@ folder; ReCore also looks there:
 | Vencord | `~/.config/Vencord/themes` (or `%APPDATA%\Vencord\themes`) |
 | Vesktop | `~/.config/vesktop/themes` |
 | Equicord | `~/.config/Equicord/themes` |
+| Equibop | `~/.config/Equibop/themes` |
 | BetterDiscord | `~/.config/BetterDiscord/themes` |
 | Legcord | `~/.config/Legcord/themes` |
+| Dorion | `~/.config/Dorion/themes` |
+| GoofCord | `~/.config/GoofCord/themes` |
+| Replugged | `~/.config/replugged/themes` |
 | ReCore | the data folder's `themes` (the button opens it) |
 
-**Reload CSS** reads them again without restarting. Each theme appears as a
-tile with the CSS badge. A theme carries:
+**Reload CSS** reads them again without restarting. It follows theme packs in
+subfolders, leaves hidden folders and dependency trees alone, and reads the
+same theme once when it is copied into several client folders. While
+Settings is open, a theme saved by an editor outside ReCore reloads itself.
+The **Theme URL** field downloads a theme into ReCore's folder, and the tile
+turns up ready to choose. Each theme appears as a tile with the CSS badge. A
+theme carries:
 
 - The colours of Discord's tokens: `--background-primary`, `--background-secondary`,
   `--background-floating`, `--channeltextarea-background`, `--text-normal`,
@@ -76,13 +98,29 @@ tile with the CSS badge. A theme carries:
   `--control-*`, `--text-default` names wherever it uses those instead.
 - Its own variable chain: `var()`, fallbacks, `!important`, `@import` between
   local files, `@media (prefers-color-scheme: dark|light)`, `.theme-dark`
-  and `.theme-light` blocks, `color-mix(in srgb, ...)` and `light-dark()`.
-  Hex, `rgb()`, `rgba()`, `hsl()`, `hsla()` and named colours are read.
-  A remote `@import` is skipped with a warning: ReCore reads local theme
-  files, so download a theme that imports a web base beside it first.
-- Its fonts: `@font-face` with a `data:` URI or a file beside the theme is
-  loaded into the window's font system, and `--font-primary` picks the
-  family.
+  and `.theme-light` blocks, `color-mix()` (two or more colours, with
+  `in srgb` or `in srgb-linear`), `light-dark()`, `hwb()`, `oklab()` and
+  `oklch()`, `lab()`, `lch()` and `color(srgb ...)`/`color(display-p3 ...)`.
+  Hex, `rgb()`, `rgba()`, `hsl()`, `hsla()` and named colours are read, and
+  DiscordRecolor's bare `30,30,30` RGB triples are understood as colours.
+  The cascade keeps specificity, source order, `!important` and `@layer`
+  order across the root, theme-class and media-query blocks, so a later
+  `:root` declaration can win over an earlier `.theme-dark` one, as in a
+  browser. `@supports` conditions and the media/supports condition after an
+  `@import` are applied, and `@property` gives a variable its syntax and
+  initial value.
+  An `http:` or `https:` `@import` is downloaded, with its own relative
+  imports; so are a remote font in `@font-face` and a remote picture in
+  `--background-image`. Downloads are kept for ten minutes in memory and on
+  disk, so a theme works offline after its first load; **Reload CSS**
+  forgets them, so a changed base theme is read at once. A file over 8 MB, a
+  failed download or an offline machine keeps the rest of the theme and says
+  so in Appearance's note. A theme's remote imports are fetched when the
+  theme is chosen, so a folder full of remote themes does not stall the
+  first frame.
+- Its fonts: `@font-face` with a `data:` URI, a file beside the theme or a
+  remote URL is loaded into the window's font system, and `--font-primary`
+  picks the family.
 - Its radius (`--radius-md` or ReCord's `--rl-radius`), a background picture
   or video (`--rl-background-image`, `--background-image`) drawn under the
   panels, and ReCord's CRT options
@@ -98,23 +136,52 @@ ReCore colours and its four Pixel Operator faces.
 
 ### Options the theme exposes
 
-Appearance lists the chosen CSS theme's custom properties as controls:
+Appearance lists the chosen CSS theme's custom properties as controls, in
+collapsible groups, with a filter field for large themes (Catppuccin exposes
+more than 250, and DiscordRecolor's imported base more than 700) and
+**Show every variable** for the ones ReCore can't place:
 
-- a colour becomes a swatch with an HSV picker and a hex field;
+- a colour becomes a swatch with an HSV picker and a hex field, keeping an
+  eight-digit colour's alpha;
 - an opacity, dimming or surface becomes a slider;
 - `on`/`off`, `true`/`false` and ReCord's flicker/beam durations become a
   switch;
 - a font and a text variable become a field;
-- a `url(...)` picture becomes a field with **Choose…** and **Clear**;
-- ReCord's `full`/`subtle`/`off` and background fits become buttons.
+- a `url(...)` picture becomes a field with **Choose…** and **Clear**,
+  including one the theme embeds as a data URI;
+- a BetterDiscord `@var slider` becomes a slider with its min/max/step;
+- ReCord's `full`/`subtle`/`off`, background fits and choices listed in a
+  comment become buttons.
 
-The controls are detected from the values, so a theme does not need to
-declare them. ReCord's `--rl-*` names get readable labels and groups; other
-themes group their colours, typography, shape, pictures and effects. Values
-changed there are kept per theme in `layout.json` under `css_options` and the
-theme is re-read with them, so its palette and effects change live. **Reset
-these options** forgets them; **Show every variable** also lists the
-properties ReCore cannot place.
+Each option shows its theme default when it names one, a **Reset this
+option** button once it changes, and a badge when it exists only in the dark
+or light palette. **Only recommended** hides unannotated variables and
+internal aliases; **Only changed** shows just what was overridden;
+**Export changes** writes those overrides as a small `.theme.css` file that
+can be loaded after the theme elsewhere.
+
+The controls are detected from the values and named from what the theme says
+about them. ReCore reads the variable name, an inline comment beside the
+declaration, and the heading above it (`/* text colors */`, `/* ACCENT
+COLORS */`); both Midnight/system24 and ClearVision give much better labels
+this way. It also understands BetterDiscord's `@var` header (`checkbox`,
+`text`, `color`, `select` and `slider`), matching names such as
+`accentcolor_s` to the `--accentcolor` property. A comment that lists choices (`off: default
+position, hide: hide buttons, titlebar: move it`) turns the option into
+buttons. This is automatic: a theme needs no ReCore-specific metadata.
+
+ReCord's `--rl-*` names get curated labels and groups. Other themes are
+grouped as backgrounds, text, channels, accents, status, borders, interface,
+base colours, typography, shape, pictures and effects, with a fallback group
+for anything ReCore cannot place. Values changed there are kept per theme in
+`layout.json` under `css_options` and the theme is re-read with them, so its
+palette and effects change live. **Reset these options** forgets them;
+**Show every variable** also lists the properties ReCore cannot place.
+
+For predictable labels, theme authors can put a short description after a
+declaration (`--main-color: #2780e6; /* main accent colour */`), group a
+block under a heading comment, and use BetterDiscord `@var` metadata for
+labels and types. ReCore still reads the CSS when none of those are present.
 
 ### Native region selectors
 
@@ -130,12 +197,19 @@ ReCore gives its native sidebar, guild rail, chat, message area, member list,
 composer, header and cards a synthetic node with the class fragments Discord
 themes commonly target, then matches the theme's rules against them. It
 understands class, id and tag selectors, attribute fragments such as
-`[class*="..."]`, descendant selectors, `:is()`, `:not()`, `:where()`, the
-`.theme-dark`/`.theme-light` roots and `:hover`/`:focus` states. Specificity,
+`[class*="..."]`, descendant selectors, `:is()`, `:not()`, `:where()`, simple
+`:has()` descendant checks, the `.theme-dark`/`.theme-light` roots and
+`:hover`/`:focus` states. Specificity,
 `!important` and source order are applied, and `var()` values are resolved
-before they reach the window. The mapped properties are `background` and
-`background-color`, `color`, `border-radius`, `font-family`, `font-size` and
-`letter-spacing`.
+before they reach the window. A bare tag selector or `*` never styles a
+region on its own: it needs a class, an id or an attribute, so a theme's
+`div { ... }` reset cannot paint the rail. Fully transparent backgrounds are
+left to the region's own colour instead of erasing it, and a radius on a
+button, a card or a hover state does not redefine the whole window's shape.
+The mapped properties are `background`, `background-color` and
+`background-image`, `color`, `border-radius`, `font-family`, `font-size` and
+`letter-spacing`. A gradient's first opaque stop is used as the region's
+colour where the native window cannot paint the full gradient.
 
 ### What CSS cannot do here
 
@@ -243,12 +317,20 @@ light theme; ReCore doesn't adjust them yet.
 
 The interpreter lives in `crates/recore-css`. `recore_css::load(path)` reads a
 file and returns a `ThemeFile` with the resolved `Palette`, `Look`, fonts,
-warnings and the metadata from the theme's `/** @name ... */` header. `scan`
-walks folders, and `theme_folders` names the common clients' folders.
-`Options` chooses the dark or light set, forces an accent, or overrides a
-custom property. The crate has no dependencies, so its parser can be tested
+warnings and the metadata from the theme's `/** @name ... */` header.
+`load_with_imports` and `load_str_with_imports` take a fetch callback for a
+theme's remote files, and `scan_with_imports` does so while walking folders;
+`scan` and `load` are the same without remote access. `theme_folders` names
+the common clients' folders. `Options` chooses the dark or light set, forces
+an accent, or overrides a custom property. The crate has no dependencies, so its parser can be tested
 on its own:
 
 ```bash
 cargo test -p recore-css
+```
+
+To see what ReCore read from a theme by hand:
+
+```bash
+cargo run -p recore-css --example read -- themes/Ambxst.theme.css
 ```

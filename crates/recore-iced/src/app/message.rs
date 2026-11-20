@@ -87,6 +87,10 @@ pub enum Message {
     /// Fallback fonts the shaper wanted are in (`fonts::load_wanted`): the
     /// view is built and its text laid out again.
     FontsLoaded,
+    /// The themes folder was saved outside ReCore while Settings is open.
+    ThemeFiles,
+    /// A theme URL import finished, or failed.
+    ThemeImported(Result<std::path::PathBuf, String>),
     /// A frame of the window's stepped motion: the boot signal, badges,
     /// presence and the screen-in.
     MotionTick,

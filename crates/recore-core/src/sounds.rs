@@ -1,9 +1,10 @@
 //! ReCore's own short sounds for calls and messages: joining and leaving, mute and
 //! deafen, a new message or mention, someone starting or stopping a stream,
-//! and someone starting or stopping watching one. They come in six sets with one
-//! character each, all in F major pentatonic so any two sound well together.
-//! Four are synthesized as they play; two play the score on one recorded
-//! note each, the only sound bundled.
+//! and someone starting or stopping watching one. The instruments come from
+//! ReCord's signal pack: the terminal set and the fourteen themes the theme's
+//! companion plugin offers, each with every call, message and interface
+//! sound, plus ReCore's own synthesized instruments. They are embedded as
+//! short mono WAVs and decoded as they play.
 
 use std::sync::Arc;
 
@@ -12,6 +13,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::audio_io::{Output, RATE};
 const TAU: f32 = std::f32::consts::TAU;
+
+// The table `build.rs` writes from `sounds/packs`, so a pack file is one
+// `include_bytes!` away without naming 308 files here.
+include!(concat!(env!("OUT_DIR"), "/sound_packs.rs"));
 
 /// The instrument every sound plays on.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -32,11 +37,39 @@ pub enum SoundSet {
     Flute,
     /// ReCord's theme sounds: the WAVs the ReCord companion plugin plays.
     Record,
+    /// Kenney's UI SFX Set: clicks and switches.
+    Kenney,
+    /// Kenney's Interface Sounds: ticks, plucks and confirmations.
+    KenneyInterface,
+    /// UI SFX Arcade.
+    Arcade,
+    /// UI SFX Sci-fi.
+    Scifi,
+    /// UI SFX Mechanical.
+    Mechanical,
+    /// UI SFX Minimal.
+    Minimal,
+    /// UI SFX Glass.
+    Glass,
+    /// UI SFX Cinematic.
+    Cinematic,
+    /// UI SFX Studio.
+    Studio,
+    /// UI SFX Soft.
+    Soft,
+    /// UI SFX Rubber.
+    Rubber,
+    /// UI SFX Organic.
+    Organic,
+    /// UI SFX Dreamy.
+    Dreamy,
+    /// UI SFX Zen.
+    Zen,
 }
 
 impl SoundSet {
     /// In the order Settings lists them, which `layout.json` doesn't depend on.
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 21] = [
         Self::NewKalimba,
         Self::Felt,
         Self::Marimba,
@@ -44,11 +77,107 @@ impl SoundSet {
         Self::Glow,
         Self::Flute,
         Self::Record,
+        Self::Kenney,
+        Self::KenneyInterface,
+        Self::Arcade,
+        Self::Scifi,
+        Self::Mechanical,
+        Self::Minimal,
+        Self::Glass,
+        Self::Cinematic,
+        Self::Studio,
+        Self::Soft,
+        Self::Rubber,
+        Self::Organic,
+        Self::Dreamy,
+        Self::Zen,
     ];
+
+    /// The name Settings shows.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::NewKalimba => "New Kalimba",
+            Self::Felt => "Felt piano",
+            Self::Marimba => "Soft marimba",
+            Self::Rhodes => "Mellow Rhodes",
+            Self::Glow => "Glow",
+            Self::Flute => "Flute",
+            Self::Record => "ReCord",
+            Self::Kenney => "Kenney UI",
+            Self::KenneyInterface => "Kenney Interface",
+            Self::Arcade => "Arcade",
+            Self::Scifi => "Sci-fi",
+            Self::Mechanical => "Mechanical",
+            Self::Minimal => "Minimal",
+            Self::Glass => "Glass",
+            Self::Cinematic => "Cinematic",
+            Self::Studio => "Studio",
+            Self::Soft => "Soft",
+            Self::Rubber => "Rubber",
+            Self::Organic => "Organic",
+            Self::Dreamy => "Dreamy",
+            Self::Zen => "Zen",
+        }
+    }
+
+    /// The folder of ReCord's pack this set plays, if it is one.
+    fn pack(self) -> Option<&'static str> {
+        match self {
+            Self::Kenney => Some("kenney"),
+            Self::KenneyInterface => Some("kenney-interface"),
+            Self::Arcade => Some("arcade"),
+            Self::Scifi => Some("scifi"),
+            Self::Mechanical => Some("mechanical"),
+            Self::Minimal => Some("minimal"),
+            Self::Glass => Some("glass"),
+            Self::Cinematic => Some("cinematic"),
+            Self::Studio => Some("studio"),
+            Self::Soft => Some("soft"),
+            Self::Rubber => Some("rubber"),
+            Self::Organic => Some("organic"),
+            Self::Dreamy => Some("dreamy"),
+            Self::Zen => Some("zen"),
+            _ => None,
+        }
+    }
 
     /// Whether the set plays a recorded note rather than a synthesized one.
     fn recorded(self) -> bool {
         matches!(self, Self::NewKalimba | Self::Flute | Self::Record)
+    }
+}
+
+/// The file in a ReCord pack for one of ReCore's sounds.
+fn sound_key(sound: Sound) -> &'static str {
+    match sound {
+        Sound::Join => "join",
+        Sound::Leave => "leave",
+        Sound::Mute => "mute",
+        Sound::Unmute => "unmute",
+        Sound::Deafen => "deafen",
+        Sound::Undeafen => "undeafen",
+        Sound::Message => "message",
+        Sound::Mention => "mention",
+        Sound::ViewerJoin => "viewer-join",
+        Sound::ViewerLeave => "viewer-leave",
+        Sound::StreamStart => "stream-on",
+        Sound::StreamStop => "stream-off",
+    }
+}
+
+/// The file in a ReCord pack for one of ReCord's interface sounds.
+fn interface_key(sound: InterfaceSound) -> &'static str {
+    match sound {
+        InterfaceSound::Hover => "hover",
+        InterfaceSound::Select => "select",
+        InterfaceSound::Back => "back",
+        InterfaceSound::Open => "open",
+        InterfaceSound::Close => "close",
+        InterfaceSound::Navigate => "navigate",
+        InterfaceSound::Toggle => "toggle",
+        InterfaceSound::Send => "send",
+        InterfaceSound::Type => "type",
+        InterfaceSound::Boot => "boot",
     }
 }
 
@@ -250,6 +379,8 @@ fn voice(set: SoundSet, hz: f32, time: f32, velocity: f32, fade: f32) -> f32 {
         }
         // ReCord's sounds are files, played whole by `render`.
         SoundSet::Record => 0.0,
+        // The pack sets are files too, decoded by `render`.
+        _ => 0.0,
     }
 }
 
@@ -310,11 +441,16 @@ const PEAK: f32 = 0.25;
 /// `sound` in `set`, as interleaved stereo at 48 kHz peaking at [`PEAK`] less
 /// its own quieting, before any volume. It ends once 40 dB below its peak.
 pub fn render(set: SoundSet, sound: Sound) -> Vec<f32> {
+    let (notes, fade, loudness) = score(sound);
     if set == SoundSet::Record {
-        let (_, _, loudness) = score(sound);
         return finish(record(sound), loudness);
     }
-    let (notes, fade, loudness) = score(sound);
+    if let Some(pack) = set.pack() {
+        let samples = pack_file(pack, sound_key(sound))
+            .and_then(wav)
+            .unwrap_or_default();
+        return finish(samples, loudness);
+    }
     let last = notes.iter().fold(0.0f32, |last, note| last.max(note.0));
     let mut dry = vec![0.0f32; ((last + 2.0) * RATE as f32) as usize];
     for &(start, midi, velocity) in notes {
@@ -494,7 +630,8 @@ fn wav(bytes: &[u8]) -> Option<Vec<f32>> {
 
 /// ReCord's interface sounds, played by the native window itself rather
 /// than by Discord: hover, menu, navigation and typing feedback.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum InterfaceSound {
     Hover,
     Select,
@@ -523,9 +660,16 @@ impl InterfaceSound {
     ];
 }
 
-/// The WAV ReCord's interface plays for `sound`, as mono samples at
-/// [`RATE`]. The files are the CC0 signal pack in `sounds/record/ui`.
-fn interface_samples(sound: InterfaceSound) -> Vec<f32> {
+/// The WAV `set` plays for `sound`, as mono samples at [`RATE`]. ReCord's
+/// own interface set is the CC0 signal pack in `sounds/record/ui`; every
+/// other file-based set comes from ReCord's packs. A synthesized instrument
+/// has no interface sounds, so it keeps ReCord's.
+fn interface_samples(set: SoundSet, sound: InterfaceSound) -> Vec<f32> {
+    if let Some(pack) = set.pack() {
+        return pack_file(pack, interface_key(sound))
+            .and_then(wav)
+            .unwrap_or_default();
+    }
     const HOVER: &[u8] = include_bytes!("../sounds/record/ui/hover.wav");
     const SELECT: &[u8] = include_bytes!("../sounds/record/ui/select.wav");
     const BACK: &[u8] = include_bytes!("../sounds/record/ui/back.wav");
@@ -617,11 +761,11 @@ fn interface_player() -> &'static std::sync::mpsc::Sender<(Vec<f32>, Option<Arc<
 /// Plays one of ReCord's interface sounds once, at `volume` from [`gain`],
 /// on `speaker` or the default output. The interface player writes it to
 /// its open stream; if that thread is gone, a thread of its own plays it.
-pub fn play_interface(sound: InterfaceSound, volume: f32, speaker: Option<&str>) {
+pub fn play_interface(set: SoundSet, sound: InterfaceSound, volume: f32, speaker: Option<&str>) {
     if volume <= 0.0 {
         return;
     }
-    let mono = interface_samples(sound);
+    let mono = interface_samples(set, sound);
     if mono.is_empty() {
         return;
     }
@@ -712,14 +856,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sounds_are_short_quiet_and_fade_out() {
+    fn synthesized_sounds_are_short_quiet_and_fade_out() {
         for set in SoundSet::ALL {
+            if set.pack().is_some() || set == SoundSet::Record {
+                continue;
+            }
             for sound in Sound::ALL {
                 let samples = render(set, sound);
                 let seconds = samples.len() as f32 / 2.0 / RATE as f32;
-                let shortest = if set == SoundSet::Record { 0.1 } else { 0.2 };
                 assert!(
-                    (shortest..1.5).contains(&seconds),
+                    (0.2..1.5).contains(&seconds),
                     "{set:?} {sound:?} lasts {seconds} s"
                 );
                 let peak = samples
@@ -740,6 +886,48 @@ mod tests {
                     "{set:?} {sound:?} starts without a click"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn every_record_pack_has_every_sound_and_decodes() {
+        let packs: Vec<&str> = SoundSet::ALL.iter().filter_map(|set| set.pack()).collect();
+        assert_eq!(packs.len(), 14);
+        for pack in PACK_SETS {
+            assert!(packs.contains(pack), "pack {pack} has no SoundSet");
+        }
+        for set in SoundSet::ALL {
+            let Some(pack) = set.pack() else {
+                continue;
+            };
+            for sound in Sound::ALL {
+                let bytes = pack_file(pack, sound_key(sound))
+                    .unwrap_or_else(|| panic!("{pack} has no {sound:?}"));
+                let samples = wav(bytes).unwrap_or_else(|| panic!("{pack} {sound:?} decodes"));
+                assert!(
+                    samples.iter().any(|sample| sample.abs() > 0.005),
+                    "{pack} {sound:?} is silent"
+                );
+            }
+            for sound in InterfaceSound::ALL {
+                let bytes = pack_file(pack, interface_key(sound))
+                    .unwrap_or_else(|| panic!("{pack} has no {sound:?}"));
+                let samples = wav(bytes).unwrap_or_else(|| panic!("{pack} {sound:?} decodes"));
+                assert!(
+                    samples.iter().any(|sample| sample.abs() > 0.005),
+                    "{pack} {sound:?} is silent"
+                );
+            }
+            // The finished call sound keeps ReCore's headroom and clean end.
+            let finished = render(set, Sound::Mention);
+            let seconds = finished.len() as f32 / 2.0 / RATE as f32;
+            assert!((0.05..3.0).contains(&seconds), "{pack} lasts {seconds} s");
+            let peak = finished
+                .iter()
+                .fold(0.0f32, |peak, sample| peak.max(sample.abs()));
+            let (_, _, loudness) = score(Sound::Mention);
+            let expected = PEAK * 10f32.powf(loudness / 20.0);
+            assert!((peak - expected).abs() < 1e-3, "{pack} peaks at {peak}");
         }
     }
 

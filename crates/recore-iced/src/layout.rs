@@ -265,6 +265,12 @@ pub struct Prefs {
     pub hover_sounds: Option<bool>,
     pub typing_sounds: Option<bool>,
     pub boot_sound: Option<bool>,
+    /// The sound theme each interface sound takes, over the call sounds'
+    /// theme; a missing entry follows that theme.
+    pub interface_themes: std::collections::BTreeMap<
+        recore_core::sounds::InterfaceSound,
+        recore_core::sounds::SoundSet,
+    >,
 }
 
 /// When GIFs, animated emoji and stickers play, as Messages' choice.
@@ -299,6 +305,18 @@ impl Prefs {
     /// The interface volume, 45% unless changed, as a linear gain.
     pub fn interface_gain(&self) -> f32 {
         f32::from(self.interface_volume.unwrap_or(45).min(100)) / 100.0
+    }
+
+    /// The sound set `sound` plays in, over the call sounds' `default`.
+    pub fn interface_set(
+        &self,
+        sound: recore_core::sounds::InterfaceSound,
+        default: recore_core::sounds::SoundSet,
+    ) -> recore_core::sounds::SoundSet {
+        self.interface_themes
+            .get(&sound)
+            .copied()
+            .unwrap_or(default)
     }
 
     /// The profile switches, each on unless turned off.
@@ -363,6 +381,10 @@ pub struct Voice {
     pub sound_volume: Option<u8>,
     pub adjust_each_sound: bool,
     pub each_sound: std::collections::BTreeMap<recore_core::sounds::Sound, u8>,
+    /// The sound theme each call sound takes, over `sound_set`; a missing
+    /// entry follows it.
+    pub sound_themes:
+        std::collections::BTreeMap<recore_core::sounds::Sound, recore_core::sounds::SoundSet>,
 }
 
 /// How calls decide when to send the microphone, as Discord's Input Mode.
@@ -433,6 +455,14 @@ impl Voice {
             .filter(|_| self.adjust_each_sound)
             .unwrap_or(100);
         gain(self.sound_volume.unwrap_or(100)) * gain(each)
+    }
+
+    /// The sound set `sound` plays in: its own theme, or `sound_set`.
+    pub fn set_for(&self, sound: recore_core::sounds::Sound) -> recore_core::sounds::SoundSet {
+        self.sound_themes
+            .get(&sound)
+            .copied()
+            .unwrap_or(self.sound_set)
     }
 }
 

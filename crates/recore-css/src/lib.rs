@@ -9,8 +9,11 @@
 //! applies the colours and shape values that win the cascade there. CSS for
 //! Discord's web DOM has no exact nodes in a native window; layout,
 //! pseudo-elements and DOM animations are read without error but are not
-//! painted. [`theme_folders`] lists the places the common clients keep local
-//! themes, and [`scan`] reads them.
+//! painted. Local `@import`s are read beside the theme; [`load_with_imports`]
+//! and [`scan_with_imports`] take a callback for `http:` and `https:` ones
+//! and their remote fonts. A remote picture stays [`Image::Url`] for the
+//! caller to fetch. [`theme_folders`] lists the places the common clients
+//! keep local themes, and [`scan`] reads them.
 //!
 //! ```
 //! use recore_css::{Mode, Options, load_str};
@@ -28,12 +31,13 @@ mod options;
 mod theme;
 
 pub use color::Rgba;
-pub use css::{Meta, ParseError, Stylesheet};
+pub use css::{Meta, MetaVar, Note, ParseError, PropertySpec, Stylesheet};
 pub use native::NativeStyle;
 pub use options::{OptionKind, ThemeOption};
 pub use theme::{
     Effects, Font, Image, Look, Mode, Motion, Options, Palette, Problem, Scan, ThemeFile, load,
-    load_str, load_with, palette, scan, theme_folders,
+    load_str, load_str_with_imports, load_with, load_with_imports, palette, scan,
+    scan_with_imports, theme_files_fingerprint, theme_folders,
 };
 
 /// The version of the interpreter, shown beside a loaded theme.

@@ -4,7 +4,7 @@
 //! among the person's own themes, Cancel puts the theme from before back),
 //! and the profile switches. See docs/themes.md.
 
-use std::fmt::Write as _;
+use std::{collections::BTreeSet, fmt::Write as _};
 
 use iced::{
     Alignment, Border, Color, Element, Length,
@@ -20,7 +20,7 @@ use super::pages::{Pref, ZOOM_SIZES};
 use super::{Drop, Event as SettingsEvent, Page, Settings};
 use crate::{
     app::Message,
-    controls::{Kind, action, choices_within, lights, placed, slider},
+    controls::{Kind, action, lights, placed, slider},
     ctx::{Cx, Pref as Shown, Request},
     fonts::{BOLD, MEDIUM},
     form::{self, switch},
@@ -158,8 +158,25 @@ pub enum Event {
     /// The picture button beside a CSS image option.
     CssImage(String),
     CssReset,
+    /// Reset one custom property, or every changed property in a group.
+    CssResetOne(String),
+    CssResetGroup(String),
     /// Show every custom property, not only the readable ones.
     CssAll(bool),
+    /// Show only recommended options, or only changed ones.
+    CssRecommended(bool),
+    CssChangedOnly(bool),
+    /// Filter the chosen CSS theme's options by what they say.
+    CssSearch(String),
+    /// Open or close one group of the chosen CSS theme's options.
+    CssGroup(String),
+    /// Open every group of options, or close them all.
+    CssGroups(bool),
+    /// A theme URL typed and imported.
+    ThemeUrl(String),
+    ThemeImport,
+    /// The changed options saved as a small CSS file.
+    CssExport,
 }
 
 /// What an Appearance tile is: one ReCore comes with, one the person made,
@@ -192,6 +209,8 @@ impl Settings {
         match event {
             Event::Choose(id) => {
                 self.css_text.clear();
+                self.css_search.clear();
+                self.css_open.clear();
                 choose(cx, &id);
             }
             Event::New => self.new_theme(cx),
@@ -266,10 +285,73 @@ impl Settings {
             Event::Profile(cosmetic, on) => self::cosmetic(cx, cosmetic, on),
             Event::Reload => {
                 self.css_text.clear();
+                self.css_search.clear();
+                self.css_open.clear();
+                crate::themes::clear_remote_cache();
                 cx.themes.reload();
                 cx.request(Request::Changed(Shown::Theme));
             }
             Event::OpenThemes => crate::themes::open_folder(cx.themes.themes_folder()),
+            Event::ThemeUrl(url) => self.theme_url = url,
+            Event::CssExport => {
+                let Some(css) = cx.themes.chosen_css() else {
+                    return;
+                };
+                let id = cx.themes.chosen_id().to_owned();
+                let Some(changed) = cx.themes.overrides.get(&id).cloned() else {
+                    return;
+                };
+                let name = css.name.clone();
+                let file_name = format!(
+                    "{}-overrides.css",
+                    name.chars()
+                        .map(|character| if character.is_ascii_alphanumeric() {
+                            character
+                        } else {
+                            '-'
+                        })
+                        .collect::<String>()
+                        .trim_matches('-')
+                );
+                let Some(path) = rfd::FileDialog::new()
+                    .add_filter("CSS", &["css"])
+                    .set_file_name(file_name)
+                    .save_file()
+                else {
+                    return;
+                };
+                let mut text = format!(
+                    "/* ReCore changes to {name}. Load this after the theme. */
+:root {{
+"
+                );
+                for (option, value) in changed {
+                    if !option.chars().all(|character| {
+                        character.is_ascii_alphanumeric() || matches!(character, '-' | '_')
+                    }) {
+                        continue;
+                    }
+                    let value = value.replace(['\n', '\r'], " ").trim().to_owned();
+                    let _ = writeln!(text, "  {option}: {value};");
+                }
+                text.push_str(
+                    "}
+",
+                );
+                self.theme_url_note = Some(match std::fs::write(&path, text) {
+                    Ok(()) => format!("Saved the changes to {}.", path.display()),
+                    Err(error) => format!("Could not save the changes: {error}"),
+                });
+            }
+            Event::ThemeImport => {
+                let url = self.theme_url.trim().to_owned();
+                if url.is_empty() {
+                    self.theme_url_note = Some("Paste a theme URL first.".into());
+                } else {
+                    self.theme_url_note = Some("Downloading the theme...".into());
+                    cx.request(Request::ImportTheme(url));
+                }
+            }
             Event::Accent(text) => {
                 self.accent = Some(text.clone());
                 if let Some(accent) = palette::parse(&text) {
@@ -408,7 +490,36 @@ impl Settings {
                 let Some(target) = self.color_open.clone() else {
                     return;
                 };
-                let value = format!("#{:06x}", hsv_rgb(hsv));
+                let hex = format!("#{:06x}", hsv_rgb(hsv));
+                let value = if let Some(name) = target.strip_prefix("css:") {
+                    let previous = self
+                        .css_text
+                        .get(name)
+                        .map(String::as_str)
+                        .or_else(|| {
+                            cx.themes
+                                .chosen_css()
+                                .and_then(|css| {
+                                    css.options.iter().find(|option| option.name == name)
+                                })
+                                .map(|option| option.value.as_str())
+                        })
+                        .unwrap_or("");
+                    preserve_alpha(&hex, previous)
+                } else if let Some(index) = target
+                    .strip_prefix("theme:")
+                    .and_then(|index| index.parse::<usize>().ok())
+                {
+                    let previous = self
+                        .editor
+                        .as_ref()
+                        .and_then(|editor| editor.fields.get(index))
+                        .map(|field| field.1.as_str())
+                        .unwrap_or("");
+                    preserve_alpha(&hex, previous)
+                } else {
+                    hex
+                };
                 if target == "accent" {
                     if let Some(accent) = palette::parse(&value) {
                         let root = cx.client.root().to_path_buf();
@@ -442,7 +553,7 @@ impl Settings {
                     .chosen_css()
                     .and_then(|css| css.options.iter().find(|option| option.name == name))
                     .is_some_and(|option| matches!(option.kind, OptionKind::Color { .. }));
-                if is_color && recore_css::color::parse(&value, cx.theme.dark).is_some() {
+                if is_color && recore_css::color::parse(&value, !cx.theme.dark).is_some() {
                     self.css_apply(cx, &name, &value);
                 }
             }
@@ -480,6 +591,48 @@ impl Settings {
                 cx.request(Request::Changed(Shown::Theme));
             }
             Event::CssAll(on) => self.show_all_css = on,
+            Event::CssRecommended(on) => self.css_recommended_only = on,
+            Event::CssChangedOnly(on) => self.css_changed_only = on,
+            Event::CssResetOne(name) => {
+                let id = cx.themes.chosen_id().to_owned();
+                let root = cx.client.root().to_path_buf();
+                self.css_text.remove(&name);
+                cx.themes.clear_option(&root, &id, &name);
+                cx.request(Request::Changed(Shown::Theme));
+            }
+            Event::CssResetGroup(group) => {
+                let id = cx.themes.chosen_id().to_owned();
+                let names: BTreeSet<String> = cx
+                    .themes
+                    .chosen_css()
+                    .map(|css| {
+                        css.options
+                            .iter()
+                            .filter(|option| option.group == group)
+                            .map(|option| option.name.clone())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if !names.is_empty() {
+                    self.css_text.retain(|name, _| !names.contains(name));
+                    let root = cx.client.root().to_path_buf();
+                    cx.themes.clear_named(&root, &id, &names);
+                    cx.request(Request::Changed(Shown::Theme));
+                }
+            }
+            Event::CssSearch(query) => self.css_search = query,
+            Event::CssGroup(group) => {
+                if !self.css_open.remove(&group) {
+                    self.css_open.insert(group);
+                }
+            }
+            Event::CssGroups(open) => {
+                self.css_open.clear();
+                if open && let Some(css) = cx.themes.chosen_css() {
+                    self.css_open
+                        .extend(css.options.iter().map(|option| option.group.clone()));
+                }
+            }
         }
     }
 
@@ -494,7 +647,7 @@ impl Settings {
             return;
         };
         if matches!(option.kind, OptionKind::Color { .. })
-            && recore_css::color::parse(value, cx.theme.dark).is_none()
+            && recore_css::color::parse(value, !cx.theme.dark).is_none()
         {
             return;
         }
@@ -703,6 +856,33 @@ impl<'a> Page<'a> {
                 form::note(
                     theme,
                     css_note(self.cx.themes),
+                ),
+                row![
+                    container(
+                        form::field(
+                            theme,
+                            "theme-url",
+                            "Theme URL",
+                            &self.s.theme_url,
+                        )
+                        .on_input(|value| theme_message(Event::ThemeUrl(value)))
+                        .on_submit(theme_message(Event::ThemeImport)),
+                    )
+                    .width(Length::Fill),
+                    action(
+                        theme,
+                        "Import",
+                        Kind::Plain,
+                        Some(theme_message(Event::ThemeImport)),
+                    )
+                    .small(),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center)
+                .into(),
+                self.s.theme_url_note.as_deref().map_or_else(
+                    || Space::new().into(),
+                    |note| form::note(theme, note),
                 ),
                 tiles,
             ]),
@@ -1132,26 +1312,91 @@ impl<'a> Page<'a> {
             return Space::new().into();
         };
         let show_all = self.s.show_all_css;
-        let mut groups: Vec<(&str, Vec<&ThemeOption>)> = Vec::new();
-        for option in &css.options {
-            if !show_all && option.group == "Other" {
-                continue;
-            }
+        let recommended_only = self.s.css_recommended_only;
+        let changed_only = self.s.css_changed_only;
+        let changed_names: BTreeSet<String> = self
+            .cx
+            .themes
+            .overrides
+            .get(self.cx.themes.chosen_id())
+            .map(|changed| changed.keys().cloned().collect())
+            .unwrap_or_default();
+        let query = self.s.css_search.trim().to_ascii_lowercase();
+        let matching: Vec<&ThemeOption> = css
+            .options
+            .iter()
+            .filter(|option| {
+                (show_all || option.group != "Other")
+                    && (!recommended_only || option.recommended)
+                    && (!changed_only || changed_names.contains(&option.name))
+                    && (query.is_empty()
+                        || option.label.to_ascii_lowercase().contains(&query)
+                        || option.name.to_ascii_lowercase().contains(&query)
+                        || option.description.as_deref().is_some_and(|description| {
+                            description.to_ascii_lowercase().contains(&query)
+                        }))
+            })
+            .collect();
+        let shown = matching.len();
+        let mut groups: Vec<(&str, Vec<&ThemeOption>, bool)> = Vec::new();
+        for option in matching {
+            let changed = changed_names.contains(&option.name);
             match groups.last_mut() {
-                Some((group, options)) if *group == option.group => options.push(option),
-                _ => groups.push((option.group.as_str(), vec![option])),
+                Some((group, options, group_changed)) if *group == option.group => {
+                    options.push(option);
+                    *group_changed |= changed;
+                }
+                _ => groups.push((option.group.as_str(), vec![option], changed)),
             }
         }
         let mut parts = vec![form::group([
             form::heading(theme, "THEME OPTIONS"),
             form::note(
                 theme,
-                format!(
-                    "{} custom propert{} this theme exposes. Changes are kept for this theme.",
-                    css.options.len(),
-                    if css.options.len() == 1 { "y" } else { "ies" }
-                ),
+                if query.is_empty() && !recommended_only && !changed_only && !show_all {
+                    format!(
+                        "{} custom propert{} this theme exposes, labelled from its names and comments. Open a group to edit it; changes are kept for this theme.",
+                        css.options.len(),
+                        if css.options.len() == 1 { "y" } else { "ies" }
+                    )
+                } else {
+                    format!(
+                        "{} of {} custom propert{} visible. Open a group to edit it; changes are kept for this theme.",
+                        shown,
+                        css.options.len(),
+                        if css.options.len() == 1 { "y" } else { "ies" }
+                    )
+                },
             ),
+            container(
+                form::field(
+                    theme,
+                    "css-options-search",
+                    "Filter options",
+                    &self.s.css_search,
+                )
+                .on_input(|value| theme_message(Event::CssSearch(value))),
+            )
+            .width(Length::Fill)
+            .into(),
+            row![
+                action(
+                    theme,
+                    "Open all",
+                    Kind::Plain,
+                    Some(theme_message(Event::CssGroups(true))),
+                )
+                .small(),
+                action(
+                    theme,
+                    "Close all",
+                    Kind::Plain,
+                    Some(theme_message(Event::CssGroups(false))),
+                )
+                .small(),
+            ]
+            .spacing(8)
+            .into(),
             switch(
                 "Show every variable",
                 show_all,
@@ -1159,24 +1404,87 @@ impl<'a> Page<'a> {
             )
             .description("Also lists the properties ReCore can't tell a use for, for a theme you're building.")
             .view(self.cx.look),
-            action(
-                theme,
-                "Reset these options",
-                Kind::Plain,
-                Some(theme_message(Event::CssReset)),
+            switch(
+                "Only recommended",
+                recommended_only,
+                Some(theme_message(Event::CssRecommended(!recommended_only))),
             )
-            .small()
-            .into(),
+            .description("Hide unannotated variables and internal aliases.")
+            .view(self.cx.look),
+            switch(
+                "Only changed",
+                changed_only,
+                Some(theme_message(Event::CssChangedOnly(!changed_only))),
+            )
+            .description("Show only the options changed from this theme's own values.")
+            .view(self.cx.look),
+            if !changed_names.is_empty() {
+                row![
+                    action(
+                        theme,
+                        "Export changes",
+                        Kind::Plain,
+                        Some(theme_message(Event::CssExport)),
+                    )
+                    .small(),
+                    action(
+                        theme,
+                        "Reset these options",
+                        Kind::Plain,
+                        Some(theme_message(Event::CssReset)),
+                    )
+                    .small(),
+                ]
+                .spacing(8)
+                .into()
+            } else {
+                Space::new().into()
+            },
         ])];
-        for (group, options) in groups {
-            let mut rows = column![].spacing(12);
-            for option in options {
-                rows = rows.push(self.css_control(option));
+        if groups.is_empty() {
+            parts.push(form::note(
+                theme,
+                if query.is_empty() {
+                    "This theme exposes no custom properties Appearance can edit."
+                } else {
+                    "No option matches the filter. Clear it to see them all."
+                },
+            ));
+        }
+        let open_all = !query.is_empty();
+        for (group, options, group_changed) in groups {
+            let open = open_all || self.s.css_open.contains(group);
+            let heading = format!("{} ({})", group.to_uppercase(), options.len());
+            let toggle = action(
+                theme,
+                if open { "Hide" } else { "Show" },
+                Kind::Plain,
+                Some(theme_message(Event::CssGroup(group.to_owned()))),
+            )
+            .small();
+            let mut header = row![form::heading(theme, heading), toggle]
+                .spacing(8)
+                .align_y(Alignment::Center);
+            if group_changed {
+                header = header.push(
+                    action(
+                        theme,
+                        "Reset group",
+                        Kind::Plain,
+                        Some(theme_message(Event::CssResetGroup(group.to_owned()))),
+                    )
+                    .small(),
+                );
             }
-            parts.push(form::group([
-                form::heading(theme, group.to_uppercase()),
-                rows.into(),
-            ]));
+            if open {
+                let mut rows = column![].spacing(12);
+                for option in options {
+                    rows = rows.push(self.css_control(option));
+                }
+                parts.push(form::group([header.into(), rows.into()]));
+            } else {
+                parts.push(form::group([header.into()]));
+            }
         }
         column(parts).spacing(24).into()
     }
@@ -1187,6 +1495,12 @@ impl<'a> Page<'a> {
         let draft = self.s.css_text.get(&option.name).map(String::as_str);
         let shown = draft.unwrap_or_else(|| css_value_text(option));
         let description = option.description.as_deref();
+        let changed = self
+            .cx
+            .themes
+            .overrides
+            .get(self.cx.themes.chosen_id())
+            .is_some_and(|changed| changed.contains_key(&option.name));
         let label = option.label.as_str();
         let name = option.name.clone();
         let control: Element<'a, Message> = match &option.kind {
@@ -1201,7 +1515,7 @@ impl<'a> Page<'a> {
                     label,
                     colour,
                     shown,
-                    recore_css::color::parse(shown, self.cx.look.theme.dark).is_none(),
+                    recore_css::color::parse(shown, !self.cx.look.theme.dark).is_none(),
                     self.s.color_open.as_deref() == Some(id.as_str()),
                     theme_message(Event::PickColour(id, hsv)),
                     move |value| theme_message(Event::CssDraft(field_name.clone(), value)),
@@ -1231,6 +1545,40 @@ impl<'a> Page<'a> {
                 shown.to_owned(),
             )))
             .view(self.cx.look.theme),
+            OptionKind::Range {
+                value,
+                min,
+                max,
+                step,
+                unit,
+            } => {
+                let max = *max;
+                let min = *min;
+                let unit = unit.clone();
+                let shown_value = shown
+                    .strip_suffix(unit.as_str())
+                    .and_then(|number| number.trim().parse::<i32>().ok())
+                    .unwrap_or(*value);
+                let slider_unit = unit.clone();
+                let slider_name = name.clone();
+                let apply_name = name.clone();
+                slider(
+                    label,
+                    (shown_value - min).clamp(0, max - min) as u32,
+                    (max - min).max(1) as u32,
+                    move |offset| {
+                        theme_message(Event::CssDraft(
+                            slider_name.clone(),
+                            format!("{}{}", i64::from(offset) + i64::from(min), slider_unit),
+                        ))
+                    },
+                )
+                .step((*step).max(1) as u32)
+                .mark(false)
+                .shown(shown.to_owned())
+                .on_release(theme_message(Event::CssApply(apply_name, shown.to_owned())))
+                .view(self.cx.look.theme)
+            }
             OptionKind::Toggle {
                 on,
                 on_value,
@@ -1250,10 +1598,6 @@ impl<'a> Page<'a> {
             .description(description.unwrap_or(""))
             .view(self.cx.look),
             OptionKind::Choice { choices } => {
-                let current = choices
-                    .iter()
-                    .position(|choice| *choice == option.value)
-                    .unwrap_or(0);
                 let mut words = column![
                     text(label)
                         .size(14)
@@ -1264,14 +1608,24 @@ impl<'a> Page<'a> {
                 if let Some(description) = description {
                     words = words.push(form::note(theme, description));
                 }
-                words
-                    .push(choices_within(theme, choices, current, 520.0, {
-                        let name = name.clone();
-                        move |index| {
-                            theme_message(Event::CssApply(name.clone(), choices[index].to_owned()))
-                        }
-                    }))
-                    .into()
+                let mut buttons = column![].spacing(4);
+                for chunk in choices.chunks(4) {
+                    let mut line = row![].spacing(6).align_y(Alignment::Center);
+                    for (choice, value) in chunk {
+                        let chosen = value == &option.value;
+                        line = line.push(
+                            action(
+                                theme,
+                                choice.clone(),
+                                if chosen { Kind::Primary } else { Kind::Plain },
+                                Some(theme_message(Event::CssApply(name.clone(), value.clone()))),
+                            )
+                            .small(),
+                        );
+                    }
+                    buttons = buttons.push(line);
+                }
+                words.push(buttons).into()
             }
             OptionKind::Image { embedded, .. } => {
                 let value = if *embedded { "" } else { shown };
@@ -1333,15 +1687,46 @@ impl<'a> Page<'a> {
                 .into()
             }
         };
-        if description.is_some()
+        let mut footer = column![].spacing(4);
+        let mut has_footer = false;
+        if let Some(description) = description
             && !matches!(
                 option.kind,
                 OptionKind::Toggle { .. } | OptionKind::Choice { .. } | OptionKind::Image { .. }
             )
         {
-            column![control, form::note(theme, description.unwrap_or(""))]
-                .spacing(4)
-                .into()
+            footer = footer.push(form::note(theme, description));
+            has_footer = true;
+        }
+        if let Some(default) = &option.default_value {
+            footer = footer.push(form::note(theme, format!("Default: {default}")));
+            has_footer = true;
+        }
+        if let Some(only_in) = option.only_in {
+            footer = footer.push(form::note(
+                theme,
+                if only_in {
+                    "Only applies to the dark palette."
+                } else {
+                    "Only applies to the light palette."
+                },
+            ));
+            has_footer = true;
+        }
+        if changed {
+            footer = footer.push(
+                action(
+                    theme,
+                    "Reset this option",
+                    Kind::Plain,
+                    Some(theme_message(Event::CssResetOne(name.clone()))),
+                )
+                .small(),
+            );
+            has_footer = true;
+        }
+        if has_footer {
+            column![control, footer].spacing(4).into()
         } else {
             control
         }
@@ -1489,13 +1874,25 @@ fn css_value_text(option: &ThemeOption) -> &str {
     }
 }
 
+/// Keeps the alpha of the colour already in a field when the HSV picker
+/// changes its hue, so `#rrggbbaa` does not become opaque.
+fn preserve_alpha(hex: &str, previous: &str) -> String {
+    let alpha = recore_css::color::parse(previous, true).map(|color| color.a);
+    match alpha {
+        Some(alpha) if alpha != 255 => format!("{hex}{alpha:02x}"),
+        _ => hex.to_owned(),
+    }
+}
+
 /// `25%` or `0.25` as the 0..100 a slider shows.
 fn css_percent(text: &str) -> Option<f32> {
     let text = text.trim();
     if let Some(percent) = text.strip_suffix('%') {
         return percent.trim().parse::<f32>().ok();
     }
-    text.parse::<f32>().ok().map(|value| value * 100.0)
+    text.parse::<f32>()
+        .ok()
+        .map(|value| if value > 1.0 { value } else { value * 100.0 })
 }
 
 /// A slider's 0..100 as the theme writes it: `25%` or `0.25`.
@@ -1562,6 +1959,21 @@ fn css_note(themes: &crate::themes::Themes) -> String {
             themes.problems.len(),
             if themes.problems.len() == 1 { "" } else { "s" }
         );
+        for problem in themes.problems.iter().take(2) {
+            let _ = write!(note, " {}: {}.", problem.path.display(), problem.message);
+        }
+    }
+    if let Some(css) = themes.chosen_css() {
+        for warning in css.warnings.iter().take(3) {
+            note.push(' ');
+            note.push_str(warning);
+            if !warning.ends_with('.') {
+                note.push('.');
+            }
+        }
+        if css.warnings.len() > 3 {
+            let _ = write!(note, " And {} more warnings.", css.warnings.len() - 3);
+        }
     }
     note
 }
@@ -1673,5 +2085,17 @@ impl<'a> Page<'a> {
         )
         .description("Your desktop draws the window's title bar and buttons, as on its other windows. Off, ReCore draws its own.")
         .view(self.cx.look)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::preserve_alpha;
+
+    #[test]
+    fn the_hsv_picker_keeps_an_existing_alpha() {
+        assert_eq!(preserve_alpha("#ff0000", "#ff000080"), "#ff000080");
+        assert_eq!(preserve_alpha("#ff0000", "#ff0000"), "#ff0000");
+        assert_eq!(preserve_alpha("#ff0000", ""), "#ff0000");
     }
 }

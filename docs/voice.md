@@ -161,24 +161,25 @@ the one it watches, plays the call's join or leave an octave higher, quicker
 and quieter, as Discord's client sounds a stream's viewers; a call sound at the
 same moment wins, and a stream starting or ending makes no viewer sound.
 
-`sounds.rs` makes each sound as it plays. The seven sets are New Kalimba, the
-default, Felt piano, Soft marimba, Mellow Rhodes, Glow, Flute and ReCord. The
-first six are in F major pentatonic so any two sound well together: Felt
-piano, Soft marimba, Mellow Rhodes and Glow are synthesized, while New Kalimba
-and Flute play the same notes on one recorded note each, made with
-ElevenLabs' sound generator and kept as 24 kHz samples in
-`crates/recore-core/sounds/`, played faster or slower for each note. ReCord
-plays the WAVs from ReCord's companion theme plugin, in
-`crates/recore-core/sounds/record/`, for the same calls and messages (CC0,
-see the licence beside them). They play on the call's speakers through `audio_io.rs`, on Linux and
-Windows, like ringing. Settings › Sounds chooses the set and the volume, from
-0% to 200%. A slider's percentage becomes a gain by its square, which spreads
-the quiet settings along more of it. At 100%, the default, the loudest sounds
-peak 12 dB under full scale, and at 200% they reach it. Each sound can also
-have its own volume up to 100%, as a share of that one. `layout.json` remembers
-them. Desktop notifications ask the desktop to stay quiet, since ReCore sounds
-itself; someone who had turned the desktop's sound off starts with messages and
-mentions at 0%.
+`sounds.rs` makes each sound as it plays. The synthesized sets are New
+Kalimba, the default, Felt piano, Soft marimba, Mellow Rhodes, Glow and Flute.
+They are in F major pentatonic so any two sound well together: Felt piano, Soft
+marimba, Mellow Rhodes and Glow are synthesized, while New Kalimba and Flute
+play the same notes on one recorded note each, made with ElevenLabs' sound
+generator and kept as 24 kHz samples in `crates/recore-core/sounds/`, played
+faster or slower for each note. ReCord's sound themes are bundled beside them:
+the terminal set in `sounds/record/` (CC0, see the licence beside it), and
+Kenney's two UI sets and the twelve UI SFX sets in `sounds/packs/`, converted
+to short mono WAVs. They play on the call's speakers through `audio_io.rs`, on
+Linux and Windows, like ringing. Settings › Sounds chooses the shared sound
+theme and the volume, from 0% to 200%, and each call and interface sound can
+take a theme of its own over the shared one. A slider's percentage becomes a
+gain by its square, which spreads the quiet settings along more of it. At
+100%, the default, the loudest sounds peak 12 dB under full scale, and at 200%
+they reach it. Each sound can also have its own volume up to 100%, as a share
+of that one. `layout.json` remembers them. Desktop notifications ask the
+desktop to stay quiet, since ReCore sounds itself; someone who had turned the
+desktop's sound off starts with messages and mentions at 0%.
 
 WebRTC's PulseAudio devices report no GUID, and LiveKit selects devices only by
 GUID, which would always choose the first device. ReCore names such devices

@@ -6,6 +6,7 @@
 use std::{env, path::PathBuf, process::Command};
 
 fn main() {
+    sound_packs();
     for file in [
         "vp8.c",
         "h264.c",
@@ -186,4 +187,77 @@ fn find_clang_cl() -> Option<PathBuf> {
                 .map(|folder| PathBuf::from(folder).join("LLVM/bin/clang-cl.exe"))
                 .filter(|path| path.is_file())
         })
+}
+
+/// Writes the table of ReCord's sound packs into `OUT_DIR`, so `sounds.rs`
+/// embeds them with `include_bytes!` without listing every file by hand.
+fn sound_packs() {
+    use std::fmt::Write as _;
+    let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("cargo sets the manifest"))
+        .join("sounds/packs");
+    println!("cargo:rerun-if-changed=sounds/packs");
+    let mut sets = Vec::new();
+    let mut files = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&root) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let Some(set) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            sets.push(set.to_owned());
+            let mut pack_files = Vec::new();
+            if let Ok(entries) = std::fs::read_dir(&path) {
+                for entry in entries.flatten() {
+                    let file = entry.path();
+                    if file.extension().and_then(|extension| extension.to_str()) != Some("wav") {
+                        continue;
+                    }
+                    let Some(key) = file.file_stem().and_then(|name| name.to_str()) else {
+                        continue;
+                    };
+                    pack_files.push((key.to_owned(), file));
+                }
+            }
+            pack_files.sort_by(|a, b| a.0.cmp(&b.0));
+            files.extend(
+                pack_files
+                    .into_iter()
+                    .map(|(key, file)| (set.to_owned(), key, file)),
+            );
+        }
+    }
+    sets.sort();
+    files.sort_by(|a, b| (a.0.as_str(), a.1.as_str()).cmp(&(b.0.as_str(), b.1.as_str())));
+
+    let mut source = String::new();
+    source.push_str("/// The ReCord pack sets bundled with ReCore, in name order.\n");
+    source
+        .push_str("#[allow(dead_code, reason = \"the tests check every pack has every sound\")]\n");
+    let _ = writeln!(
+        source,
+        "pub(crate) const PACK_SETS: &[&str] = &[{}];",
+        sets.iter()
+            .map(|set| format!("{set:?}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    source.push_str(
+        "\n/// The bytes of `key` in `set`, as a mono WAV at 24 kHz: the ReCord\n\
+         /// sound pack, converted from its Ogg Opus and WAV sources.\n\
+         pub(crate) fn pack_file(set: &str, key: &str) -> Option<&'static [u8]> {\n    match (set, key) {\n",
+    );
+    for (set, key, _path) in &files {
+        let relative = format!("/sounds/packs/{set}/{key}.wav");
+        let _ = writeln!(
+            source,
+            "        ({set:?}, {key:?}) => Some(include_bytes!(concat!(env!(\"CARGO_MANIFEST_DIR\"), {relative:?}))),"
+        );
+    }
+    source.push_str("        _ => None,\n    }\n}\n");
+
+    let out = PathBuf::from(env::var("OUT_DIR").expect("cargo sets the output folder"));
+    std::fs::write(out.join("sound_packs.rs"), source).expect("writes the sound pack table");
 }

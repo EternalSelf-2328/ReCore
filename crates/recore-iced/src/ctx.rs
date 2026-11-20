@@ -162,6 +162,8 @@ pub enum Request {
         target: crate::picker::Target,
         key: String,
     },
+    /// A theme URL downloaded into the themes folder, then read again.
+    ImportTheme(String),
     /// Someone's menu, where the pointer was pressed, as the place the
     /// core's analytics name (`person_menu::CONTEXT_MENU`).
     PersonMenu {

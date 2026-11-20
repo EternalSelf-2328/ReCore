@@ -244,6 +244,21 @@ impl App {
                     Request::PlaceEmoji { target, key } => {
                         tasks.push(crate::picker::place_emoji(self, target, key));
                     }
+                    Request::ImportTheme(url) => {
+                        let folder = self.themes.themes_folder().to_path_buf();
+                        tasks.push(Task::perform(
+                            async move {
+                                tokio::task::spawn_blocking(move || {
+                                    crate::themes::import_theme(&folder, &url)
+                                })
+                                .await
+                                .unwrap_or_else(|error| {
+                                    Err(format!("could not import the theme: {error}"))
+                                })
+                            },
+                            Message::ThemeImported,
+                        ));
+                    }
                     Request::PersonMenu { user, location } => {
                         let at = self.pressed.get();
                         tasks.push(crate::person_menu::open_person_menu(

@@ -28,6 +28,11 @@ pub struct Rule {
     /// `Some(true)` under `prefers-color-scheme: dark`, `Some(false)` under
     /// its light query, `None` under anything else.
     pub color_scheme: Option<bool>,
+    /// The folder or web address of the stylesheet the rule came from, for
+    /// the files it names relatively.
+    pub origin: Option<String>,
+    /// The `@layer` it sits in, by the order the layers were first named.
+    pub layer: Option<u32>,
 }
 
 /// A font a theme carries or points at.
@@ -40,6 +45,28 @@ pub struct FontFace {
     pub data: Option<Vec<u8>>,
     /// What the `src` asked for, for the diagnostics.
     pub source: String,
+    /// The folder or web address of the stylesheet that named it.
+    pub origin: Option<String>,
+}
+
+/// What a comment beside a custom property says about it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Note {
+    /// The description written beside or above the declaration.
+    pub description: Option<String>,
+    /// The section the declaration sits under (`/* text colors */`).
+    pub group: Option<String>,
+    /// The value a `[default: ...]` or `- default: ...` comment names.
+    pub default_value: Option<String>,
+}
+
+/// What a `@property` rule says about a custom property.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PropertySpec {
+    /// The CSS syntax, such as `<color>` or `<length>`.
+    pub syntax: Option<String>,
+    /// The value used when the theme does not set it.
+    pub initial: Option<String>,
 }
 
 /// What a stylesheet holds.
@@ -48,6 +75,23 @@ pub struct Stylesheet {
     pub rules: Vec<Rule>,
     pub fonts: Vec<FontFace>,
     pub warnings: Vec<String>,
+    /// What themes' comments say about their custom properties, by name.
+    pub notes: BTreeMap<String, Note>,
+    /// The `@property` rules, by custom property.
+    pub properties: BTreeMap<String, PropertySpec>,
+    /// The cascade layers, in the order they were first named.
+    pub layers: Vec<String>,
+}
+
+impl Stylesheet {
+    /// The order of `name` among the cascade layers, adding it when new.
+    fn layer_rank(&mut self, name: &str) -> u32 {
+        if let Some(index) = self.layers.iter().position(|known| known == name) {
+            return index as u32;
+        }
+        self.layers.push(name.to_owned());
+        (self.layers.len() - 1) as u32
+    }
 }
 
 /// A parse failure; the loader keeps what came before it.
@@ -104,7 +148,10 @@ fn expand(
             .push("more than 16 nested imports; stopped".into());
         return;
     }
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    collect_notes(text, &mut stylesheet.notes);
     let source = strip_comments(text);
+    let origin = base.map(|path| path.to_string_lossy().into_owned());
     let bytes = source.as_bytes();
     let mut index = 0;
     let mut chunk_start = 0;
@@ -154,29 +201,42 @@ fn expand(
         let statement = source[start..end].trim();
         let is_import = statement
             .strip_prefix('@')
-            .is_some_and(|rest| rest.trim_start().starts_with("import"));
+            .is_some_and(|rest| rest.trim_start().to_ascii_lowercase().starts_with("import"));
         if is_import {
             // Parse what came before, then the imported sheet, then go on.
             let before = &source[chunk_start..start];
             if !before.trim().is_empty() {
                 let mut at_rules = Vec::new();
-                parse_block(before, stylesheet, &mut at_rules, None);
+                parse_block(
+                    before,
+                    stylesheet,
+                    &mut at_rules,
+                    None,
+                    origin.as_deref(),
+                    None,
+                );
             }
             let rest = statement
-                .trim_start_matches('@')
-                .trim_start_matches("import")
-                .trim();
+                .strip_prefix('@')
+                .unwrap_or(statement)
+                .trim_start();
+            let rest = if rest.is_char_boundary(6) && rest[..6].eq_ignore_ascii_case("import") {
+                rest[6..].trim()
+            } else {
+                rest
+            };
             match import_path(rest) {
-                Some(path)
-                    if path.starts_with("http://")
-                        || path.starts_with("https://")
-                        || path.starts_with("data:") =>
-                {
+                Some((path, condition)) if !import_condition_allows(&condition) => {
                     stylesheet.warnings.push(format!(
-                        "@import {path} is not a local file, so it is skipped"
+                        "@import {path} does not apply here ({condition}); skipped"
                     ));
                 }
-                Some(path) => {
+                Some((path, _)) if path.starts_with("data:") => {
+                    stylesheet.warnings.push(format!(
+                        "@import {path} is a data: URI, not a stylesheet, so it is skipped"
+                    ));
+                }
+                Some((path, _)) => {
                     if imported.iter().any(|seen| seen == &path) {
                         stylesheet
                             .warnings
@@ -214,7 +274,14 @@ fn expand(
     let rest = &source[chunk_start..];
     if !rest.trim().is_empty() {
         let mut at_rules = Vec::new();
-        parse_block(rest, stylesheet, &mut at_rules, None);
+        parse_block(
+            rest,
+            stylesheet,
+            &mut at_rules,
+            None,
+            origin.as_deref(),
+            None,
+        );
     }
 }
 
@@ -224,6 +291,8 @@ fn parse_block(
     stylesheet: &mut Stylesheet,
     color_scheme: &mut Vec<Option<bool>>,
     current: Option<bool>,
+    origin: Option<&str>,
+    layer: Option<u32>,
 ) {
     let mut index = 0;
     let bytes = text.as_bytes();
@@ -300,9 +369,24 @@ fn parse_block(
             let lower = name.to_ascii_lowercase();
             match lower.as_str() {
                 "font-face" => {
-                    stylesheet.fonts.push(font_face(body));
+                    stylesheet.fonts.push(font_face(body, origin));
                 }
-                "media" | "supports" | "layer" | "container" | "scope" | "document" => {
+                "layer" => {
+                    let name = prelude
+                        .strip_prefix("@layer")
+                        .unwrap_or(prelude)
+                        .trim()
+                        .to_owned();
+                    let rank = stylesheet.layer_rank(&name);
+                    parse_block(body, stylesheet, color_scheme, current, origin, Some(rank));
+                }
+                "media" | "supports" | "container" | "scope" | "document" => {
+                    if lower == "supports" && !supports_applies(prelude) {
+                        continue;
+                    }
+                    if lower == "media" && !media_applies(prelude) {
+                        continue;
+                    }
                     let scheme = if lower == "media" {
                         media_scheme(prelude)
                     } else {
@@ -310,18 +394,28 @@ fn parse_block(
                     };
                     let applies = scheme.or(current);
                     color_scheme.push(applies);
-                    parse_block(body, stylesheet, color_scheme, applies);
+                    parse_block(body, stylesheet, color_scheme, applies, origin, layer);
                     color_scheme.pop();
                 }
-                "keyframes"
-                | "-webkit-keyframes"
-                | "property"
-                | "counter-style"
-                | "font-feature-values" => {}
+                "property" => {
+                    let name = prelude.strip_prefix("@property").unwrap_or(prelude).trim();
+                    if name.starts_with("--") {
+                        let mut spec = PropertySpec::default();
+                        for declaration in declarations(body) {
+                            match declaration.name.as_str() {
+                                "syntax" => spec.syntax = Some(unquote(&declaration.value)),
+                                "initial-value" => spec.initial = Some(declaration.value),
+                                _ => {}
+                            }
+                        }
+                        stylesheet.properties.insert(name.to_owned(), spec);
+                    }
+                }
+                "keyframes" | "-webkit-keyframes" | "counter-style" | "font-feature-values" => {}
                 _ => {
                     // Unknown at-rules with blocks (@page, @starting-style) may
                     // still hold declarations for the root; read their rules.
-                    parse_block(body, stylesheet, color_scheme, current);
+                    parse_block(body, stylesheet, color_scheme, current, origin, layer);
                 }
             }
             continue;
@@ -337,22 +431,156 @@ fn parse_block(
             selectors,
             declarations: declarations(body),
             color_scheme: color_scheme.last().copied().flatten(),
+            origin: origin.map(str::to_owned),
+            layer,
         });
     }
 }
 
+/// The byte offset of `needle` in `text`, ignoring ASCII case, as CSS
+/// keywords are case-insensitive.
+pub(crate) fn find_ignore_case(text: &str, needle: &str) -> Option<usize> {
+    let text = text.as_bytes();
+    let needle = needle.as_bytes();
+    if needle.is_empty() || needle.len() > text.len() {
+        return None;
+    }
+    text.windows(needle.len())
+        .position(|window| window.eq_ignore_ascii_case(needle))
+}
+
 /// The path in `@import "x"`, `@import url(x)` or `@import url("x")`.
-fn import_path(rest: &str) -> Option<String> {
+fn import_path(rest: &str) -> Option<(String, String)> {
     let rest = rest.trim();
-    if let Some(inside) = rest.strip_prefix("url(") {
+    if let Some(offset) = find_ignore_case(rest, "url(") {
+        if offset != 0 {
+            return None;
+        }
+        let inside = &rest[4..];
         let end = inside.find(')')?;
-        return Some(unquote(inside[..end].trim()));
+        return Some((
+            unquote(inside[..end].trim()),
+            inside[end + 1..].trim().to_owned(),
+        ));
     }
     let first = rest.split_whitespace().next()?;
     if first.starts_with('"') || first.starts_with('\'') {
         let quote = first.chars().next()?;
         let inner = first.strip_prefix(quote)?.strip_suffix(quote)?;
-        return Some(inner.to_owned());
+        return Some((inner.to_owned(), rest[first.len()..].trim().to_owned()));
+    }
+    None
+}
+
+/// Whether the media/supports condition after an `@import` URL applies.
+fn import_condition_allows(condition: &str) -> bool {
+    let lower = condition.to_ascii_lowercase();
+    if lower.is_empty() {
+        return true;
+    }
+    if lower.contains("print") && !lower.contains("screen") && !lower.contains("not print") {
+        return false;
+    }
+    if let Some(start) = lower.find("supports(") {
+        let rest = &condition[start + "supports".len()..];
+        if let Some((inside, _)) = take_parenthesized(rest)
+            && !supports_value(inside)
+        {
+            return false;
+        }
+    }
+    true
+}
+
+/// Whether a media query could apply to the window: print is the one the
+/// native window never matches.
+fn media_applies(prelude: &str) -> bool {
+    let lower = prelude.to_ascii_lowercase();
+    !(lower.contains("print") && !lower.contains("screen"))
+}
+
+/// Whether an `@supports` prelude applies. Features ReCore's native selector
+/// engine cannot match are treated as unsupported; the rest of CSS's modern
+/// features are treated as present, as a current browser would.
+fn supports_applies(prelude: &str) -> bool {
+    let condition = prelude.strip_prefix("@supports").unwrap_or(prelude).trim();
+    supports_value(condition)
+}
+
+fn supports_value(condition: &str) -> bool {
+    let condition = condition.trim();
+    if let Some(rest) = condition.strip_prefix("not ") {
+        return !supports_value(rest);
+    }
+    let or_parts = split_condition(condition, "or");
+    if or_parts.len() > 1 {
+        return or_parts.iter().any(|part| supports_value(part));
+    }
+    let and_parts = split_condition(condition, "and");
+    if and_parts.len() > 1 {
+        return and_parts.iter().all(|part| supports_value(part));
+    }
+    let inner = condition
+        .strip_prefix('(')
+        .and_then(|text| text.strip_suffix(')'))
+        .unwrap_or(condition)
+        .trim();
+    if inner.starts_with("selector(") {
+        let lower = inner.to_ascii_lowercase();
+        return !(lower.contains(":has(")
+            || lower.contains(":nth-")
+            || lower.contains(":first-")
+            || lower.contains(":last-")
+            || lower.contains(":only-"));
+    }
+    true
+}
+
+/// Splits on `and`/`or` outside parentheses.
+fn split_condition<'a>(text: &'a str, keyword: &str) -> Vec<&'a str> {
+    let needle = format!(" {keyword} ");
+    let mut parts = Vec::new();
+    let mut depth = 0u32;
+    let mut start = 0;
+    let bytes = text.as_bytes();
+    let mut index = 0;
+    while index + needle.len() <= bytes.len() {
+        match bytes[index] {
+            b'(' => depth += 1,
+            b')' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+        if depth == 0 && text[index..].starts_with(&needle) {
+            parts.push(text[start..index].trim());
+            start = index + needle.len();
+            index = start;
+            continue;
+        }
+        index += 1;
+    }
+    if start > 0 {
+        parts.push(text[start..].trim());
+        parts
+    } else {
+        vec![text]
+    }
+}
+
+/// The text inside `text`'s first parenthesised group.
+fn take_parenthesized(text: &str) -> Option<(&str, &str)> {
+    let open = text.find('(')?;
+    let mut depth = 0u32;
+    for (offset, character) in text[open..].char_indices() {
+        match character {
+            '(' => depth += 1,
+            ')' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Some((&text[open + 1..open + offset], &text[open + offset + 1..]));
+                }
+            }
+            _ => {}
+        }
     }
     None
 }
@@ -385,6 +613,277 @@ fn matching_brace(text: &str, open: usize) -> Option<usize> {
     None
 }
 
+/// Reads the comments that describe custom properties and the sections they
+/// sit under, as many Discord themes write them.
+fn collect_notes(text: &str, notes: &mut BTreeMap<String, Note>) {
+    let bytes = text.as_bytes();
+    let mut index = 0;
+    let mut line = 0usize;
+    let mut depth = 0u32;
+    let mut quote: Option<u8> = None;
+    let mut escaped = false;
+    let mut last_prop: Option<(String, usize)> = None;
+    let mut section: Option<String> = None;
+    let mut pending: Option<String> = None;
+    let mut significant = 0u8;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if let Some(active) = quote {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == active {
+                quote = None;
+            } else if byte == b'\n' {
+                line += 1;
+            }
+            index += 1;
+            continue;
+        }
+        match byte {
+            b'"' | b'\'' => {
+                quote = Some(byte);
+                significant = byte;
+                index += 1;
+            }
+            b'\n' => {
+                line += 1;
+                index += 1;
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'*') => {
+                let start_line = line;
+                index += 2;
+                let body_start = index;
+                while index + 1 < bytes.len() && !(bytes[index] == b'*' && bytes[index + 1] == b'/')
+                {
+                    if bytes[index] == b'\n' {
+                        line += 1;
+                    }
+                    index += 1;
+                }
+                let body = text.get(body_start..index).unwrap_or("");
+                index = (index + 2).min(bytes.len());
+                let note = comment_note(body);
+                if let Some((name, prop_line)) = &last_prop
+                    && *prop_line == start_line
+                {
+                    if let Some(description) = note.description {
+                        notes.entry(name.clone()).or_default().description = Some(description);
+                    }
+                    if let Some(default) = note.default_value {
+                        notes.entry(name.clone()).or_default().default_value = Some(default);
+                    }
+                    continue;
+                }
+                if let Some(group) = note.group {
+                    section = Some(group.clone());
+                    pending = Some(group);
+                } else if let Some(description) = note.description {
+                    pending = Some(description);
+                }
+                continue;
+            }
+            b'{' => {
+                depth += 1;
+                significant = b'{';
+                index += 1;
+            }
+            b'}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    section = None;
+                    pending = None;
+                    last_prop = None;
+                }
+                significant = b'}';
+                index += 1;
+            }
+            b';' => {
+                significant = b';';
+                index += 1;
+            }
+            b'-' if bytes.get(index + 1) == Some(&b'-') && matches!(significant, b'{' | b';') => {
+                if let Some((name, after)) = property_at(text, index) {
+                    let note = notes.entry(name.clone()).or_default();
+                    if note.group.is_none()
+                        && let Some(group) = &section
+                    {
+                        note.group = Some(group.clone());
+                    }
+                    if note.description.is_none()
+                        && let Some(description) = pending.take()
+                    {
+                        note.description = Some(description);
+                    }
+                    last_prop = Some((name, line));
+                    index = after;
+                    significant = b':';
+                    continue;
+                }
+                index += 1;
+            }
+            byte if byte.is_ascii_whitespace() => index += 1,
+            byte => {
+                significant = byte;
+                index += 1;
+            }
+        }
+    }
+}
+
+/// The custom property starting at `start`, with the byte after its colon.
+fn property_at(text: &str, start: usize) -> Option<(String, usize)> {
+    let bytes = text.as_bytes();
+    let mut index = start + 2;
+    let name_start = index;
+    while index < bytes.len()
+        && (bytes[index].is_ascii_alphanumeric() || matches!(bytes[index], b'-' | b'_'))
+    {
+        index += 1;
+    }
+    if index == name_start {
+        return None;
+    }
+    let name = &text[name_start..index];
+    while index < bytes.len() && bytes[index].is_ascii_whitespace() {
+        index += 1;
+    }
+    (bytes.get(index) == Some(&b':')).then(|| (format!("--{name}"), index + 1))
+}
+
+/// What one `/* ... */` comment says: a description, a section, or both.
+fn comment_note(body: &str) -> Note {
+    let words = body
+        .lines()
+        .map(|line| line.trim().trim_start_matches('*').trim())
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let text = words.split_whitespace().collect::<Vec<_>>().join(" ");
+    let text = text
+        .trim_matches(|character: char| matches!(character, '-' | '!' | '/' | ' '))
+        .trim();
+    let text = text.trim_end_matches(':').trim();
+    if text.is_empty() {
+        return Note::default();
+    }
+    let description = description_text(text);
+    let group = section_text(text);
+    let default_value = comment_default(text);
+    Note {
+        description,
+        group,
+        default_value,
+    }
+}
+
+/// The value a comment writes after `[default:` or `- default:`.
+fn comment_default(text: &str) -> Option<String> {
+    let lower = text.to_ascii_lowercase();
+    let mut start = None;
+    for marker in ["[default:", "- default:", " default:"] {
+        if let Some(index) = lower.find(marker) {
+            start = Some(index + marker.len());
+            break;
+        }
+    }
+    let rest = &text[start?..];
+    let rest = rest
+        .split([']', ';'])
+        .next()
+        .unwrap_or(rest)
+        .split(" - ")
+        .next()
+        .unwrap_or(rest)
+        .trim();
+    let value = rest.trim_matches(['"', '\'', ' ']);
+    (!value.is_empty() && !value.eq_ignore_ascii_case("default")).then(|| value.to_owned())
+}
+
+fn description_text(text: &str) -> Option<String> {
+    let lower = text.to_ascii_lowercase();
+    if lower.starts_with("change to")
+        || lower.starts_with("default")
+        || lower.starts_with("note")
+        || lower.starts_with("todo")
+        || lower.starts_with("important")
+        || lower.starts_with('@')
+    {
+        return None;
+    }
+    let mut text = text;
+    for marker in ["[default", " - default", " - hex", " default:"] {
+        if let Some(index) = text.to_ascii_lowercase().find(marker) {
+            text = &text[..index];
+        }
+    }
+    let text = text.trim_end_matches([' ', ':', '-', ',']).trim();
+    if text.is_empty() {
+        return None;
+    }
+    let mut text = text.to_owned();
+    if text.chars().count() > 240 {
+        text = text.chars().take(240).collect::<String>();
+        text.push('…');
+    }
+    Some(text)
+}
+
+fn section_text(text: &str) -> Option<String> {
+    let lower = text.to_ascii_lowercase();
+    if text.chars().count() > 60
+        || text.chars().count() < 2
+        || lower.starts_with("note")
+        || lower.starts_with("todo")
+        || lower.starts_with("change")
+        || lower.starts_with("default")
+        || lower.starts_with("important")
+        || lower.contains("http")
+        || lower.contains(".css")
+        || lower.contains("import")
+        || lower.contains("settings")
+        || lower.contains("tokens")
+        || lower.contains("palette")
+        || text.contains("--")
+        || text.chars().any(|character| {
+            matches!(
+                character,
+                '@' | ';' | '{' | '}' | '=' | '[' | ']' | ':' | '(' | ')'
+            )
+        })
+    {
+        return None;
+    }
+    let mut group = text
+        .trim_matches(|character: char| matches!(character, '.' | ':' | '-' | ' '))
+        .to_owned();
+    if group.is_empty() {
+        return None;
+    }
+    // `APP BACKGROUND` and `text colors` both read as a heading.
+    if group
+        .chars()
+        .filter(|character| character.is_alphabetic())
+        .all(|character| !character.is_lowercase())
+    {
+        let mut characters = group.chars();
+        if let Some(first) = characters.next() {
+            group = first.to_uppercase().collect::<String>() + &characters.as_str().to_lowercase();
+        }
+    } else if group
+        .chars()
+        .next()
+        .is_some_and(|character| character.is_lowercase())
+    {
+        let mut characters = group.chars();
+        if let Some(first) = characters.next() {
+            group = first.to_uppercase().collect::<String>() + characters.as_str();
+        }
+    }
+    Some(group)
+}
+
 /// The declarations of a block, each name and value as written.
 fn declarations(body: &str) -> Vec<Declaration> {
     let mut declarations = Vec::new();
@@ -401,12 +900,13 @@ fn declarations(body: &str) -> Vec<Declaration> {
         }
         let mut value = value.trim();
         let mut important = false;
-        if let Some(stripped) = value.strip_suffix("!important") {
-            value = stripped.trim_end();
-            important = true;
-        } else if let Some(stripped) = value.strip_suffix("! important") {
-            value = stripped.trim_end();
-            important = true;
+        let lower = value.to_ascii_lowercase();
+        for suffix in ["!important", "! important"] {
+            if lower.ends_with(suffix) {
+                value = value[..value.len() - suffix.len()].trim_end();
+                important = true;
+                break;
+            }
         }
         declarations.push(Declaration {
             name: name.to_owned(),
@@ -417,7 +917,7 @@ fn declarations(body: &str) -> Vec<Declaration> {
     declarations
 }
 
-fn font_face(body: &str) -> FontFace {
+fn font_face(body: &str, origin: Option<&str>) -> FontFace {
     let mut family = String::new();
     let mut weight = 400;
     let mut italic = false;
@@ -427,15 +927,23 @@ fn font_face(body: &str) -> FontFace {
         match declaration.name.to_ascii_lowercase().as_str() {
             "font-family" => family = unquote(declaration.value.trim()),
             "font-weight" => {
-                if let Ok(value) = declaration.value.trim().parse::<u16>() {
-                    weight = value;
-                }
+                let value = declaration.value.trim().to_ascii_lowercase();
+                weight = match value.as_str() {
+                    "normal" => 400,
+                    "bold" => 700,
+                    _ => value
+                        .split_whitespace()
+                        .next()
+                        .and_then(|value| value.parse::<u16>().ok())
+                        .unwrap_or(400),
+                };
             }
             "font-style" => {
-                italic = declaration.value.trim().eq_ignore_ascii_case("italic")
-                    || declaration.value.trim().eq_ignore_ascii_case("oblique");
+                let value = declaration.value.trim().to_ascii_lowercase();
+                italic = value.starts_with("italic") || value.starts_with("oblique");
             }
             "src" => {
+                let mut fallback = String::new();
                 for candidate in crate::color::split_top(&declaration.value, ',') {
                     let candidate = candidate.trim();
                     if let Some(bytes) = data_uri(candidate) {
@@ -443,9 +951,15 @@ fn font_face(body: &str) -> FontFace {
                         candidate.clone_into(&mut source);
                         break;
                     }
-                    if source.is_empty() {
+                    if fallback.is_empty() {
+                        candidate.clone_into(&mut fallback);
+                    }
+                    if source.is_empty() && find_ignore_case(candidate, "url(").is_some() {
                         candidate.clone_into(&mut source);
                     }
+                }
+                if source.is_empty() {
+                    source = fallback;
                 }
             }
             _ => {}
@@ -457,12 +971,13 @@ fn font_face(body: &str) -> FontFace {
         italic,
         data,
         source,
+        origin: origin.map(str::to_owned),
     }
 }
 
 /// The bytes of a `data:` URI, when it carries them.
 fn data_uri(text: &str) -> Option<Vec<u8>> {
-    let start = text.find("url(")?;
+    let start = find_ignore_case(text, "url(")?;
     let rest = &text[start + 4..];
     let end = rest.find(')')?;
     let inside = unquote(&rest[..end]);
@@ -515,44 +1030,40 @@ fn percent_decode(text: &str) -> Vec<u8> {
 /// Removes comments, keeping line breaks and string contents.
 fn strip_comments(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
-    let bytes = text.as_bytes();
-    let mut index = 0;
-    let mut quote: Option<u8> = None;
-    while index < bytes.len() {
+    let mut chars = text.chars().peekable();
+    let mut quote: Option<char> = None;
+    while let Some(character) = chars.next() {
         if let Some(active) = quote {
-            out.push(bytes[index] as char);
-            if bytes[index] == b'\\' && index + 1 < bytes.len() {
-                out.push(bytes[index + 1] as char);
-                index += 2;
+            out.push(character);
+            if character == '\\' {
+                if let Some(next) = chars.next() {
+                    out.push(next);
+                }
                 continue;
             }
-            if bytes[index] == active {
+            if character == active {
                 quote = None;
             }
-            index += 1;
             continue;
         }
-        match bytes[index] {
-            b'"' | b'\'' => {
-                quote = Some(bytes[index]);
-                out.push(bytes[index] as char);
-                index += 1;
+        match character {
+            '"' | '\'' => {
+                quote = Some(character);
+                out.push(character);
             }
-            b'/' if index + 1 < bytes.len() && bytes[index + 1] == b'*' => {
-                index += 2;
-                while index + 1 < bytes.len() && !(bytes[index] == b'*' && bytes[index + 1] == b'/')
-                {
-                    if bytes[index] == b'\n' {
+            '/' if chars.peek() == Some(&'*') => {
+                chars.next();
+                while let Some(character) = chars.next() {
+                    if character == '*' && chars.peek() == Some(&'/') {
+                        chars.next();
+                        break;
+                    }
+                    if character == '\n' {
                         out.push('\n');
                     }
-                    index += 1;
                 }
-                index = (index + 2).min(bytes.len());
             }
-            byte => {
-                out.push(byte as char);
-                index += 1;
-            }
+            _ => out.push(character),
         }
     }
     out
@@ -579,9 +1090,16 @@ fn media_scheme(prelude: &str) -> Option<bool> {
 pub struct Vars {
     values: BTreeMap<String, String>,
     important: BTreeMap<String, bool>,
+    /// The specificity and source order that won each property.
+    weight: BTreeMap<String, (u32, usize)>,
+    /// The folder or web address each property came from, for the files it
+    /// names relatively.
+    origin: BTreeMap<String, Option<String>>,
 }
 
 impl Vars {
+    /// Writes a declaration unconditionally, as an override the caller chose
+    /// does; only an `!important` declaration in the theme can hold it off.
     pub fn insert(&mut self, declaration: &Declaration) {
         let replace = !matches!(
             (
@@ -595,7 +1113,50 @@ impl Vars {
                 .insert(declaration.name.clone(), declaration.value.clone());
             self.important
                 .insert(declaration.name.clone(), declaration.important);
+            self.weight
+                .insert(declaration.name.clone(), (u32::MAX, usize::MAX));
+            self.origin.insert(declaration.name.clone(), None);
         }
+    }
+
+    /// Writes a declaration in the theme's cascade. `!important` beats
+    /// specificity beats source order, as in a browser.
+    pub fn insert_weighted(
+        &mut self,
+        declaration: &Declaration,
+        specificity: u32,
+        order: usize,
+        origin: Option<&str>,
+    ) {
+        let old_important = self.important.get(&declaration.name).copied();
+        let replace = match (old_important, declaration.important) {
+            (Some(true), false) => false,
+            (Some(false), true) | (None, true) => true,
+            _ => {
+                let (old_specificity, old_order) = self
+                    .weight
+                    .get(&declaration.name)
+                    .copied()
+                    .unwrap_or((0, 0));
+                (specificity, order) >= (old_specificity, old_order)
+            }
+        };
+        if replace {
+            self.values
+                .insert(declaration.name.clone(), declaration.value.clone());
+            self.important
+                .insert(declaration.name.clone(), declaration.important);
+            self.weight
+                .insert(declaration.name.clone(), (specificity, order));
+            self.origin
+                .insert(declaration.name.clone(), origin.map(str::to_owned));
+        }
+    }
+
+    /// The folder or web address `name` came from, for the files it names
+    /// relatively.
+    pub fn origin(&self, name: &str) -> Option<&str> {
+        self.origin.get(name).and_then(Option::as_deref)
     }
 
     pub fn get(&self, name: &str) -> Option<&str> {
@@ -620,15 +1181,15 @@ impl Vars {
     }
 
     /// The colour a declaration names, after its `var()`s are filled in.
-    pub fn color(&self, name: &str, light_dark: bool) -> Option<Rgba> {
+    pub fn color(&self, name: &str, light: bool) -> Option<Rgba> {
         let value = self.resolve(self.get(name)?)?;
-        parse_color(&value, light_dark)
+        parse_color(&value, light)
     }
 
     /// The colour of the first of `names` that resolves, after filling in
     /// `var()`s.
-    pub fn first_color(&self, names: &[&str], light_dark: bool) -> Option<Rgba> {
-        names.iter().find_map(|name| self.color(name, light_dark))
+    pub fn first_color(&self, names: &[&str], light: bool) -> Option<Rgba> {
+        names.iter().find_map(|name| self.color(name, light))
     }
 
     fn resolve_depth(&self, value: &str, depth: usize) -> Option<String> {
@@ -637,7 +1198,7 @@ impl Vars {
         }
         let mut out = String::with_capacity(value.len());
         let mut rest = value;
-        while let Some(start) = rest.find("var(") {
+        while let Some(start) = find_ignore_case(rest, "var(") {
             out.push_str(&rest[..start]);
             let after = &rest[start + 4..];
             let Some(end) = matching_paren(after) else {
@@ -693,16 +1254,26 @@ fn matching_paren(text: &str) -> Option<usize> {
 }
 
 /// Whether a selector writes variables on the page's root, and for which
-/// colour scheme. Descendant selectors that style a part of Discord's DOM
-/// don't set the window's palette.
+/// colour scheme, with its specificity for the cascade. Descendant selectors
+/// that style a part of Discord's DOM don't set the window's palette.
 pub fn root_selector(selector: &str, theme_dark: bool) -> Option<bool> {
+    root_selector_with_specificity(selector, theme_dark).map(|(dark, _)| dark)
+}
+
+/// [`root_selector`] with the specificity that orders two declarations of the
+/// same property.
+pub fn root_selector_with_specificity(selector: &str, theme_dark: bool) -> Option<(bool, u32)> {
     let selector = selector.trim();
     if selector.is_empty() || selector.contains("::") {
         return None;
     }
+    // `:not(...)` names what the selector is *not*; its classes and attributes
+    // must not decide the colour scheme.
+    let positive = without_negations(selector);
     let mut dark = theme_dark;
     let mut saw_root = false;
-    for compound in selector_compounds(selector) {
+    let mut saw_theme = false;
+    for compound in selector_compounds(&positive) {
         let lower = compound.to_ascii_lowercase();
         if lower.contains("theme-light")
             || lower.contains("data-rl-mode=\"light\"")
@@ -710,6 +1281,7 @@ pub fn root_selector(selector: &str, theme_dark: bool) -> Option<bool> {
         {
             dark = false;
             saw_root = true;
+            saw_theme = true;
         } else if lower.contains("theme-dark")
             || lower.contains("theme-darker")
             || lower.contains("theme-midnight")
@@ -720,19 +1292,95 @@ pub fn root_selector(selector: &str, theme_dark: bool) -> Option<bool> {
         {
             dark = true;
             saw_root = true;
+            saw_theme = true;
         } else if lower.contains(":root")
             || lower.starts_with("html")
             || lower.starts_with("body")
             || lower.starts_with("#app-mount")
             || lower.starts_with(":where(html")
             || lower.starts_with(":where(:root")
+            || lower.starts_with(":is(html")
+            || lower.starts_with(":is(:root")
         {
             saw_root = true;
         } else {
             return None;
         }
     }
-    saw_root.then_some(dark)
+    if !saw_theme {
+        // `html:not(.theme-dark)` is the light palette, and the light
+        // selector's negative the dark one.
+        let negated = selector.to_ascii_lowercase();
+        let not_dark = negated.contains(":not(.theme-dark")
+            || negated.contains(":not([data-rl-mode=\"dark\"")
+            || negated.contains(":not([data-rl-mode='dark'");
+        let not_light = negated.contains(":not(.theme-light")
+            || negated.contains(":not([data-rl-mode=\"light\"")
+            || negated.contains(":not([data-rl-mode='light'");
+        if not_dark {
+            dark = false;
+        } else if not_light {
+            dark = true;
+        }
+    }
+    saw_root.then_some((dark, specificity(selector)))
+}
+
+/// `selector` without its `:not(...)` arguments, so a class inside a negation
+/// can't set the palette's colour scheme.
+fn without_negations(selector: &str) -> String {
+    let lower = selector.to_ascii_lowercase();
+    let mut out = String::with_capacity(selector.len());
+    let mut index = 0;
+    while index < selector.len() {
+        match lower[index..].find(":not(") {
+            Some(offset) => {
+                let start = index + offset;
+                out.push_str(&selector[index..start]);
+                let after = start + 4;
+                match matching_paren(&lower[after..]) {
+                    Some(end) => index = after + end + 1,
+                    None => break,
+                }
+            }
+            None => {
+                out.push_str(&selector[index..]);
+                break;
+            }
+        }
+    }
+    out
+}
+
+/// A rough CSS specificity: ids, classes/attributes/pseudo-classes, tags.
+/// Root selectors rarely need more than ordering ties by source order.
+fn specificity(selector: &str) -> u32 {
+    let mut specificity = 0;
+    for compound in selector_compounds(selector) {
+        let bytes = compound.as_bytes();
+        let mut index = 0;
+        if bytes.first().is_some_and(u8::is_ascii_alphabetic) {
+            specificity += 1;
+        }
+        while index < bytes.len() {
+            match bytes[index] {
+                b'#' => {
+                    specificity += 100;
+                    index += 1;
+                }
+                b'.' | b'[' => {
+                    specificity += 10;
+                    index += 1;
+                }
+                b':' if bytes.get(index + 1) != Some(&b':') => {
+                    specificity += 10;
+                    index += 1;
+                }
+                _ => index += 1,
+            }
+        }
+    }
+    specificity
 }
 
 /// Splits a selector at its combinators, keeping the pieces that matter.
@@ -790,6 +1438,20 @@ pub(crate) fn selector_compounds(selector: &str) -> Vec<String> {
     compounds
 }
 
+/// One BetterDiscord `@var` setting declared in a theme's header.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MetaVar {
+    /// `checkbox`, `text`, `color`, `select` or `slider`.
+    pub kind: String,
+    /// The setting's name, which usually matches a custom property without
+    /// its `--`, sometimes with a `_s` suffix.
+    pub name: String,
+    /// The label the theme gives it.
+    pub label: String,
+    /// Everything after the label: the default and a `select`'s choices.
+    pub rest: String,
+}
+
 /// The theme's header comment, which Vencord themes use as metadata.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Meta {
@@ -800,6 +1462,8 @@ pub struct Meta {
     pub license: Option<String>,
     pub source: Option<String>,
     pub website: Option<String>,
+    /// BetterDiscord's `@var` settings, which name and explain some options.
+    pub vars: Vec<MetaVar>,
 }
 
 impl Meta {
@@ -841,12 +1505,67 @@ impl Meta {
                     "license" => meta.license = Some(value),
                     "source" => meta.source = Some(value),
                     "website" => meta.website = Some(value),
+                    "var" => {
+                        if let Some(var) = MetaVar::parse(&value) {
+                            meta.vars.push(var);
+                        }
+                    }
                     _ => {}
                 }
             }
         }
         meta
     }
+}
+
+impl MetaVar {
+    /// `@var text accentcolor "Accent colour" #5865f2`: its kind, name and
+    /// quoted label, with the default and choices after them.
+    fn parse(text: &str) -> Option<Self> {
+        let rest = text.trim_start();
+        let (kind, rest) = take_word(rest)?;
+        let (name, rest) = take_word(rest)?;
+        let (label, rest) = take_quoted(rest).unwrap_or_else(|| (name.clone(), rest.trim()));
+        Some(Self {
+            kind: kind.to_ascii_lowercase(),
+            name,
+            label,
+            rest: rest.trim().to_owned(),
+        })
+    }
+}
+
+/// The first whitespace-separated word and what follows it.
+fn take_word(text: &str) -> Option<(String, &str)> {
+    let text = text.trim_start();
+    let end = text.find(char::is_whitespace).unwrap_or(text.len());
+    (end > 0).then(|| (text[..end].to_owned(), &text[end..]))
+}
+
+/// The quoted text at the start of `text` and what follows its closing quote.
+fn take_quoted(text: &str) -> Option<(String, &str)> {
+    let text = text.trim_start();
+    let quote = text
+        .chars()
+        .next()
+        .filter(|quote| matches!(quote, '"' | '\''))?;
+    let rest = text.get(quote.len_utf8()..)?;
+    let mut escaped = false;
+    for (index, character) in rest.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match character {
+            '\\' => escaped = true,
+            character if character == quote => {
+                let label = rest[..index].replace("\\\"", "\"").replace("\\'", "'");
+                return Some((label, &rest[index + character.len_utf8()..]));
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -928,6 +1647,121 @@ mod tests {
         assert_eq!(root_selector("body", true), Some(true));
         assert_eq!(root_selector("#app-mount", true), Some(true));
         assert_eq!(root_selector(".container", true), None);
+        assert_eq!(root_selector("html:not(.theme-light)", true), Some(true));
+        assert_eq!(root_selector("html:not(.theme-dark)", true), Some(false));
+        assert_eq!(
+            root_selector("html:not([data-rl-mode=\"dark\"])", true),
+            Some(false)
+        );
+        assert_eq!(root_selector(":where(.theme-light)", true), Some(false));
+    }
+
+    #[test]
+    fn comments_keep_their_utf8_text() {
+        let text = strip_comments("/* café */ a{content:\"café…\";color:#fff}");
+        assert!(text.contains("café"), "{text}");
+        assert!(text.contains("\"café…\""), "{text}");
+    }
+
+    #[test]
+    fn header_vars_are_read_with_their_labels() {
+        let meta = Meta::read(
+            "/**\n * @name DiscordRecolor\n * @var checkbox settingsicons_s \"User Settings Icons\" 1\n * @var text accentcolor_s \"Blurple Color: [default] = 88, 101, 242\" 88, 101, 242\n * @var select corner \"Corners\" round {Round: round, Square: square}\n */\n:root{}",
+        );
+        assert_eq!(meta.vars.len(), 3);
+        assert_eq!(meta.vars[0].kind, "checkbox");
+        assert_eq!(meta.vars[0].name, "settingsicons_s");
+        assert_eq!(meta.vars[0].label, "User Settings Icons");
+        assert_eq!(
+            meta.vars[1].label,
+            "Blurple Color: [default] = 88, 101, 242"
+        );
+        assert_eq!(meta.vars[2].rest, "round {Round: round, Square: square}");
+    }
+
+    #[test]
+    fn comments_keep_descriptions_and_sections_for_options() {
+        let sheet = parse(
+            r#"
+            :root {
+                /* text colors */
+                --text-main: #ffffff; /* normal text */
+                --text-muted: #888888; /* quieter text */
+                /* accent colors */
+                --accent: #ff0000; /* buttons and links */
+            }
+            "#,
+            |_, _| None,
+        );
+        let main = &sheet.notes["--text-main"];
+        assert_eq!(main.group.as_deref(), Some("Text colors"));
+        assert_eq!(main.description.as_deref(), Some("normal text"));
+        let accent = &sheet.notes["--accent"];
+        assert_eq!(accent.group.as_deref(), Some("Accent colors"));
+        assert_eq!(accent.description.as_deref(), Some("buttons and links"));
+    }
+
+    #[test]
+    fn supports_conditions_that_fail_are_skipped() {
+        let sheet = parse(
+            r#"
+            @supports not (color: color-mix(in srgb, red, blue)) {
+                :root { --no: #fff; }
+            }
+            @supports (color: color-mix(in srgb, red, blue)) {
+                :root { --yes: #000; }
+            }
+            "#,
+            |_, _| None,
+        );
+        assert_eq!(sheet.rules.len(), 1);
+        assert_eq!(sheet.rules[0].declarations[0].name, "--yes");
+    }
+
+    #[test]
+    fn import_conditions_that_do_not_apply_are_skipped() {
+        let mut seen = Vec::new();
+        parse(
+            r#"
+            @import "print.css" print;
+            @import "screen.css" screen and (min-width: 10px);
+            @import "fallback.css" supports(not (color: color-mix(in srgb, red, blue)));
+            "#,
+            |_, path| {
+                seen.push(path.to_owned());
+                Some((String::new(), PathBuf::from(path)))
+            },
+        );
+        assert_eq!(seen, vec!["screen.css"]);
+    }
+
+    #[test]
+    fn property_rules_keep_their_syntax_and_initial_value() {
+        let sheet = parse(
+            r#"
+            @property --brand {
+                syntax: "<color>";
+                inherits: false;
+                initial-value: #123456;
+            }
+            "#,
+            |_, _| None,
+        );
+        let spec = &sheet.properties["--brand"];
+        assert_eq!(spec.syntax.as_deref(), Some("<color>"));
+        assert_eq!(spec.initial.as_deref(), Some("#123456"));
+    }
+
+    #[test]
+    fn comments_keep_the_default_they_name() {
+        let sheet = parse(
+            ":root { --main-color: #2780e6; /* main accent [default: #2780e6] */ }",
+            |_, _| None,
+        );
+        assert_eq!(
+            sheet.notes["--main-color"].default_value.as_deref(),
+            Some("#2780e6")
+        );
     }
 
     #[test]

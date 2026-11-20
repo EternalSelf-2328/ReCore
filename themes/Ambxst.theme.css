@@ -1,0 +1,414 @@
+/**
+ * @name Ambxst
+ * @author ReCore
+ * @description A warm Material You rose theme for Discord, inspired by Ambxst: rounded panels, Roboto Condensed and the shell's peach-on-charcoal palette. Works in ReCore's native window and in Vencord, Vesktop, Equicord, BetterDiscord and Legcord.
+ * @version 1.0.0
+ * @license GPL-3.0-or-later
+ * @website https://axeni.de/ambxst
+ * @source https://github.com/Axenide/Ambxst
+ */
+
+/*
+ * Ambxst, for Discord and ReCore.
+ *
+ * The colours are Ambxst's default Material You scheme: the warm charcoal
+ * ground, the rose primary and the pastel secondary and tertiary ramps.
+ * ReCore reads both this file's --rl-* palette and the Discord tokens; a
+ * browser client ignores the --rl-* names and paints from the tokens and the
+ * rules at the foot.
+ *
+ * Roboto Condensed is the shell's typeface; the theme names it and falls
+ * back to Discord's own face where it isn't installed. It carries no font
+ * file, so the theme stays small.
+ *
+ * Change --rl-accent (or --brand-500) to recolor the interface. The light
+ * palette follows Discord's Light appearance.
+ */
+
+:root,
+.theme-dark {
+    color-scheme: dark;
+
+    /* Ambxst's Material You palette. */
+    --rl-accent: #ffb3ae;
+    --rl-signal: var(--rl-accent);
+    --rl-signal-hot: color-mix(in srgb, var(--rl-accent) 80%, var(--rl-tint));
+    --rl-signal-soft: color-mix(in srgb, var(--rl-accent) 58%, var(--rl-tint));
+    --rl-signal-dim: color-mix(in srgb, var(--rl-accent) 76%, #000);
+    --rl-signal-deep: color-mix(in srgb, var(--rl-accent) 50%, #000);
+    --rl-tint: #571d1c;
+
+    --rl-void: #140c0c;
+    --rl-ink: #1a1111;
+    --rl-coal: #1f1515;
+    --rl-panel: #231919;
+    --rl-raised: #271d1d;
+    --rl-high: #322827;
+    --rl-higher: #3d3231;
+    --rl-line: #534342;
+    --rl-line-hot: color-mix(in srgb, var(--rl-signal) 34%, transparent);
+    --rl-line-soft: color-mix(in srgb, var(--rl-bone) 12%, transparent);
+
+    --rl-paper: #ffdad7;
+    --rl-cream: #fff0ef;
+    --rl-bone: #f1dedd;
+    --rl-smoke: #d8c2c0;
+    --rl-ash: #a08c8b;
+    --rl-faint: #7b6665;
+
+    --rl-teal: #84d5c4;
+    --rl-teal-deep: #005045;
+    --rl-night-teal: #041f1c;
+
+    --rl-green: #b7d085;
+    --rl-amber: #dec56e;
+    --rl-red: #ffb4ab;
+    --rl-purple: #cebdfe;
+    --rl-offline: #6f5a59;
+
+    --rl-font: "Roboto Condensed", "gg sans", "Noto Sans", sans-serif;
+    --rl-font-display: "Roboto Condensed", "gg sans", "Noto Sans", sans-serif;
+    --rl-font-mono: "Iosevka Nerd Font Mono", "Cascadia Code", monospace;
+    --rl-weight: 400;
+    --rl-tracking: 0.01em;
+
+    --rl-radius: 16px;
+    --rl-surface: 100%;
+    --rl-motion: full;
+    --rl-icons: off;
+    --rl-lite: off;
+
+    /* Ambxst has no CRT layer: its depth comes from rounded panels and a
+       quiet shadow, which Discord's own blur and the native window keep. */
+    --rl-scanline-opacity: 0;
+    --rl-grain-opacity: 0;
+    --rl-vignette-opacity: 0.12;
+    --rl-flicker-duration: 0s;
+    --rl-frame-opacity: 0;
+    --rl-beam-opacity: 0;
+    --rl-avatar-filter: none;
+    --rl-avatar-scanline: 0;
+
+    --rl-background-image: none;
+    --rl-background-dim: 70%;
+    --rl-background-size: cover;
+
+    /* Discord's tokens. */
+    --background-primary: #1a1111;
+    --background-primary-alt: #1f1515;
+    --background-secondary: #231919;
+    --background-secondary-alt: #140c0c;
+    --background-tertiary: #140c0c;
+    --background-accent: #733331;
+    --background-floating: #322827;
+    --background-nested-floating: #271d1d;
+    --background-base-lowest: #140c0c;
+    --background-base-lower: #1a1111;
+    --background-base-low: #231919;
+    --background-surface-high: #322827;
+    --background-surface-higher: #3d3231;
+    --background-surface-highest: #4a3c3a;
+    --background-brand: #ffb3ae;
+    --background-code: #140c0c;
+    --background-tooltip: #322827;
+    --card-background-default: #271d1d;
+    --chat-background: #1a1111;
+
+    --background-modifier-hover: rgba(255, 179, 174, 0.07);
+    --background-modifier-active: rgba(255, 179, 174, 0.12);
+    --background-modifier-selected: rgba(255, 179, 174, 0.16);
+    --background-modifier-accent: #3d3231;
+    --interactive-background-hover: rgba(255, 179, 174, 0.07);
+    --interactive-background-active: rgba(255, 179, 174, 0.12);
+    --interactive-background-selected: rgba(255, 179, 174, 0.16);
+    --message-background-hover: rgba(255, 179, 174, 0.05);
+
+    --text-normal: #f1dedd;
+    --text-default: #f1dedd;
+    --text-strong: #fff0ef;
+    --text-muted: #a08c8b;
+    --text-subtle: #7b6665;
+    --text-invert: #571d1c;
+    --text-link: #cebdfe;
+    --text-brand: #ffdad7;
+    --header-primary: #fff0ef;
+    --header-secondary: #d8c2c0;
+    --channels-default: #d8c2c0;
+    --channel-icon: #a08c8b;
+    --interactive-normal: #d8c2c0;
+    --interactive-hover: #f1dedd;
+    --interactive-active: #fff0ef;
+    --interactive-muted: #7b6665;
+    --spine-default: #534342;
+    --icon-feedback-critical: #ffb4ab;
+
+    --brand-experiment: #ffb3ae;
+    --brand-360: #ffdad7;
+    --brand-500: #ffb3ae;
+    --brand-530: #eea49f;
+    --brand-560: #e09490;
+    --brand-600: #d18682;
+    --control-primary-background-default: #ffb3ae;
+    --control-primary-background-hover: #eea49f;
+    --control-primary-background-active: #e09490;
+    --control-primary-text-default: #571d1c;
+    --control-secondary-background-default: #322827;
+    --control-secondary-background-hover: #3d3231;
+    --control-critical-primary-background-default: #ffb4ab;
+    --control-critical-primary-background-hover: #ffd2cc;
+    --control-critical-primary-text-default: #690005;
+
+    --status-positive: #b7d085;
+    --status-warning: #dec56e;
+    --status-danger: #ffb4ab;
+    --status-green: #b7d085;
+    --status-yellow: #dec56e;
+    --online: #b7d085;
+    --idle: #dec56e;
+
+    --border-subtle: #3d3231;
+    --border-normal: #534342;
+    --border-strong: #6b5655;
+    --app-frame-background: #140c0c;
+    --app-frame-border: #3d3231;
+
+    --channeltextarea-background: #231919;
+    --input-background-default: #231919;
+    --avatar-background: #3d3231;
+
+    --font-primary: var(--rl-font);
+    --font-display: var(--rl-font-display);
+    --font-headline: var(--rl-font-display);
+    --font-code: var(--rl-font-mono);
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+
+    --radius-none: 0px;
+    --radius-xs: 8px;
+    --radius-sm: 10px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 20px;
+    --radius-xxl: 24px;
+    --radius-round: 9999px;
+}
+
+html.theme-light,
+.theme-light {
+    color-scheme: light;
+
+    /* Ambxst's light Material You scheme: the same rose, on paper. */
+    --rl-accent: #904a46;
+    --rl-signal: var(--rl-accent);
+    --rl-signal-hot: color-mix(in srgb, var(--rl-accent) 80%, var(--rl-tint));
+    --rl-signal-soft: color-mix(in srgb, var(--rl-accent) 58%, var(--rl-tint));
+    --rl-signal-dim: color-mix(in srgb, var(--rl-accent) 76%, #fff);
+    --rl-signal-deep: color-mix(in srgb, var(--rl-accent) 50%, #fff);
+    --rl-tint: #fff8f7;
+
+    --rl-void: #fbf2f0;
+    --rl-ink: #fff8f7;
+    --rl-coal: #f8edeb;
+    --rl-panel: #f5dddc;
+    --rl-raised: #eed6d5;
+    --rl-high: #e8cfce;
+    --rl-higher: #e0c6c5;
+    --rl-line: #d3b9b7;
+    --rl-line-hot: color-mix(in srgb, var(--rl-signal) 28%, transparent);
+    --rl-line-soft: color-mix(in srgb, var(--rl-bone) 16%, transparent);
+
+    --rl-paper: #733331;
+    --rl-cream: #2a1716;
+    --rl-bone: #221a19;
+    --rl-smoke: #534342;
+    --rl-ash: #6e5a59;
+    --rl-faint: #8a7371;
+
+    --rl-teal: #006b5f;
+    --rl-teal-deep: #9ff2e0;
+    --rl-night-teal: #d6fff8;
+
+    --rl-green: #3f5f1d;
+    --rl-amber: #6e5600;
+    --rl-red: #ba1a1a;
+    --rl-purple: #6848a8;
+    --rl-offline: #8a7371;
+
+    --background-primary: #fff8f7;
+    --background-primary-alt: #f8edeb;
+    --background-secondary: #f5dddc;
+    --background-secondary-alt: #fbf2f0;
+    --background-tertiary: #fbf2f0;
+    --background-accent: #ffdad7;
+    --background-floating: #eed6d5;
+    --background-nested-floating: #f5dddc;
+    --background-base-lowest: #fbf2f0;
+    --background-base-lower: #fff8f7;
+    --background-base-low: #f5dddc;
+    --background-surface-high: #eed6d5;
+    --background-surface-higher: #e8cfce;
+    --background-surface-highest: #e0c6c5;
+    --background-brand: #904a46;
+    --background-code: #fbf2f0;
+    --background-tooltip: #eed6d5;
+    --card-background-default: #f5dddc;
+    --chat-background: #fff8f7;
+
+    --background-modifier-hover: rgba(87, 29, 28, 0.06);
+    --background-modifier-active: rgba(87, 29, 28, 0.11);
+    --background-modifier-selected: rgba(87, 29, 28, 0.15);
+    --background-modifier-accent: #e0c6c5;
+    --interactive-background-hover: rgba(87, 29, 28, 0.06);
+    --interactive-background-active: rgba(87, 29, 28, 0.11);
+    --interactive-background-selected: rgba(87, 29, 28, 0.15);
+    --message-background-hover: rgba(87, 29, 28, 0.045);
+
+    --text-normal: #221a19;
+    --text-default: #221a19;
+    --text-strong: #140c0c;
+    --text-muted: #6e5a59;
+    --text-subtle: #8a7371;
+    --text-invert: #ffffff;
+    --text-link: #6848a8;
+    --text-brand: #733331;
+    --header-primary: #140c0c;
+    --header-secondary: #534342;
+    --channels-default: #534342;
+    --channel-icon: #6e5a59;
+    --interactive-normal: #534342;
+    --interactive-hover: #221a19;
+    --interactive-active: #140c0c;
+    --interactive-muted: #8a7371;
+    --spine-default: #d3b9b7;
+    --icon-feedback-critical: #ba1a1a;
+
+    --brand-experiment: #904a46;
+    --brand-360: #733331;
+    --brand-500: #904a46;
+    --brand-530: #7f3f3c;
+    --brand-560: #6e3432;
+    --brand-600: #5d2a28;
+    --control-primary-background-default: #904a46;
+    --control-primary-background-hover: #7f3f3c;
+    --control-primary-background-active: #6e3432;
+    --control-primary-text-default: #ffffff;
+    --control-secondary-background-default: #eed6d5;
+    --control-secondary-background-hover: #e8cfce;
+    --control-critical-primary-background-default: #ba1a1a;
+    --control-critical-primary-background-hover: #a31515;
+    --control-critical-primary-text-default: #ffffff;
+
+    --status-positive: #3f5f1d;
+    --status-warning: #6e5600;
+    --status-danger: #ba1a1a;
+    --status-green: #3f5f1d;
+    --status-yellow: #6e5600;
+    --online: #3f5f1d;
+    --idle: #6e5600;
+
+    --border-subtle: #e0c6c5;
+    --border-normal: #d3b9b7;
+    --border-strong: #b99f9d;
+    --app-frame-background: #fbf2f0;
+    --app-frame-border: #e0c6c5;
+
+    --channeltextarea-background: #f5dddc;
+    --input-background-default: #f5dddc;
+    --avatar-background: #e0c6c5;
+}
+
+/* ------------------------------------------------------------------ */
+/* Discord's web window: rounded Material surfaces and quiet borders. */
+
+#app-mount {
+    background-color: var(--background-primary);
+}
+
+[class*="guilds_"] {
+    background: var(--background-secondary-alt);
+    border-right: 1px solid var(--border-subtle);
+}
+
+[class*="sidebarList_"],
+[class*="privateChannels_"] {
+    background: var(--background-secondary);
+}
+
+[class*="chatContent_"],
+[class*="messagesWrapper_"] {
+    background: var(--background-primary);
+}
+
+[class*="membersWrap_"] {
+    background: var(--background-secondary);
+    border-left: 1px solid var(--border-subtle);
+}
+
+[class*="header_"] {
+    background: var(--background-primary);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+[class*="channelTextArea_"],
+[class*="textArea_"] {
+    background: var(--channeltextarea-background);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+}
+
+[class*="message_"]:hover {
+    background: var(--message-background-hover);
+    border-radius: var(--radius-md);
+}
+
+[class*="member_"]:hover,
+[class*="channel_"]:hover {
+    background: var(--background-modifier-hover);
+    border-radius: var(--radius-sm);
+}
+
+[class*="selected_"],
+[class*="selected-"] {
+    background: var(--background-modifier-selected);
+    border-radius: var(--radius-md);
+}
+
+[class*="card_"],
+[class*="modal_"],
+[class*="popout_"],
+[class*="menu_"] {
+    background: var(--background-floating);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+}
+
+[class*="button_"] {
+    border-radius: var(--radius-round);
+    font-weight: 500;
+}
+
+::selection {
+    background: var(--brand-500);
+    color: var(--text-invert);
+}
+
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-normal);
+    border: 2px solid var(--background-secondary);
+    border-radius: var(--radius-round);
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--border-strong);
+}
