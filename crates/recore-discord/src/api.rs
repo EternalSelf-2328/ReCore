@@ -2108,6 +2108,15 @@ impl Api {
             .map(drop)
     }
 
+    /// Sets a voice channel's status, or clears it with none; empty is
+    /// cleared. Discord sends VOICE_CHANNEL_STATUS_UPDATE.
+    pub async fn set_voice_status(&self, channel: &str, status: Option<&str>) -> Result<()> {
+        let path = format!("/channels/{channel}/voice-status");
+        let body = json!({"status": status});
+        self.empty(with_json(self.request(Method::PUT, &path), &body))
+            .await
+    }
+
     /// Moves a server's channels and categories, `[{"id", "position",
     /// "parent_id", "lock_permissions"}, ...]`, the last two optional;
     /// Discord sends CHANNEL_UPDATE for each that changed.

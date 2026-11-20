@@ -598,6 +598,11 @@ impl<'a> View<'a> {
                 ),
                 format!("Delete {thing}"),
             ),
+            ChannelAsk::VoiceStatus(_) => (
+                "Set voice status".to_owned(),
+                "Tell everyone what this voice channel is for.".to_owned(),
+                "Save".to_owned(),
+            ),
         };
         let deleting = matches!(asked.ask, ChannelAsk::Delete(_));
         let ready = !asked.saving;
@@ -619,7 +624,9 @@ impl<'a> View<'a> {
             ]);
         }
         if !deleting {
-            let (field, placeholder) = if category {
+            let (field, placeholder) = if matches!(asked.ask, ChannelAsk::VoiceStatus(_)) {
+                ("VOICE CHANNEL STATUS", "What's happening?")
+            } else if category {
                 ("CATEGORY NAME", "New Category")
             } else {
                 ("CHANNEL NAME", "new-channel")

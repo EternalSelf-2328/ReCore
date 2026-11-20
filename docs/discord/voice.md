@@ -96,7 +96,8 @@ channel list how long its call has gone on, counted from when its first
 person joined: `<1m`, `42m`, `1h 05m`, `2d 3h`. Discord keeps that time,
 not ReCore. Opening a server asks for its voice channels' start times with
 op 43 (Request Channel Info, `fields: ["status", "voice_start_time"]`, the
-web client's own request, whose statuses ReCore doesn't use), once a
+web client's own request; its `status` is the voice channel's status, which
+ReCore keeps), once a
 session, and again when the server comes back from an outage or is joined
 again; a new session asks again only for the server on screen, and the
 others as they're opened. Discord answers with CHANNEL_INFO, which lists the
@@ -113,6 +114,17 @@ the list redraws once a minute rather than each second. It reads
 a busy channel's row shows one and nothing else needs it, once a second
 while a profile times an activity, and not at all otherwise; the rows read
 its minute, which changes only as the minute turns.
+
+## A voice channel's status
+
+A voice channel has a text status of up to 500 characters, separate from a
+text channel's topic. It comes in the channel object's `status` and in
+`VOICE_CHANNEL_STATUS_UPDATE`, and ReCore shows it in the channel's header
+where a topic would go. Its menu's **Set voice status**, which needs
+`SET_VOICE_CHANNEL_STATUS` and, when this account isn't in the channel,
+`MANAGE_CHANNELS`, opens a field with the status as it is. Save sends `PUT
+/channels/{id}/voice-status` with `{"status": "..."}`, or an empty one to
+clear it; the gateway's update then shows the change.
 
 ## Who is in a voice channel
 

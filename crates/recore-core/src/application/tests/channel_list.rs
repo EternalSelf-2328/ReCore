@@ -250,6 +250,68 @@ fn a_community_server_lists_only_the_channels_followed_as_discords_client_does()
 
 #[test]
 #[cfg(feature = "discord")]
+fn sets_and_clears_a_voice_channels_status() {
+    use crate::chat::{ChannelKind, ChannelSettings};
+    use MenuChoice::*;
+    use recore_discord::ready::permission;
+    let mut app = discord_server();
+    change_server(&mut app, |server| {
+        Arc::make_mut(&mut server.roles)
+            .entry("20".into())
+            .and_modify(|bits| *bits |= permission::SET_VOICE_CHANNEL_STATUS);
+    });
+    app.state.voice.room = Some("discord:10:14".into());
+    assert!(app.menu_choices("discord:10:14").contains(&SetVoiceStatus));
+
+    // The dialog starts from the status the room has, none here.
+    app.dispatch(Action::OpenVoiceStatus("discord:10:14".into()));
+    let dialog = app.state.channel_dialog.as_ref().expect("the dialog");
+    assert!(matches!(dialog.ask, ChannelAsk::VoiceStatus(_)));
+    assert_eq!(
+        dialog
+            .settings
+            .as_ref()
+            .map(|settings| settings.name.as_str()),
+        Some("")
+    );
+
+    // Saving sends the status alone, and closes once Discord answers.
+    let effects = app.dispatch(Action::SaveChannel {
+        kind: ChannelKind::Voice,
+        settings: ChannelSettings {
+            name: "Movie night".into(),
+            ..Default::default()
+        },
+    });
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::Backend(Command::Discord(DiscordCommand::SetVoiceStatus {
+            status: Some(status),
+            ..
+        }))] if status == "Movie night"
+    ));
+    app.apply(Event::ChannelSaved(Ok(None)));
+    assert!(app.state.channel_dialog.is_none());
+
+    // Clearing it sends none.
+    app.dispatch(Action::OpenVoiceStatus("discord:10:14".into()));
+    let effects = app.dispatch(Action::SaveChannel {
+        kind: ChannelKind::Voice,
+        settings: ChannelSettings {
+            name: "  ".into(),
+            ..Default::default()
+        },
+    });
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::Backend(Command::Discord(
+            DiscordCommand::SetVoiceStatus { status: None, .. }
+        ))]
+    ));
+}
+
+#[test]
+#[cfg(feature = "discord")]
 fn browse_channels_ticks_the_channels_followed_as_discords_client_does() {
     use recore_discord::notifications::Override;
     let mut app = discord_server();

@@ -57,6 +57,8 @@ pub struct Header {
     /// The topic as the core shares it, and on one line, laid out once
     /// each time it changes.
     pub topic: Option<(Arc<Topic>, Arc<Body>)>,
+    /// A voice channel's status, which shows where a topic would.
+    pub status: Option<String>,
     /// What a DM's person is up to.
     pub activity: Status,
     pub can_call: bool,
@@ -128,6 +130,7 @@ pub fn header(state: &AppState, was: &Header, link: u32) -> Header {
         icon: (!room.direct).then(|| room_icon(room)),
         parent,
         topic,
+        status: room.status.as_ref().map(ToString::to_string),
         activity: if room.direct {
             Status::of(room.activity.as_deref())
         } else {
@@ -257,7 +260,7 @@ pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
     if let Some(icon) = header.icon.filter(|_| !in_forum) {
         head = head.push(ctx.look.glyph(icon, ROOM_ICON, theme.channel_read));
     }
-    let fills = header.topic.is_none() && header.activity.is_empty();
+    let fills = header.topic.is_none() && header.status.is_none() && header.activity.is_empty();
     let name = container(
         text(header.name.as_str())
             .size(16)
@@ -282,6 +285,17 @@ pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
         .on_press(Message::Popover(crate::header_popovers::Event::Topic))
         .interaction(iced::mouse::Interaction::Pointer);
         head = head.push(dot(theme)).push(ctx.spot(line));
+    } else if let Some(status) = &header.status {
+        head = head.push(dot(theme)).push(
+            container(
+                text(status.as_str())
+                    .size(13)
+                    .color(theme.muted)
+                    .wrapping(text::Wrapping::None),
+            )
+            .width(Length::Fill)
+            .clip(true),
+        );
     } else if !header.activity.is_empty() {
         head = head.push(
             container(

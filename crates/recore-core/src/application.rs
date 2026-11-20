@@ -2167,6 +2167,8 @@ pub enum Action {
     /// Open a Discord channel's or category's settings, by its room id;
     /// what they were given.
     OpenChannelSettings(String),
+    /// Set a Discord voice channel's status, by its room id.
+    OpenVoiceStatus(String),
     ChannelSettings(ChannelInput),
     SaveChannel {
         kind: chat::ChannelKind,
@@ -3836,6 +3838,7 @@ impl Application {
             Action::NewChannel { place, kind } => self.new_channel(place, kind),
             Action::AskChannel(ask) => self.ask_channel(ask),
             Action::OpenChannelSettings(room) => self.open_channel_settings(room),
+            Action::OpenVoiceStatus(room) => self.open_voice_status(room),
             Action::ChannelSettings(input) => self.channel_input(input),
             Action::SaveChannel { kind, settings } => self.save_channel(kind, settings),
             Action::CloseChannelDialog => {

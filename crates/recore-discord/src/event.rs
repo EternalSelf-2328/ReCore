@@ -133,6 +133,7 @@ events! {
     VoiceChannelStartTimeUpdate = "VOICE_CHANNEL_START_TIME_UPDATE",
     /// A server's channels' extra fields, asked for with op 43.
     ChannelInfo = "CHANNEL_INFO",
+    VoiceChannelStatusUpdate = "VOICE_CHANNEL_STATUS_UPDATE",
     /// A server's soundboard sounds, asked for with op 31.
     SoundboardSounds = "SOUNDBOARD_SOUNDS",
     GuildSoundboardSoundCreate = "GUILD_SOUNDBOARD_SOUND_CREATE",
@@ -254,6 +255,10 @@ mod tests {
                 Event::VoiceChannelStartTimeUpdate,
             ),
             ("CHANNEL_INFO", Event::ChannelInfo),
+            (
+                "VOICE_CHANNEL_STATUS_UPDATE",
+                Event::VoiceChannelStatusUpdate,
+            ),
             ("SOUNDBOARD_SOUNDS", Event::SoundboardSounds),
             (
                 "GUILD_SOUNDBOARD_SOUND_CREATE",

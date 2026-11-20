@@ -89,6 +89,9 @@ pub mod permission {
     pub const SEND_POLLS: u64 = 1 << 49;
     /// Pinning messages and unpinning them, which `MANAGE_MESSAGES` once gave.
     pub const PIN_MESSAGES: u64 = 1 << 51;
+    /// Setting a voice channel's status, with `MANAGE_CHANNELS` when this
+    /// account isn't in it.
+    pub const SET_VOICE_CHANNEL_STATUS: u64 = 1 << 48;
     /// Sending without waiting out a channel's slowmode, which
     /// `MANAGE_MESSAGES` and `MANAGE_CHANNELS` give too.
     pub const BYPASS_SLOWMODE: u64 = 1 << 52;
@@ -370,6 +373,10 @@ pub struct Channel {
     /// A stage channel, among the voice channels, where no join sound plays.
     #[serde(default)]
     pub stage: bool,
+    /// A voice channel's status, which Discord sends apart from the
+    /// channel's topic and updates by `VOICE_CHANNEL_STATUS_UPDATE`.
+    #[serde(default)]
+    pub status: Option<Arc<str>>,
     /// A media channel: a forum whose posts lead with pictures and videos.
     #[serde(default)]
     pub media: bool,
@@ -1599,6 +1606,10 @@ fn parse_channel(channel: &Value) -> Option<Channel> {
         overwrites: Arc::new(overwrites(channel)),
         announcement: channel["type"].as_u64() == Some(GUILD_ANNOUNCEMENT),
         stage: channel["type"].as_u64() == Some(GUILD_STAGE_VOICE),
+        status: channel["status"]
+            .as_str()
+            .filter(|status| !status.trim().is_empty())
+            .map(Arc::from),
         media: channel["type"].as_u64() == Some(GUILD_MEDIA),
         nsfw: channel["nsfw"].as_bool().unwrap_or(false),
         archive_after: channel["default_auto_archive_duration"]

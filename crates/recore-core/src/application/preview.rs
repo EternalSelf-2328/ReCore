@@ -216,6 +216,7 @@ pub(super) fn preview_room(id: &str, name: &str, direct: bool, members: u64) -> 
         activities: Default::default(),
         parent: None,
         forum: false,
+        status: None,
         mark: Default::default(),
         unlisted: false,
         tag: None,

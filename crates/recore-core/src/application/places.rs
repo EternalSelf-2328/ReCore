@@ -52,6 +52,8 @@ pub const SLOWMODES: [u32; 14] = [
 /// The longest name and topic Discord's channel settings take.
 pub(super) const CHANNEL_NAME_LIMIT: usize = 100;
 pub(super) const CHANNEL_TOPIC_LIMIT: usize = 1024;
+/// The longest voice channel status Discord takes.
+pub(super) const VOICE_STATUS_LIMIT: usize = 500;
 
 /// A dialog that makes, changes or deletes a Discord channel or category.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -82,6 +84,8 @@ pub enum ChannelAsk {
     /// Make a copy of this channel.
     Duplicate(String),
     Delete(String),
+    /// Set this voice channel's status.
+    VoiceStatus(String),
 }
 
 /// How long an invite lasts, in seconds, as Discord's invite dialog offers:
@@ -375,6 +379,20 @@ impl Application {
                 }
             }
             return choices;
+        }
+        let voice = self
+            .state
+            .rooms
+            .iter()
+            .any(|room| room.id == id && room.voice);
+        if self.state.discord_online
+            && voice
+            && self.may(id, Permission::SetVoiceChannelStatus)
+            && (self.state.voice.room.as_deref() == Some(id)
+                || self.may(id, Permission::ManageChannels))
+        {
+            let at = usize::from(choices.first() == Some(&MenuChoice::MarkRead));
+            choices.insert(at, MenuChoice::SetVoiceStatus);
         }
         if self.state.discord_online
             && self.invite_channel(id).is_some()
@@ -1045,7 +1063,7 @@ impl Application {
         let (room, choice) = match &ask {
             ChannelAsk::Duplicate(room) => (room.clone(), MenuChoice::DuplicateChannel),
             ChannelAsk::Delete(room) => (room.clone(), MenuChoice::DeleteChannel),
-            ChannelAsk::Create { .. } => return vec![],
+            ChannelAsk::Create { .. } | ChannelAsk::VoiceStatus(_) => return vec![],
         };
         if !self.menu_choices(&room).contains(&choice) {
             return vec![];
@@ -1097,6 +1115,36 @@ impl Application {
         });
     }
 
+    /// Opens the dialog that sets a voice channel's status, as its menu's
+    /// Set Status does.
+    pub(super) fn open_voice_status(&mut self, room: String) -> Vec<Effect> {
+        if !self
+            .menu_choices(&room)
+            .contains(&MenuChoice::SetVoiceStatus)
+        {
+            return vec![];
+        }
+        let status = self
+            .state
+            .rooms
+            .iter()
+            .find(|known| known.id == room)
+            .and_then(|known| known.status.as_deref())
+            .unwrap_or_default()
+            .to_owned();
+        self.open_channel_dialog(
+            &room,
+            ChannelAsk::VoiceStatus(room.clone()),
+            status.clone(),
+            ChannelKind::Voice,
+            Some(ChannelSettings {
+                name: status,
+                ..Default::default()
+            }),
+        );
+        vec![]
+    }
+
     /// Carries out the channel dialog with what it was given: of `kind`, text
     /// or voice, for a channel it makes.
     pub(super) fn save_channel(
@@ -1112,6 +1160,23 @@ impl Application {
         else {
             return vec![];
         };
+        if let ChannelAsk::VoiceStatus(room) = &dialog.ask {
+            let status = settings.name.trim().to_owned();
+            if status.chars().count() > VOICE_STATUS_LIMIT {
+                dialog.error = Some(format!(
+                    "A voice channel's status can be up to {VOICE_STATUS_LIMIT} characters."
+                ));
+                return vec![];
+            }
+            dialog.saving = true;
+            dialog.error = None;
+            return vec![Effect::Backend(Command::Discord(
+                DiscordCommand::SetVoiceStatus {
+                    room: room.clone(),
+                    status: (!status.is_empty()).then_some(status),
+                },
+            ))];
+        }
         let kind = match dialog.ask {
             // Making a channel chooses text or voice; a category stays one,
             // and a channel stays what it was.
@@ -1177,6 +1242,8 @@ impl Application {
                 settings: Box::new(settings),
             },
             ChannelAsk::Delete(room) => DiscordCommand::DeleteChannel { room },
+            // Voice status is saved before this match.
+            ChannelAsk::VoiceStatus(_) => return vec![],
         };
         dialog.kind = kind;
         vec![Effect::Backend(Command::Discord(command))]

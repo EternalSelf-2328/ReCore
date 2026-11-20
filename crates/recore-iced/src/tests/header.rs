@@ -322,6 +322,15 @@ fn add_people_counts_the_room_left_in_the_group() {
 }
 
 #[test]
+fn a_voice_channels_status_shows_where_a_topic_would() {
+    let (mut app, _folder) = preview();
+    app.header.status = Some("Movie night".into());
+    assert!(shows(&app, "Movie night"));
+    app.header.status = None;
+    assert!(!shows(&app, "Movie night"));
+}
+
+#[test]
 fn a_click_on_the_topic_shows_it_in_full_until_escape_or_another_room() {
     let (mut app, _folder) = preview();
     change(&mut app, |state| {

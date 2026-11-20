@@ -4,6 +4,36 @@ use super::*;
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "starts testing/fake_discord.ts with bun; run scripts/test-fake-discord"]
+async fn sets_voice_status_as_discords_client_does() {
+    let Fixture {
+        _fake,
+        discord,
+        snapshot,
+        lounge,
+        ..
+    } = Fixture::start("sets_voice_status_as_discords_client_does").await;
+    let status = |snapshot: &Snapshot| {
+        snapshot.servers[0]
+            .voice_channels
+            .iter()
+            .find(|channel| channel.id == lounge)
+            .and_then(|channel| channel.status.clone())
+    };
+    assert_eq!(status(&snapshot), None);
+    discord
+        .set_voice_status(&lounge, Some("Movie night"))
+        .await
+        .unwrap();
+    snapshot_where(&discord, |snapshot| {
+        status(snapshot).as_deref() == Some("Movie night")
+    })
+    .await;
+    discord.set_voice_status(&lounge, None).await.unwrap();
+    snapshot_where(&discord, |snapshot| status(snapshot).is_none()).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "starts testing/fake_discord.ts with bun; run scripts/test-fake-discord"]
 async fn plays_the_soundboard() {
     let Fixture {
         _fake,

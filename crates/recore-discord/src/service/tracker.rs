@@ -758,6 +758,31 @@ impl Tracker {
                 };
                 self.voice_start(id, start_time(&data["voice_start_time"]))
             }
+            Event::VoiceChannelStatusUpdate => {
+                let (Some(guild), Some(id)) = (data["guild_id"].as_str(), data["id"].as_str())
+                else {
+                    return false;
+                };
+                let Some(server) = self.server_mut(guild) else {
+                    return false;
+                };
+                let Some(channel) = server
+                    .voice_channels
+                    .iter_mut()
+                    .find(|channel| channel.id == id)
+                else {
+                    return false;
+                };
+                let status = data["status"]
+                    .as_str()
+                    .filter(|status| !status.trim().is_empty())
+                    .map(Arc::from);
+                if channel.status == status {
+                    return false;
+                }
+                channel.status = status;
+                true
+            }
             // The answer to op 43, which lists each of the server's voice
             // channels, with a start time only while one is busy.
             // The answer is whole: a voice channel of the server it gives no
@@ -774,6 +799,31 @@ impl Tracker {
                         ))
                     })
                     .collect();
+                let mut changed = false;
+                // The answer also carries each voice channel's status.
+                if let Some(server) = data["guild_id"]
+                    .as_str()
+                    .and_then(|guild| self.server_mut(guild))
+                {
+                    for entry in data["channels"].as_array().into_iter().flatten() {
+                        let Some(channel) = entry["id"].as_str().and_then(|id| {
+                            server
+                                .voice_channels
+                                .iter_mut()
+                                .find(|channel| channel.id == id)
+                        }) else {
+                            continue;
+                        };
+                        let status = entry["status"]
+                            .as_str()
+                            .filter(|status| !status.trim().is_empty())
+                            .map(Arc::from);
+                        if channel.status != status {
+                            channel.status = status;
+                            changed = true;
+                        }
+                    }
+                }
                 let quiet: Vec<String> = data["guild_id"]
                     .as_str()
                     .and_then(|guild| self.servers.iter().find(|server| server.id == guild))
@@ -785,7 +835,6 @@ impl Tracker {
                     })
                     .map(|channel| channel.id.clone())
                     .collect();
-                let mut changed = false;
                 for channel in quiet {
                     changed |= self.voice_start(&channel, None);
                 }

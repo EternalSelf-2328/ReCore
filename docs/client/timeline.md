@@ -2,8 +2,8 @@
 
 The header (`header.rs`) shows a DM's avatar and
 presence or a channel's icon, a thread's channel (which leads back to it),
-the name, a channel's topic on one line after a dot, what a DM's person is
-up to; then the room's buttons in this order (in a Discord DM with
+the name, a channel's topic or a voice channel's status on one line after a
+dot, what a DM's person is up to; then the room's buttons in this order (in a Discord DM with
 someone who isn't a friend, Add Friend, or Accept Friend Request in the
 accent when they asked; calls, threads, notifications, pins, add people,
 the member list, the profile) and the search box.

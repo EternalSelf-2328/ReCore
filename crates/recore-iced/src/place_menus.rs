@@ -268,6 +268,7 @@ pub fn choose_place(app: &mut App, place: String, choice: MenuChoice) -> Task<Me
         MenuChoice::EditServerProfile => Action::EditServerProfile(place),
         MenuChoice::ServerSettings => Action::OpenServerSettings(place),
         MenuChoice::EditChannel => Action::OpenChannelSettings(place),
+        MenuChoice::SetVoiceStatus => Action::OpenVoiceStatus(place),
         MenuChoice::Invite => Action::OpenInvite(place),
         MenuChoice::PinChannel | MenuChoice::UnpinChannel => Action::PinChannel {
             room: place,
@@ -652,6 +653,7 @@ pub fn group_of(choice: MenuChoice) -> u8 {
         | MenuChoice::CreateChannel
         | MenuChoice::CreateCategory
         | MenuChoice::EditChannel
+        | MenuChoice::SetVoiceStatus
         | MenuChoice::DuplicateChannel => 6,
         MenuChoice::DeleteChannel | MenuChoice::LeaveServer | MenuChoice::LeaveGroup => 7,
         _ => 0,
@@ -706,6 +708,7 @@ pub fn icon(choice: MenuChoice) -> Icon {
         C::DeleteChannel => Icon::Trash,
         C::JoinThread | C::CloseThread | C::OpenThread => Icon::Thread,
         C::LockThread | C::UnlockThread => Icon::Lock,
+        C::SetVoiceStatus => Icon::Volume,
     }
 }
 
@@ -770,6 +773,7 @@ pub fn label(choice: MenuChoice) -> &'static str {
         MenuChoice::CreateChannel => "Create text channel",
         MenuChoice::CreateCategory => "Create category",
         MenuChoice::EditChannel => "Edit channel",
+        MenuChoice::SetVoiceStatus => "Set voice status",
         MenuChoice::DuplicateChannel => "Duplicate channel",
         MenuChoice::DeleteChannel => "Delete channel",
         MenuChoice::LeaveServer => "Leave server",

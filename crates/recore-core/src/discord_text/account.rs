@@ -1319,6 +1319,7 @@ pub(super) fn command(
         command @ (DiscordCommand::CreateChannel { .. }
         | DiscordCommand::ChannelSettings { .. }
         | DiscordCommand::EditChannel { .. }
+        | DiscordCommand::SetVoiceStatus { .. }
         | DiscordCommand::DeleteChannel { .. }),
     ) = command
     {
@@ -1500,6 +1501,23 @@ fn manage_channel(
                     None => Err(anyhow::anyhow!(NOT_DISCORD)),
                 };
                 (result, "save the channel")
+            }
+            DiscordCommand::SetVoiceStatus { room, status } => {
+                let result = match channel(&room) {
+                    Some(id) => discord
+                        .set_voice_status(&id, status.as_deref())
+                        .await
+                        .map(|()| None),
+                    None => Err(anyhow::anyhow!(NOT_DISCORD)),
+                };
+                (
+                    result,
+                    if status.is_some() {
+                        "set the voice channel's status"
+                    } else {
+                        "clear the voice channel's status"
+                    },
+                )
             }
             DiscordCommand::DeleteChannel { room } => {
                 let result = match channel(&room) {

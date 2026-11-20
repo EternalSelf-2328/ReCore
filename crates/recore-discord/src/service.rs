@@ -3317,6 +3317,12 @@ impl Discord {
         self.api.edit_channel(channel, &body).await
     }
 
+    /// Sets a voice channel's status, or clears it with none. The gateway's
+    /// VOICE_CHANNEL_STATUS_UPDATE says so too.
+    pub async fn set_voice_status(&self, channel: &str, status: Option<&str>) -> Result<()> {
+        self.api.set_voice_status(channel, status).await
+    }
+
     /// Moves a server's channels and categories, as dragging them in the
     /// channel list does, locking the permissions of the channel `lock`
     /// names to its new category's. The list shows them moved at once,

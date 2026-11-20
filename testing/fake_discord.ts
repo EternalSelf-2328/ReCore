@@ -2453,7 +2453,7 @@ function guildChannel(id: string, name: string, type: number, position: number, 
     ...(type === 0
       ? { topic: (id === GENERAL ? generalTopic : null) as string | null, nsfw: false, rate_limit_per_user: 0, last_message_id: messages.get(id)?.at(-1)?.id ?? null }
       : {}),
-    ...(type === 2 ? { bitrate: 64000, user_limit: 0, rtc_region: null, last_message_id: null } : {}),
+    ...(type === 2 ? { bitrate: 64000, user_limit: 0, rtc_region: null, last_message_id: null, status: null as string | null } : {}),
     ...(type === 15 ? forumFields() : {}),
   };
 }
@@ -7356,6 +7356,19 @@ async function api(req: Request, path: string, origin: string): Promise<Response
       dispatch("THREAD_UPDATE", wireThread(thread));
       return json(wireThread(thread));
     }
+  }
+  if (method === "PUT" && (m = path.match(/^\/channels\/(\d+)\/voice-status$/))) {
+    const channel = guildChannels().find((known) => known.id === m![1]!);
+    if (!channel || channel.type !== 2) return notFound("Unknown Channel", 10003);
+    const body: any = await req.json().catch(() => ({}));
+    const status = typeof body.status === "string" && body.status.trim() ? body.status : null;
+    channelEdits.set(channel.id, { ...channelEdits.get(channel.id), status });
+    dispatch("VOICE_CHANNEL_STATUS_UPDATE", {
+      id: channel.id,
+      guild_id: GUILD,
+      status,
+    });
+    return empty();
   }
   const envServer = (m = path.match(/^\/channels\/(\d+)$/)) ? world?.channelGuild.get(m[1]!) : undefined;
   if (method === "GET" && envServer) return json(envGuild(envServer).channels.find((channel) => channel.id === m![1]));

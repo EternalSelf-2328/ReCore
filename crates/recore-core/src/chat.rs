@@ -136,6 +136,8 @@ pub struct ChatRoom {
     pub parent: Option<String>,
     /// A Discord forum, whose posts show in place of messages.
     pub forum: bool,
+    /// A Discord voice channel's status, which its header shows.
+    pub status: Option<Arc<str>>,
     /// What a Discord channel's icon shows besides.
     pub mark: ChannelMark,
     /// A Discord server's text channel its channel list leaves out unless
@@ -636,6 +638,8 @@ pub enum Permission {
     /// Create scheduled events, as Discord's client asks before showing its
     /// Events row: managing them all isn't enough on its own.
     CreateEvents,
+    /// Set a voice channel's status.
+    SetVoiceChannelStatus,
 }
 
 /// Which messages notify, in a Discord server or channel.
@@ -3236,6 +3240,12 @@ pub enum DiscordCommand {
         room: String,
         kind: ChannelKind,
         settings: Box<ChannelSettings>,
+    },
+    /// Set a voice channel's status, or clear it with none;
+    /// [`Event::ChannelSaved`] follows.
+    SetVoiceStatus {
+        room: String,
+        status: Option<String>,
     },
     DeleteChannel {
         room: String,

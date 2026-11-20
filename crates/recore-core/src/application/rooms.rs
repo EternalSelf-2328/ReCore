@@ -114,6 +114,8 @@ pub enum MenuChoice {
     CreateCategory,
     /// Change a Discord channel or category, copy a channel, or delete one.
     EditChannel,
+    /// Set a Discord voice channel's status, or clear it.
+    SetVoiceStatus,
     DuplicateChannel,
     DeleteChannel,
     /// Leave a Discord server this account doesn't own.
