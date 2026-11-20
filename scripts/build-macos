@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Builds the macOS release in target/dist/macos. The Discord flavour is the
+# release; the build is ad-hoc signed by scripts/package-macos.py, since a
+# Developer ID is not kept in the repository. Arguments after the flavour go
+# to scripts/package-macos.py, such as --no-dmg.
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+flavour=${1:-discord}
+case $flavour in
+  discord) features=(--no-default-features --features desktop,discord) ;;
+  full) features=(--features matrix) ;;
+  *) echo "usage: scripts/build-macos [discord|full] [package-macos.py options]" >&2; exit 2 ;;
+esac
+shift $(($# > 0 ? 1 : 0))
+if [[ $(uname -s) != Darwin ]]; then
+  echo "scripts/build-macos: run this on macOS; the AppKit and AVFoundation libraries are not cross-buildable here" >&2
+  exit 2
+fi
+# The native target, or the one named in RECORE_TARGET. Apple Silicon builds
+# arm64; Intel builds x64. A universal build would need both libwebrtc slices,
+# which LiveKit publishes separately.
+target=${RECORE_TARGET:-}
+if [[ -z $target ]]; then
+  case $(uname -m) in
+    arm64) target=aarch64-apple-darwin ;;
+    x86_64) target=x86_64-apple-darwin ;;
+    *) echo "scripts/build-macos: unknown machine $(uname -m)" >&2; exit 2 ;;
+  esac
+fi
+source scripts/release-env "$target"
+export RECORE_RELEASE=1
+export MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-11.0}
+cargo build --locked --release --target "$target" "${features[@]}"
+python3 scripts/package-macos.py --target "$target" --flavour "$flavour" "$@"

@@ -2,8 +2,8 @@
 # version. A manual run builds the selected branch and creates the tag when
 # it publishes the release if the tag does not exist yet.
 # It builds the Linux AppImage and Arch package, the Windows portable ZIP, the
-# source snapshot and the checksums, then publishes them on the tag's release
-# page. The website reads that page through the GitHub releases API, so a new
+# Apple Silicon and Intel macOS apps, the source snapshot and the checksums,
+# then publishes them on the tag's release page. The website reads that page through the GitHub releases API, so a new
 # release shows up there without rebuilding the site.
 #
 # Stable releases normally carry SHA256SUMS.txt.minisig, which Update and
@@ -131,8 +131,49 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
+  macos:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.version.outputs.commit }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          workspaces: ". -> target"
+      - name: Install the macOS build tools
+        run: |
+          brew install cmake ninja protobuf nasm pkgconf librsvg llvm
+          echo "LIBCLANG_PATH=$(brew --prefix llvm)/lib" >> "$GITHUB_ENV"
+          echo "PROTOC=$(brew --prefix protobuf)/bin/protoc" >> "$GITHUB_ENV"
+          echo "NASM=$(brew --prefix nasm)/bin/nasm" >> "$GITHUB_ENV"
+      - run: scripts/set-version "${{ needs.version.outputs.version }}"
+      - name: Build the app, ZIP and DMG
+        env:
+          RECORE_TARGET: ${{ matrix.target }}
+          CC: clang
+          CXX: clang++
+        run: scripts/build-macos
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.target }}
+          path: |
+            target/dist/macos/ReCore-*
+            target/dist/macos/SHA256SUMS.txt
+          if-no-files-found: error
+          compression-level: 0
+
   release:
-    needs: [version, linux, windows]
+    needs: [version, linux, windows, macos]
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -167,6 +208,11 @@ jobs:
           cmp "dist/linux/ReCore-$VERSION-source.zip" "dist/windows/ReCore-$VERSION-source.zip"
           cp dist/linux/ReCore-* dist/linux/recore-*.pkg.tar.zst release/
           cp dist/windows/ReCore-*-windows-x64* release/
+          for folder in dist/macos-*; do
+            cp "$folder"/ReCore-* "$folder"/*.dmg release/ 2>/dev/null || true
+          done
+          # Each job zips the same tracked source and names it alike; the
+          # copies above are one file by the time the release is published.
           # The package scripts' own sums name only their own files; make one
           # complete list for the release.
           (cd release && find . -maxdepth 1 -type f ! -name 'SHA256SUMS.txt' ! -name 'SHA256SUMS.txt.minisig' -printf '%f\n' | sort | xargs sha256sum > SHA256SUMS.txt)
@@ -205,6 +251,7 @@ jobs:
             echo
             echo "- **Windows:** the portable ZIP. Run \`recore.exe\` after extracting it."
             echo "- **Linux:** the AppImage, and the Arch package for \`pacman -U\`."
+            echo "- **macOS:** Apple Silicon and Intel ZIPs and DMGs; drag \`ReCore.app\` to Applications. These builds are ad-hoc signed, not notarised."
             echo "- **Source:** the snapshot used for this build."
             echo
             echo "## What's new"

@@ -23,7 +23,7 @@
 
 use crate::{base64, color, css};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -79,7 +79,7 @@ impl Default for Effects {
 }
 
 /// A picture a theme puts behind the window.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Image {
     /// The bytes a `data:` URI carries.
     Data(Vec<u8>),
@@ -87,6 +87,89 @@ pub enum Image {
     File(PathBuf),
     /// A picture on the web, which the caller may choose to fetch.
     Url(String),
+    /// A CSS gradient, painted by the client at the window's background size.
+    Gradient(Gradient),
+}
+
+/// How a CSS gradient runs across the window.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum GradientKind {
+    /// Degrees, as CSS names them: 0 points up, 90 to the right.
+    Linear(f32),
+    Radial,
+    Conic,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GradientStop {
+    pub color: Rgba,
+    /// The stop's position, 0..1, or `None` to distribute it evenly.
+    pub position: Option<f32>,
+}
+
+/// A `linear-gradient()`, `radial-gradient()` or `conic-gradient()`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Gradient {
+    pub kind: GradientKind,
+    pub stops: Vec<GradientStop>,
+}
+
+impl Gradient {
+    /// The colour at `position` along the gradient, with unpositioned stops
+    /// spread between their positioned neighbours. Painters that sample many
+    /// pixels should resolve once with [`resolved`](Self::resolved) and call
+    /// [`sample`](Self::sample).
+    pub fn at(&self, position: f32) -> Rgba {
+        Self::sample(&self.resolved(), position)
+    }
+
+    /// The stops with every position filled in, in order.
+    pub fn resolved(&self) -> Vec<(f32, Rgba)> {
+        let stops = &self.stops;
+        let mut resolved = Vec::with_capacity(stops.len());
+        let mut previous = 0.0f32;
+        for (index, stop) in stops.iter().enumerate() {
+            let position = match stop.position {
+                Some(position) => position.clamp(0.0, 1.0),
+                None if index == 0 => 0.0,
+                None if index + 1 == stops.len() => 1.0,
+                None => {
+                    let next = stops[index..]
+                        .iter()
+                        .enumerate()
+                        .find_map(|(at, stop)| stop.position.map(|position| (at, position)));
+                    let (gaps, target) =
+                        next.map_or((stops.len() - index, 1.0), |(at, target)| (at + 1, target));
+                    previous + (target - previous) / gaps as f32
+                }
+            };
+            previous = position.max(previous);
+            resolved.push((position, stop.color));
+        }
+        resolved
+    }
+
+    /// Samples an already resolved stop list.
+    pub fn sample(stops: &[(f32, Rgba)], position: f32) -> Rgba {
+        if stops.is_empty() {
+            return Rgba::TRANSPARENT;
+        }
+        if stops.len() == 1 {
+            return stops[0].1;
+        }
+        let position = position.clamp(0.0, 1.0);
+        let mut before = stops[0];
+        for pair in stops.windows(2) {
+            let (start, start_color) = pair[0];
+            let (end, end_color) = pair[1];
+            if position <= end {
+                let span = (end - start).max(f32::EPSILON);
+                return start_color.mix(end_color, ((position - start) / span).clamp(0.0, 1.0));
+            }
+            before = (start, start_color);
+        }
+        before.1
+    }
 }
 
 /// A font a theme carries, ready for the window's font system.
@@ -96,6 +179,15 @@ pub struct Font {
     pub weight: u16,
     pub italic: bool,
     pub bytes: Vec<u8>,
+}
+
+/// How a background picture fills the window.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BackgroundFit {
+    #[default]
+    Cover,
+    Contain,
+    Fill,
 }
 
 /// What a theme asks of the window besides its colours.
@@ -111,8 +203,123 @@ pub struct Look {
     pub background: Option<Image>,
     /// How far the background picture is dimmed, 0..1.
     pub background_dim: Option<f32>,
+    /// How opaque the panels over a background picture are, 0..1.
+    pub panel_opacity: Option<f32>,
+    /// How the background picture fills the window.
+    pub background_fit: BackgroundFit,
     /// The accent ReCore's own controls use, as the theme names it.
     pub accent: Option<Rgba>,
+    /// Colours and opacity keyframes a root or body animation writes. They
+    /// are painted as the window's moving ground; animations on Discord's
+    /// DOM-only elements stay in the file.
+    pub animations: Vec<Animation>,
+}
+
+/// One step of a colour or opacity animation ReCore can paint.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AnimationFrame {
+    pub offset: f32,
+    pub background: Option<Rgba>,
+    pub color: Option<Rgba>,
+    pub opacity: Option<f32>,
+}
+
+/// A `@keyframes` animation on the window's own root or body.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Animation {
+    pub name: String,
+    pub duration: f32,
+    pub delay: f32,
+    /// `None` is CSS's infinite.
+    pub iterations: Option<f32>,
+    pub direction: AnimationDirection,
+    pub frames: Vec<AnimationFrame>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AnimationDirection {
+    #[default]
+    Normal,
+    Reverse,
+    Alternate,
+    AlternateReverse,
+}
+
+impl Animation {
+    /// The colour and opacity at `elapsed` seconds into the window's life.
+    /// `None` once a finite animation has finished. A missing channel is
+    /// interpolated from its nearest named step, as CSS does.
+    pub fn at(&self, elapsed: f32) -> Option<AnimationFrame> {
+        if self.frames.is_empty() || self.duration <= 0.0 {
+            return None;
+        }
+        let local = elapsed - self.delay.max(0.0);
+        if local < 0.0 {
+            return self.frames.first().cloned();
+        }
+        let cycle = local / self.duration;
+        let mut index = cycle.floor() as u32;
+        if let Some(iterations) = self.iterations
+            && cycle >= iterations
+        {
+            return None;
+        }
+        let mut progress = cycle.fract();
+        let alternate = matches!(
+            self.direction,
+            AnimationDirection::Alternate | AnimationDirection::AlternateReverse
+        );
+        if alternate && index % 2 == 1 {
+            progress = 1.0 - progress;
+        }
+        if matches!(
+            self.direction,
+            AnimationDirection::Reverse | AnimationDirection::AlternateReverse
+        ) {
+            progress = 1.0 - progress;
+        }
+        // A float cycle can land a hair below the next iteration's start.
+        if progress >= 1.0 {
+            progress = 0.0;
+            index = index.wrapping_add(1);
+        }
+        let _ = index;
+        let before = self
+            .frames
+            .iter()
+            .take_while(|frame| frame.offset <= progress)
+            .last()
+            .unwrap_or(&self.frames[0]);
+        let after = self
+            .frames
+            .iter()
+            .find(|frame| frame.offset >= progress)
+            .unwrap_or_else(|| self.frames.last().expect("a frame"));
+        let span = (after.offset - before.offset).max(f32::EPSILON);
+        let mix = ((progress - before.offset) / span).clamp(0.0, 1.0);
+        Some(AnimationFrame {
+            offset: progress,
+            background: mix_colour(before.background, after.background, mix),
+            color: mix_colour(before.color, after.color, mix),
+            opacity: mix_value(before.opacity, after.opacity, mix),
+        })
+    }
+}
+
+fn mix_colour(left: Option<Rgba>, right: Option<Rgba>, mix: f32) -> Option<Rgba> {
+    match (left, right) {
+        (Some(left), Some(right)) => Some(left.mix(right, mix)),
+        (Some(colour), None) | (None, Some(colour)) => Some(colour),
+        (None, None) => None,
+    }
+}
+
+fn mix_value(left: Option<f32>, right: Option<f32>, mix: f32) -> Option<f32> {
+    match (left, right) {
+        (Some(left), Some(right)) => Some(left + (right - left) * mix),
+        (Some(value), None) | (None, Some(value)) => Some(value),
+        (None, None) => None,
+    }
 }
 
 /// A theme's colours, one field per colour ReCore's window paints with. The
@@ -339,6 +546,7 @@ pub fn load_str_with_imports(
     let collected = collect(&sheet);
     let dark = choose_dark(&collected, options.mode, &mut warnings);
     let mut vars = collected.vars(dark);
+    direct_vars(&sheet, &mut vars, dark);
     if let Some(accent) = options.accent {
         let hex = accent.hex();
         for name in [
@@ -384,10 +592,21 @@ pub fn load_str_with_imports(
             important: false,
         });
     }
-    warnings.extend(sheet.warnings);
     let palette = palette(&vars, dark);
     let native = crate::NativeStyle::compute(&sheet.rules, &vars, dark);
-    let mut look = look(&vars, palette, directory, &fonts, options, &mut warnings);
+    let animations = animations(&sheet, &collected, dark, &vars);
+    let direct_background = direct_background(&sheet, &vars, directory, dark);
+    warnings.extend(sheet.warnings);
+    let mut look = look(
+        &vars,
+        palette,
+        directory,
+        &fonts,
+        options,
+        animations,
+        direct_background,
+        &mut warnings,
+    );
     look.radius = native.radius.or(look.radius);
     look.font_family = native.font_family.clone().or(look.font_family);
     look.font_size = native.font_size.or(look.font_size);
@@ -705,6 +924,7 @@ fn appearance_of(vars: &css::Vars, light: bool) -> Option<bool> {
         &[
             "--background-primary",
             "--background-base-lower",
+            "--background-application",
             "--chat-background",
             "--background",
             "--background-secondary",
@@ -832,45 +1052,264 @@ fn image(vars: &css::Vars, directory: Option<&Path>, names: &[&str]) -> Option<I
         let Some(value) = vars.resolve(raw) else {
             continue;
         };
-        if value.trim().eq_ignore_ascii_case("none") {
-            continue;
-        }
-        let path = if let Some(start) = css::find_ignore_case(&value, "url(") {
-            let rest = &value[start + 4..];
-            let Some(end) = rest.find(')') else {
-                continue;
-            };
-            rest[..end].trim().trim_matches(['"', '\''])
-        } else {
-            // A field the window wrote may hold the path without `url()`.
-            let path = value.trim().trim_matches(['"', '\'']);
-            if path.is_empty() {
-                continue;
-            }
-            path
-        };
-        let origin = vars.origin(name);
-        let path = path.trim().trim_start_matches("file://");
-        if path.starts_with("data:") {
-            if let Some(bytes) = css_data_uri(path) {
-                return Some(Image::Data(bytes));
-            }
-        } else if is_remote(path) {
-            return Some(Image::Url(remote_target(None, path)));
-        } else if origin.is_some_and(is_remote) {
-            // A relative picture in a downloaded stylesheet is downloaded
-            // from beside it, not looked for on this machine.
-            return Some(Image::Url(remote_target(origin.map(Path::new), path)));
-        } else {
-            let base = origin.filter(|origin| !is_remote(origin)).map(Path::new);
-            if let Some(full) = resolve_path(base.or(directory), path)
-                && full.exists()
-            {
-                return Some(Image::File(full));
-            }
+        if let Some(image) = image_value(&value, vars.origin(name), directory) {
+            return Some(image);
         }
     }
     None
+}
+
+/// A `url(...)` or a bare path, as a variable or a `body` rule names it.
+fn image_value(value: &str, origin: Option<&str>, directory: Option<&Path>) -> Option<Image> {
+    if value.trim().eq_ignore_ascii_case("none") {
+        return None;
+    }
+    if let Some(gradient) = gradient(value) {
+        return Some(Image::Gradient(gradient));
+    }
+    let path = if let Some(start) = css::find_ignore_case(value, "url(") {
+        let rest = &value[start + 4..];
+        let end = rest.find(')')?;
+        rest[..end].trim().trim_matches(['"', '\''])
+    } else {
+        // A field the window wrote may hold the path without `url()`.
+        let path = value.trim().trim_matches(['"', '\'']);
+        if path.is_empty() {
+            return None;
+        }
+        path
+    };
+    let path = path.trim().trim_start_matches("file://");
+    if path.starts_with("data:") {
+        css_data_uri(path).map(Image::Data)
+    } else if is_remote(path) {
+        Some(Image::Url(remote_target(None, path)))
+    } else if origin.is_some_and(is_remote) {
+        // A relative picture in a downloaded stylesheet is downloaded from
+        // beside it, not looked for on this machine.
+        Some(Image::Url(remote_target(origin.map(Path::new), path)))
+    } else {
+        let base = origin.filter(|origin| !is_remote(origin)).map(Path::new);
+        resolve_path(base.or(directory), path)
+            .filter(|full| full.exists())
+            .map(Image::File)
+    }
+}
+
+/// Reads a CSS gradient in a `background`/`background-image` value. ReCore
+/// paints the common three kinds; repeating variants use the same stops.
+fn gradient(value: &str) -> Option<Gradient> {
+    let lower = value.to_ascii_lowercase();
+    let (kind, at) = if let Some(at) = css::find_ignore_case(value, "linear-gradient(") {
+        (GradientKind::Linear(180.0), at)
+    } else if let Some(at) = css::find_ignore_case(value, "radial-gradient(") {
+        (GradientKind::Radial, at)
+    } else if let Some(at) = css::find_ignore_case(value, "conic-gradient(") {
+        (GradientKind::Conic, at)
+    } else {
+        let at = css::find_ignore_case(value, "repeating-linear-gradient(")?;
+        (GradientKind::Linear(180.0), at)
+    };
+    let open = lower[at..].find('(')? + at;
+    let close = matching_paren(value, open)?;
+    let inside = &value[open + 1..close];
+    let parts = color::split_top(inside, ',');
+    if parts.len() < 2 {
+        return None;
+    }
+    let mut kind = kind;
+    let mut first = 0;
+    if matches!(kind, GradientKind::Linear(_)) {
+        let head = parts[0].trim();
+        let head_lower = head.to_ascii_lowercase();
+        if head_lower.starts_with("to ")
+            || head_lower.ends_with("deg")
+            || head_lower.ends_with("turn")
+            || head_lower.ends_with("rad")
+        {
+            let angle = if let Some(angle) = head_lower.strip_suffix("deg") {
+                angle.trim().parse::<f32>().ok()
+            } else if let Some(angle) = head_lower.strip_suffix("turn") {
+                angle.trim().parse::<f32>().ok().map(|turns| turns * 360.0)
+            } else if let Some(angle) = head_lower.strip_suffix("rad") {
+                angle.trim().parse::<f32>().ok().map(f32::to_degrees)
+            } else {
+                match head_lower.as_str() {
+                    "to top" => Some(0.0),
+                    "to right" => Some(90.0),
+                    "to bottom" => Some(180.0),
+                    "to left" => Some(270.0),
+                    "to top right" | "to right top" => Some(45.0),
+                    "to bottom right" | "to right bottom" => Some(135.0),
+                    "to bottom left" | "to left bottom" => Some(225.0),
+                    "to top left" | "to left top" => Some(315.0),
+                    _ => None,
+                }
+            };
+            if let Some(angle) = angle {
+                kind = GradientKind::Linear(angle);
+                first = 1;
+            }
+        }
+    } else {
+        // A radial's shape/position and a conic's `from` are not painted by
+        // the simple painter; their stops still make the gradient.
+        let head = parts[0].trim().to_ascii_lowercase();
+        if head.contains(" at ")
+            || head.starts_with("circle")
+            || head.starts_with("ellipse")
+            || head.starts_with("closest")
+            || head.starts_with("farthest")
+            || head.starts_with("from ")
+            || head.starts_with("at ")
+        {
+            first = 1;
+        }
+    }
+    let mut stops = Vec::new();
+    for part in parts.into_iter().skip(first) {
+        let mut tokens = color::split_top(part.trim(), ' ');
+        let mut color = None;
+        let mut position = None;
+        for token in &mut tokens {
+            let token = token.trim();
+            if let Some(found) = color::parse(token, false) {
+                color = Some(found);
+            } else if let Some(value) = token.strip_suffix('%') {
+                position = value
+                    .trim()
+                    .parse::<f32>()
+                    .ok()
+                    .map(|value| (value / 100.0).clamp(0.0, 1.0));
+            }
+        }
+        if let Some(color) = color {
+            stops.push(GradientStop { color, position });
+        }
+    }
+    (stops.len() >= 2).then_some(Gradient { kind, stops })
+}
+
+fn matching_paren(text: &str, open: usize) -> Option<usize> {
+    let mut depth = 0u32;
+    let mut quote = None;
+    let mut escaped = false;
+    for (index, character) in text[open..].char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match character {
+            '\\' => escaped = true,
+            '"' | '\'' if quote == Some(character) => quote = None,
+            '"' | '\'' if quote.is_none() => quote = Some(character),
+            '(' if quote.is_none() => depth += 1,
+            ')' if quote.is_none() => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Some(open + index);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Reads a root/body rule's direct `background` and `color`, as themes that
+/// do not use Discord's custom properties paint the page. The values become
+/// the same synthetic variables the palette reads, so a theme that writes
+/// `body { background: #111; color: #eee; }` gets the right ground and text
+/// even when it never names `--background-primary` or `--text-normal`.
+fn direct_vars(sheet: &Stylesheet, vars: &mut css::Vars, dark: bool) {
+    let mut found: BTreeMap<&'static str, String> = BTreeMap::new();
+    for rule in &sheet.rules {
+        if rule
+            .color_scheme
+            .is_some_and(|color_scheme| color_scheme != dark)
+        {
+            continue;
+        }
+        let root = rule.selectors.iter().any(|selector| {
+            let selector = selector.split("::").next().unwrap_or(selector);
+            css::root_selector(selector, dark).is_some()
+        });
+        if !root {
+            continue;
+        }
+        for declaration in &rule.declarations {
+            let Some(value) = vars.resolve(&declaration.value) else {
+                continue;
+            };
+            let value = value.trim();
+            if value.is_empty()
+                || value.contains("url(")
+                || value.contains("gradient(")
+                || value.eq_ignore_ascii_case("none")
+            {
+                continue;
+            }
+            let name = match declaration.name.trim().to_ascii_lowercase().as_str() {
+                "background" | "background-color" => "--background-primary",
+                "color" => "--text-normal",
+                "background-size" => "--background-size",
+                _ => continue,
+            };
+            if name == "--background-size" || color::parse(value, !dark).is_some() {
+                found.insert(name, value.to_owned());
+            }
+        }
+    }
+    for (name, value) in found {
+        vars.insert(&css::Declaration {
+            name: name.into(),
+            value,
+            important: false,
+        });
+    }
+}
+
+/// A background a root or body rule paints directly, as many Discord themes
+/// do (`body { background-image: url(...) }`), rather than through a custom
+/// property. Pseudo-elements count too: a theme's `body::before` is where
+/// its wallpaper commonly lives.
+fn direct_background(
+    sheet: &Stylesheet,
+    vars: &css::Vars,
+    directory: Option<&Path>,
+    dark: bool,
+) -> Option<Image> {
+    let mut found = None;
+    for rule in &sheet.rules {
+        if rule
+            .color_scheme
+            .is_some_and(|color_scheme| color_scheme != dark)
+        {
+            continue;
+        }
+        let root = rule.selectors.iter().any(|selector| {
+            let selector = selector.split("::").next().unwrap_or(selector);
+            css::root_selector(selector, dark).is_some()
+        });
+        if !root {
+            continue;
+        }
+        for declaration in &rule.declarations {
+            if !matches!(
+                declaration.name.trim().to_ascii_lowercase().as_str(),
+                "background" | "background-image"
+            ) {
+                continue;
+            }
+            let Some(value) = vars.resolve(&declaration.value) else {
+                continue;
+            };
+            if let Some(image) = image_value(&value, rule.origin.as_deref(), directory) {
+                found = Some(image);
+            }
+        }
+    }
+    found
 }
 
 fn css_data_uri(text: &str) -> Option<Vec<u8>> {
@@ -968,6 +1407,7 @@ pub fn palette(vars: &css::Vars, dark: bool) -> Palette {
             "--background-floating",
             "--backgroundfloating",
             "--background-surface-high",
+            "--modal-background",
             "--card-background-default",
             "--background-nested-floating",
         ],
@@ -1025,6 +1465,8 @@ pub fn palette(vars: &css::Vars, dark: bool) -> Palette {
         &[
             "--border-subtle",
             "--border-normal",
+            "--border-muted",
+            "--border-strong",
             "--background-modifier-accent",
             "--app-frame-border",
         ],
@@ -1038,6 +1480,7 @@ pub fn palette(vars: &css::Vars, dark: bool) -> Palette {
             "--background-modifier-hover",
             "--interactive-background-hover",
             "--message-background-hover",
+            "--background-message-hover",
             "--background-modifier-selected",
         ],
         light,
@@ -1057,7 +1500,13 @@ pub fn palette(vars: &css::Vars, dark: bool) -> Palette {
     .unwrap_or_else(|| ground.mix(accent, 0.12));
     let row_hover = over(
         vars,
-        &["--message-background-hover", "--background-modifier-hover"],
+        &[
+            "--message-background-hover",
+            "--background-message-hover",
+            "--background-mentioned",
+            "--background-mentioned-hover",
+            "--background-modifier-hover",
+        ],
         light,
         ground,
     )
@@ -1070,6 +1519,8 @@ pub fn palette(vars: &css::Vars, dark: bool) -> Palette {
             "--red-400",
             "--danger",
             "--dangercolor",
+            "--text-danger",
+            "--icon-feedback-critical",
         ],
         light,
         &["--red-500"],
@@ -1083,21 +1534,36 @@ pub fn palette(vars: &css::Vars, dark: bool) -> Palette {
         .unwrap_or_else(|| accent.ink());
     let secondary = pick(
         vars,
-        &["--header-secondary", "--text-muted", "--interactive-normal"],
+        &[
+            "--header-secondary",
+            "--text-secondary",
+            "--text-muted",
+            "--interactive-normal",
+        ],
         light,
         &["--text-subtle"],
         text.mix(ground, 0.35),
     );
     let muted = pick(
         vars,
-        &["--text-muted", "--interactive-normal", "--channels-default"],
+        &[
+            "--text-muted",
+            "--text-faint",
+            "--interactive-normal",
+            "--channels-default",
+        ],
         light,
         &["--interactive-muted"],
         text.mix(ground, 0.52),
     );
     let faint = pick(
         vars,
-        &["--text-subtle", "--interactive-muted", "--channel-icon"],
+        &[
+            "--text-subtle",
+            "--text-faint",
+            "--interactive-muted",
+            "--channel-icon",
+        ],
         light,
         &[],
         text.mix(ground, 0.65),
@@ -1109,6 +1575,7 @@ pub fn palette(vars: &css::Vars, dark: bool) -> Palette {
             "--green-360",
             "--online",
             "--successcolor",
+            "--text-positive",
         ],
         light,
         &["--status-green"],
@@ -1121,6 +1588,7 @@ pub fn palette(vars: &css::Vars, dark: bool) -> Palette {
             "--yellow-300",
             "--idle",
             "--warningcolor",
+            "--text-warning",
         ],
         light,
         &["--status-yellow"],
@@ -1412,12 +1880,18 @@ fn record_palette(vars: &css::Vars, dark: bool) -> Palette {
     }
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the look is assembled from the palette, pictures, fonts and animation in one place"
+)]
 fn look(
     vars: &css::Vars,
     palette: Palette,
     directory: Option<&Path>,
     fonts: &[Font],
     options: &Options,
+    animations: Vec<Animation>,
+    direct_background: Option<Image>,
     warnings: &mut Vec<String>,
 ) -> Look {
     let font_family = vars
@@ -1485,11 +1959,268 @@ fn look(
             &[
                 "--rl-background-image",
                 "--background-image",
+                "--background",
                 "--recore-background",
             ],
-        ),
+        )
+        .or(direct_background),
         background_dim: fraction(vars, &["--rl-background-dim"]),
+        panel_opacity: fraction(vars, &["--rl-panel-opacity", "--rl-surface"]),
+        background_fit: background_fit(vars),
         accent: Some(palette.accent),
+        animations,
+    }
+}
+
+/// Reads the animations that write the window's root or body. A theme's
+/// animated pseudo-elements and DOM nodes still have no native target, but a
+/// moving ground, glow or pulse is something the window can paint.
+fn animations(
+    sheet: &Stylesheet,
+    _collected: &Collected,
+    dark: bool,
+    vars: &css::Vars,
+) -> Vec<Animation> {
+    /// What one rule says about one animation name, before the keyframes are
+    /// turned into frames.
+    #[derive(Clone, Default)]
+    struct Timing {
+        duration: Option<f32>,
+        delay: f32,
+        iterations: Option<f32>,
+        direction: AnimationDirection,
+    }
+    let mut timings: BTreeMap<String, Timing> = BTreeMap::new();
+    for rule in &sheet.rules {
+        if rule
+            .color_scheme
+            .is_some_and(|color_scheme| color_scheme != dark)
+        {
+            continue;
+        }
+        let root = rule.selectors.iter().any(|selector| {
+            let selector = selector.split("::").next().unwrap_or(selector);
+            crate::css::root_selector(selector, dark).is_some()
+        });
+        if !root {
+            continue;
+        }
+        let mut names = Vec::new();
+        let mut shorthand = Vec::new();
+        for declaration in &rule.declarations {
+            let Some(value) = vars.resolve(&declaration.value) else {
+                continue;
+            };
+            match declaration.name.trim().to_ascii_lowercase().as_str() {
+                "animation-name" => {
+                    names.extend(
+                        crate::color::split_top(&value, ',')
+                            .into_iter()
+                            .map(|name| name.trim().to_owned()),
+                    );
+                }
+                "animation" => {
+                    let lower = value.to_ascii_lowercase();
+                    if lower.trim() == "none" {
+                        continue;
+                    }
+                    shorthand.extend(
+                        value
+                            .split_whitespace()
+                            .map(|token| token.trim().to_owned())
+                            .filter(|token| sheet.keyframes.contains_key(token)),
+                    );
+                }
+                _ => {}
+            }
+        }
+        names.retain(|name| sheet.keyframes.contains_key(name));
+        if !shorthand.is_empty() {
+            names.extend(shorthand.iter().cloned());
+        }
+        for (index, name) in names.iter().enumerate() {
+            let timing = timings.entry(name.clone()).or_default();
+            let mut duration_seen = 0;
+            let mut delay_seen = 0;
+            for declaration in &rule.declarations {
+                let Some(value) = vars.resolve(&declaration.value) else {
+                    continue;
+                };
+                let value = value.trim();
+                match declaration.name.trim().to_ascii_lowercase().as_str() {
+                    "animation-duration" => {
+                        if let Some(part) = nth_split_top(value, ',', index) {
+                            timing.duration = seconds(part);
+                        }
+                    }
+                    "animation-delay" => {
+                        if let Some(part) = nth_split_top(value, ',', index) {
+                            timing.delay = seconds(part).unwrap_or(0.0);
+                        }
+                    }
+                    "animation-iteration-count" => {
+                        if let Some(part) = nth_split_top(value, ',', index) {
+                            timing.iterations = iterations(part);
+                        }
+                    }
+                    "animation-direction" => {
+                        if let Some(part) = nth_split_top(value, ',', index) {
+                            timing.direction = direction(part);
+                        }
+                    }
+                    "animation" => {
+                        // The shorthand carries its own duration, delay,
+                        // iteration count and direction.
+                        for token in value.split_whitespace() {
+                            if let Some(seconds) = seconds(token) {
+                                if duration_seen == 0 {
+                                    timing.duration = Some(seconds);
+                                    duration_seen += 1;
+                                } else if delay_seen == 0 {
+                                    timing.delay = seconds;
+                                    delay_seen += 1;
+                                }
+                                continue;
+                            }
+                            if let Some(count) = iterations(token) {
+                                timing.iterations = Some(count);
+                            }
+                            if matches!(
+                                token.to_ascii_lowercase().as_str(),
+                                "normal" | "reverse" | "alternate" | "alternate-reverse"
+                            ) {
+                                timing.direction = direction(token);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    let mut found = Vec::new();
+    for (name, timing) in timings {
+        let Some(keyframes) = sheet.keyframes.get(&name) else {
+            continue;
+        };
+        let mut frames = Vec::new();
+        for frame in &keyframes.frames {
+            let mut painted = AnimationFrame {
+                offset: frame.offset,
+                ..AnimationFrame::default()
+            };
+            for declaration in &frame.declarations {
+                let Some(value) = vars.resolve(&declaration.value) else {
+                    continue;
+                };
+                match declaration.name.trim().to_ascii_lowercase().as_str() {
+                    "background" | "background-color" => {
+                        painted.background = crate::color::parse(value.trim(), !dark);
+                    }
+                    "color" => {
+                        painted.color = crate::color::parse(value.trim(), !dark);
+                    }
+                    name if name.starts_with("--")
+                        && sheet
+                            .properties
+                            .get(name)
+                            .and_then(|spec| spec.syntax.as_deref())
+                            .is_some_and(|syntax| {
+                                syntax.to_ascii_lowercase().contains("color")
+                            }) =>
+                    {
+                        // A registered custom property can animate a theme's
+                        // accent or ground through `@property`; use its
+                        // value for the moving wash too.
+                        painted.color = crate::color::parse(value.trim(), !dark);
+                    }
+                    "opacity" => {
+                        painted.opacity = value
+                            .trim()
+                            .strip_suffix('%')
+                            .and_then(|value| value.trim().parse::<f32>().ok())
+                            .map(|value| (value / 100.0).clamp(0.0, 1.0))
+                            .or_else(|| {
+                                value
+                                    .trim()
+                                    .parse::<f32>()
+                                    .ok()
+                                    .map(|value| value.clamp(0.0, 1.0))
+                            });
+                    }
+                    _ => {}
+                }
+            }
+            if painted.background.is_some() || painted.color.is_some() || painted.opacity.is_some()
+            {
+                frames.push(painted);
+            }
+        }
+        if frames.len() < 2 {
+            continue;
+        }
+        found.push(Animation {
+            name,
+            duration: timing.duration.unwrap_or(8.0).max(0.05),
+            delay: timing.delay.max(0.0),
+            iterations: timing.iterations,
+            direction: timing.direction,
+            frames,
+        });
+    }
+    found
+}
+
+/// One part of a comma-separated `animation-*` value.
+fn nth_split_top(value: &str, delimiter: char, index: usize) -> Option<&str> {
+    crate::color::split_top(value, delimiter)
+        .get(index)
+        .copied()
+}
+
+/// A CSS time in seconds, including `ms`.
+fn seconds(value: &str) -> Option<f32> {
+    let value = value.trim().to_ascii_lowercase();
+    if let Some(value) = value.strip_suffix("ms") {
+        return value.trim().parse::<f32>().ok().map(|value| value / 1000.0);
+    }
+    value
+        .strip_suffix('s')
+        .and_then(|value| value.trim().parse::<f32>().ok())
+}
+
+fn iterations(value: &str) -> Option<f32> {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("infinite") {
+        None
+    } else {
+        value.parse::<f32>().ok().filter(|count| *count >= 0.0)
+    }
+}
+
+fn direction(value: &str) -> AnimationDirection {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "reverse" => AnimationDirection::Reverse,
+        "alternate" => AnimationDirection::Alternate,
+        "alternate-reverse" => AnimationDirection::AlternateReverse,
+        _ => AnimationDirection::Normal,
+    }
+}
+
+/// How a theme names the background's fit, from `background-size`.
+fn background_fit(vars: &css::Vars) -> BackgroundFit {
+    let value = vars
+        .get("--rl-background-size")
+        .or_else(|| vars.get("--background-size"))
+        .and_then(|value| vars.resolve(value))
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if value.contains("contain") {
+        BackgroundFit::Contain
+    } else if value.contains("100% 100%") || value == "fill" {
+        BackgroundFit::Fill
+    } else {
+        BackgroundFit::Cover
     }
 }
 
@@ -2015,6 +2746,15 @@ html.theme-light:not([data-rl-mode="dark"]) {
         assert_eq!(dark.look.radius, Some(16.0));
         assert_eq!(dark.look.font_family.as_deref(), Some("Roboto Condensed"));
         assert_eq!(dark.native.rail, Some(Rgba::rgb(0x14, 0x0c, 0x0c)));
+        assert!(
+            dark.look
+                .animations
+                .iter()
+                .any(|animation| animation.name == "ambxst-drift"),
+            "{:?}",
+            dark.look.animations
+        );
+        assert!(matches!(dark.look.background, Some(Image::Gradient(_))));
         let light = load_str(css, None, &Options::with_mode(Mode::Light)).unwrap();
         assert_eq!(light.palette.chat, Rgba::rgb(0xff, 0xf8, 0xf7));
         assert_eq!(light.palette.accent, Rgba::rgb(0x90, 0x4a, 0x46));
@@ -2291,8 +3031,94 @@ html.theme-light:not([data-rl-mode="dark"]) {
     }
 
     #[test]
+    fn a_css_gradient_becomes_a_background_picture() {
+        let theme = load_str(
+            ":root { --background-image: linear-gradient(90deg, #101014 0%, #e94221 100%); }",
+            None,
+            &Options::with_mode(Mode::Dark),
+        )
+        .unwrap();
+        let Some(Image::Gradient(gradient)) = theme.look.background else {
+            panic!(
+                "expected a gradient background: {:?}",
+                theme.look.background
+            );
+        };
+        assert_eq!(gradient.kind, GradientKind::Linear(90.0));
+        assert_eq!(gradient.stops.len(), 2);
+        assert_eq!(gradient.at(0.0), Rgba::rgb(0x10, 0x10, 0x14));
+        assert_eq!(gradient.at(1.0), Rgba::rgb(0xe9, 0x42, 0x21));
+    }
+
+    #[test]
+    fn a_body_background_and_text_colour_reach_the_palette() {
+        let theme = load_str(
+            "body { background: #202124; color: #e8eaed; }",
+            None,
+            &Options::with_mode(Mode::Dark),
+        )
+        .unwrap();
+        assert_eq!(theme.palette.chat, Rgba::rgb(0x20, 0x21, 0x24));
+        assert_eq!(theme.palette.text, Rgba::rgb(0xe8, 0xea, 0xed));
+    }
+
+    #[test]
+    fn a_body_background_gradient_becomes_the_wallpaper() {
+        let theme = load_str(
+            "body::before { background: linear-gradient(135deg, #111111, #ffb3ae); }",
+            None,
+            &Options::with_mode(Mode::Dark),
+        )
+        .unwrap();
+        assert!(matches!(theme.look.background, Some(Image::Gradient(_))));
+    }
+
+    #[test]
+    fn a_body_animation_on_the_ground_is_read() {
+        let theme = load_str(
+            "@keyframes drift { from { background-color: #101014; opacity: 0.2; } to { background-color: #e94221; opacity: 0.6; } } \
+             body { animation: drift 4s ease-in-out infinite; }",
+            None,
+            &Options::with_mode(Mode::Dark),
+        )
+        .unwrap();
+        assert_eq!(
+            theme.look.animations.len(),
+            1,
+            "{:?}",
+            theme.look.animations
+        );
+        let animation = &theme.look.animations[0];
+        assert_eq!(animation.duration, 4.0);
+        let middle = animation.at(2.0).unwrap();
+        assert!(middle.background.is_some());
+        let opacity = middle.opacity.unwrap();
+        assert!((opacity - 0.4).abs() < 0.02, "{opacity}");
+    }
+
+    #[test]
+    fn a_theme_can_keep_a_panel_opacity() {
+        let theme = load_str(
+            ":root { --background-image: linear-gradient(#000, #fff); --rl-panel-opacity: 72%; --background-size: contain; }",
+            None,
+            &Options::with_mode(Mode::Dark),
+        )
+        .unwrap();
+        assert_eq!(theme.look.panel_opacity, Some(0.72));
+        assert_eq!(theme.look.background_fit, BackgroundFit::Contain);
+    }
+
+    #[test]
     fn bundled_css_themes_leave_nothing_in_other() {
-        for name in ["ReCord.theme.css", "Ambxst.theme.css"] {
+        for name in [
+            "ReCord.theme.css",
+            "Ambxst.theme.css",
+            "Catppuccin Mocha.theme.css",
+            "Tokyo Night.theme.css",
+            "Nord Aurora.theme.css",
+            "Gruvbox Ember.theme.css",
+            "Solarized Paper.theme.css",
+        ] {
             let path = Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../themes")
                 .join(name);

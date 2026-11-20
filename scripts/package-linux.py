@@ -54,6 +54,13 @@ def main():
 
         appdir = temporary / "AppDir"
         shutil.copytree(parts / "AppDir", appdir, symlinks=True)
+        # The themes the client offers beside ReCore, ReCore Paper and the
+        # person's own; shipped inside the AppImage so a fresh install has
+        # the designed themes without a download.
+        themes = appdir / "usr/share/recore/themes"
+        themes.mkdir(parents=True, exist_ok=True)
+        for theme in sorted((ROOT / "themes").glob("*.theme.css")):
+            shutil.copy2(theme, themes / theme.name)
         for directory in [appdir, *(path for path in appdir.rglob("*") if path.is_dir() and not path.is_symlink())]:
             directory.chmod(0o755)
         executable = appdir / "usr/bin/recore"

@@ -139,6 +139,7 @@ def main():
         package = temporary / f"{base}-windows-x64"
         package.mkdir()
         shutil.copy2(executable, package / "recore.exe")
+        shutil.copytree(ROOT / "themes", package / "themes")
         shutil.copy2(ROOT / "LICENSE", package / "LICENSE.txt")
         # The source snapshot goes beside the packages, on the release page,
         # rather than into every install; SOURCE.txt says where.
@@ -183,6 +184,8 @@ def main():
             "2. Double-click recore.exe.\n"
             + first_steps +
             "No Rust, Visual Studio, or separate app installation is required.\n"
+            "The themes folder beside recore.exe holds ReCore, Ambxst and the other\n"
+            "bundled CSS themes. Settings > Appearance lists them.\n"
             "ReCore writes diagnostics to recore.log in its data folder,\n"
             "%LOCALAPPDATA%\\ReCore\\ReCore\\data, or to the console run-recore.cmd opens.\n"
             "Windows stores session secrets in Credential Manager and app data\n"

@@ -8,8 +8,10 @@
 //! against ReCore's native regions (sidebar, chat, member list, composer) and
 //! applies the colours and shape values that win the cascade there. CSS for
 //! Discord's web DOM has no exact nodes in a native window; layout,
-//! pseudo-elements and DOM animations are read without error but are not
-//! painted. Local `@import`s are read beside the theme; [`load_with_imports`]
+//! pseudo-elements and element-level animations are read without error but
+//! are not painted. A root/body colour or opacity animation is painted as a
+//! moving ground, and CSS gradients become background pictures. Local
+//! `@import`s are read beside the theme; [`load_with_imports`]
 //! and [`scan_with_imports`] take a callback for `http:` and `https:` ones
 //! and their remote fonts. A remote picture stays [`Image::Url`] for the
 //! caller to fetch. [`theme_folders`] lists the places the common clients
@@ -31,12 +33,13 @@ mod options;
 mod theme;
 
 pub use color::Rgba;
-pub use css::{Meta, MetaVar, Note, ParseError, PropertySpec, Stylesheet};
+pub use css::{Keyframe, Keyframes, Meta, MetaVar, Note, ParseError, PropertySpec, Stylesheet};
 pub use native::NativeStyle;
 pub use options::{OptionKind, ThemeOption};
 pub use theme::{
-    Effects, Font, Image, Look, Mode, Motion, Options, Palette, Problem, Scan, ThemeFile, load,
-    load_str, load_str_with_imports, load_with, load_with_imports, palette, scan,
+    Animation, AnimationDirection, AnimationFrame, BackgroundFit, Effects, Font, Gradient,
+    GradientKind, GradientStop, Image, Look, Mode, Motion, Options, Palette, Problem, Scan,
+    ThemeFile, load, load_str, load_str_with_imports, load_with, load_with_imports, palette, scan,
     scan_with_imports, theme_files_fingerprint, theme_folders,
 };
 

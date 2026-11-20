@@ -196,6 +196,8 @@ pub struct NativeStyle {
     pub muted: Option<Rgba>,
     pub hover: Option<Rgba>,
     pub row_hover: Option<Rgba>,
+    pub line: Option<Rgba>,
+    pub accent: Option<Rgba>,
     pub radius: Option<f32>,
     pub font_family: Option<String>,
     pub font_size: Option<f32>,
@@ -315,6 +317,27 @@ fn apply(style: &mut NativeStyle, write: Write<'_>, value: &str, _vars: &Vars, d
                 && let Some(spacing) = length(value)
             {
                 style.letter_spacing = Some(spacing);
+            }
+        }
+        "border"
+        | "border-color"
+        | "border-top"
+        | "border-right"
+        | "border-bottom"
+        | "border-left"
+        | "border-top-color"
+        | "border-right-color"
+        | "border-bottom-color"
+        | "border-left-color"
+        | "outline"
+        | "outline-color" => {
+            if let Some(color) = color_in(value, !dark) {
+                style.line = Some(color);
+            }
+        }
+        "accent-color" | "caret-color" => {
+            if let Some(color) = color_in(value, !dark) {
+                style.accent = Some(color);
             }
         }
         _ => {}
@@ -879,12 +902,14 @@ mod tests {
             .theme-dark [class*="sidebarList_"] {
                 background: var(--panel);
                 color: #abcdef;
+                border: 1px solid #123456;
                 border-radius: 3px;
             }
             "#,
         );
         assert_eq!(theme.native.sidebar, Some(Rgba::rgb(0x11, 0x22, 0x33)));
         assert_eq!(theme.native.secondary, Some(Rgba::rgb(0xab, 0xcd, 0xef)));
+        assert_eq!(theme.native.line, Some(Rgba::rgb(0x12, 0x34, 0x56)));
         assert_eq!(theme.look.radius, Some(3.0));
     }
 

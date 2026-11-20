@@ -1,7 +1,15 @@
 //! The grade ReCore puts over a background picture, GIF or video: the
-//! filter presets from Appearance and the brightness slider. The grade is
-//! applied to the first frame too, so a still background and the first
-//! frame of an animation look alike.
+//! filter presets from Appearance, the brightness slider and the theme-aware
+//! dim. The grade is applied to the first frame too, so a still background
+//! and the first frame of an animation look alike.
+//!
+//! The dim follows Ambxst's `palette.frag`: instead of laying a flat black
+//! sheet over the picture, it weights the theme's own colours by their
+//! distance to each pixel and mixes that palette colour in. The picture keeps
+//! its shapes while settling into the palette around it. A 32×32×32 lookup
+//! table is built when the theme or dim changes and reused for every frame,
+//! so the per-pixel work is one small lookup rather than a loop over the
+//! palette.
 
 /// A background filter, as Appearance offers it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -59,6 +67,12 @@ impl Filter {
     }
 }
 
+/// The most theme colours the palette dim weights at once.
+const PALETTE: usize = 12;
+/// Each channel of the palette lookup table is expected at 5 bits.
+const LUT_SIDE: usize = 32;
+const LUT_CELLS: usize = LUT_SIDE * LUT_SIDE * LUT_SIDE;
+
 /// How a picture's channels are changed before it is drawn. The default is
 /// the identity, so animated pictures elsewhere in the window are untouched.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -71,6 +85,9 @@ pub struct Grade {
     green: f32,
     blue: f32,
     scanline: f32,
+    palette: [[u8; 3]; PALETTE],
+    palette_len: u8,
+    dim: f32,
 }
 
 impl Default for Grade {
@@ -84,6 +101,9 @@ impl Default for Grade {
             green: 1.0,
             blue: 1.0,
             scanline: 0.0,
+            palette: [[0; 3]; PALETTE],
+            palette_len: 0,
+            dim: 0.0,
         }
     }
 }
@@ -124,9 +144,118 @@ impl Grade {
         grade
     }
 
-    pub fn is_identity(self) -> bool {
-        self == Self::default()
+    /// Mixes each pixel towards the nearest colours of `palette`, as
+    /// Ambxst's wallpaper shader does. `dim` is how much of the mapped
+    /// colour wins over the picture, 0..1; zero leaves the picture alone.
+    pub fn with_palette<I>(mut self, palette: I, dim: f32) -> Self
+    where
+        I: IntoIterator<Item = [u8; 3]>,
+    {
+        let mut len = 0;
+        for (at, colour) in palette.into_iter().take(PALETTE).enumerate() {
+            self.palette[at] = colour;
+            len = at + 1;
+        }
+        self.palette_len = len as u8;
+        self.dim = dim.clamp(0.0, 1.0);
+        self
     }
+
+    pub fn is_identity(self) -> bool {
+        if self.palette_len > 0 && self.dim > 0.0 {
+            return false;
+        }
+        Self {
+            palette: [[0; 3]; PALETTE],
+            palette_len: 0,
+            dim: 0.0,
+            ..self
+        } == Self::default()
+    }
+}
+
+/// The palette lookup table for the grade showing at the moment. A still
+/// picture builds it once per theme change; an animated background reuses it
+/// for every frame, which keeps the dim from turning into a per-frame
+/// palette search.
+fn palette_lut(grade: &Grade) -> std::sync::Arc<Vec<u8>> {
+    type Key = ([[u8; 3]; PALETTE], u8, u32);
+    type Cache = std::sync::Mutex<Option<(Key, std::sync::Arc<Vec<u8>>)>>;
+    static CACHE: std::sync::OnceLock<Cache> = std::sync::OnceLock::new();
+    let key = (grade.palette, grade.palette_len, grade.dim.to_bits());
+    let cache = CACHE.get_or_init(|| std::sync::Mutex::new(None));
+    let mut cache = cache
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some((cached, table)) = cache.as_ref()
+        && cached == &key
+    {
+        return table.clone();
+    }
+    let table = std::sync::Arc::new(palette_table(grade));
+    *cache = Some((key, table.clone()));
+    table
+}
+
+/// Builds the quantised table. Kept separate so the cache above owns the
+/// result for the frames that follow.
+fn palette_table(grade: &Grade) -> Vec<u8> {
+    let colours: Vec<[f32; 3]> = grade.palette[..usize::from(grade.palette_len)]
+        .iter()
+        .map(|colour| {
+            [
+                f32::from(colour[0]) / 255.0,
+                f32::from(colour[1]) / 255.0,
+                f32::from(colour[2]) / 255.0,
+            ]
+        })
+        .collect();
+    let mut lut = vec![0u8; LUT_CELLS * 3];
+    if colours.is_empty() {
+        return lut;
+    }
+    // Ambxst keeps colours close to the palette while allowing gradients with
+    // a sharpness of 20; the same value keeps a photograph's identity.
+    const SHARPNESS: f32 = 20.0;
+    for red in 0..LUT_SIDE {
+        for green in 0..LUT_SIDE {
+            for blue in 0..LUT_SIDE {
+                let sample = [
+                    (red as f32 + 0.5) / LUT_SIDE as f32,
+                    (green as f32 + 0.5) / LUT_SIDE as f32,
+                    (blue as f32 + 0.5) / LUT_SIDE as f32,
+                ];
+                let mut sum = [0.0f32; 3];
+                let mut total = 0.0f32;
+                let mut nearest = colours[0];
+                let mut nearest_distance = f32::MAX;
+                for colour in &colours {
+                    let distance = (sample[0] - colour[0]).powi(2)
+                        + (sample[1] - colour[1]).powi(2)
+                        + (sample[2] - colour[2]).powi(2);
+                    if distance < nearest_distance {
+                        nearest = *colour;
+                        nearest_distance = distance;
+                    }
+                    let weight = (-SHARPNESS * distance).exp();
+                    for channel in 0..3 {
+                        sum[channel] += colour[channel] * weight;
+                    }
+                    total += weight;
+                }
+                if total <= f32::EPSILON {
+                    sum = nearest;
+                    total = 1.0;
+                }
+                let at = ((red * LUT_SIDE + green) * LUT_SIDE + blue) * 3;
+                for channel in 0..3 {
+                    lut[at + channel] =
+                        ((sum[channel] / total).clamp(0.0, 1.0) * 255.0).round() as u8;
+                }
+            }
+        }
+    }
+    lut
 }
 
 /// Applies `grade` in place to straight RGBA pixels. `width` is the
@@ -177,6 +306,8 @@ pub fn apply(rgba: &mut [u8], width: u32, grade: Grade) {
     let plain = matrix(1.0);
     let scanned = (grade.scanline > 0.0).then(|| matrix(1.0 - grade.scanline));
     let diagonal = grade.saturation == 1.0 && grade.sepia == 0.0;
+    let palette = (grade.palette_len > 0 && grade.dim > 0.0).then(|| palette_lut(&grade));
+    let dim = grade.dim.clamp(0.0, 1.0);
     let width = width.max(1) as usize;
     let row_width = (width * 4).max(4);
     for (row, line) in rgba.chunks_mut(row_width).enumerate() {
@@ -207,9 +338,24 @@ pub fn apply(rgba: &mut [u8], width: u32, grade: Grade) {
                 let value = value.clamp(0, ONE);
                 ((value * 255 + HALF) >> SHIFT) as u8
             };
-            pixel[0] = ink(out_red);
-            pixel[1] = ink(out_green);
-            pixel[2] = ink(out_blue);
+            let (mut red, mut green, mut blue) = (ink(out_red), ink(out_green), ink(out_blue));
+            if let Some(lut) = &palette {
+                let at = ((usize::from(red >> 3) * LUT_SIDE + usize::from(green >> 3)) * LUT_SIDE
+                    + usize::from(blue >> 3))
+                    * 3;
+                let mapped = [lut[at], lut[at + 1], lut[at + 2]];
+                let mix = |original: u8, mapped: u8| {
+                    (f32::from(original) * (1.0 - dim) + f32::from(mapped) * dim)
+                        .round()
+                        .clamp(0.0, 255.0) as u8
+                };
+                red = mix(red, mapped[0]);
+                green = mix(green, mapped[1]);
+                blue = mix(blue, mapped[2]);
+            }
+            pixel[0] = red;
+            pixel[1] = green;
+            pixel[2] = blue;
         }
     }
 }
@@ -252,6 +398,26 @@ mod tests {
             pixel[1] = (green.clamp(0.0, 1.0) * 255.0).round() as u8;
             pixel[2] = (blue.clamp(0.0, 1.0) * 255.0).round() as u8;
         }
+    }
+
+    #[test]
+    fn the_palette_dim_maps_and_blends_without_touching_the_alpha() {
+        let mut pixels = vec![255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255];
+        let palette = [[16, 16, 20], [233, 66, 33], [0, 0, 0]];
+        apply(&mut pixels, 3, Grade::default().with_palette(palette, 1.0));
+        // The three source colours are close to the palette's own red and
+        // dark grounds, and the alpha is unchanged.
+        assert_eq!(pixels[3], 255);
+        assert_eq!(pixels[7], 255);
+        assert_eq!(pixels[11], 255);
+        assert!(
+            pixels[0] < 255 || pixels[1] > 0,
+            "a red pixel may settle into the palette"
+        );
+        let untouched = vec![17, 34, 51, 255];
+        let mut same = untouched.clone();
+        apply(&mut same, 1, Grade::default().with_palette(palette, 0.0));
+        assert_eq!(same, untouched);
     }
 
     #[test]

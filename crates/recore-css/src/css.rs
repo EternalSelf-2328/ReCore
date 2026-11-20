@@ -35,6 +35,24 @@ pub struct Rule {
     pub layer: Option<u32>,
 }
 
+/// One step of a `@keyframes` animation.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Keyframe {
+    /// Where the step sits in the animation, 0..1.
+    pub offset: f32,
+    pub declarations: Vec<Declaration>,
+}
+
+/// A named `@keyframes` animation. Themes use these for a moving gradient,
+/// a pulse or a glow; ReCore reads the ones that change the window's own
+/// ground, and leaves DOM-only animations in the file.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Keyframes {
+    pub name: String,
+    /// Sorted by offset, with `from` and `to` as 0 and 1.
+    pub frames: Vec<Keyframe>,
+}
+
 /// A font a theme carries or points at.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FontFace {
@@ -79,6 +97,8 @@ pub struct Stylesheet {
     pub notes: BTreeMap<String, Note>,
     /// The `@property` rules, by custom property.
     pub properties: BTreeMap<String, PropertySpec>,
+    /// The `@keyframes` animations, by name.
+    pub keyframes: BTreeMap<String, Keyframes>,
     /// The cascade layers, in the order they were first named.
     pub layers: Vec<String>,
 }
@@ -411,7 +431,20 @@ fn parse_block(
                         stylesheet.properties.insert(name.to_owned(), spec);
                     }
                 }
-                "keyframes" | "-webkit-keyframes" | "counter-style" | "font-feature-values" => {}
+                "keyframes" | "-webkit-keyframes" => {
+                    let name = prelude
+                        .split_whitespace()
+                        .nth(1)
+                        .unwrap_or("")
+                        .trim_matches(['"', '\''])
+                        .to_owned();
+                    if !name.is_empty() {
+                        stylesheet
+                            .keyframes
+                            .insert(name.clone(), read_keyframes(&name, body));
+                    }
+                }
+                "counter-style" | "font-feature-values" => {}
                 _ => {
                     // Unknown at-rules with blocks (@page, @starting-style) may
                     // still hold declarations for the root; read their rules.
@@ -885,6 +918,81 @@ fn section_text(text: &str) -> Option<String> {
 }
 
 /// The declarations of a block, each name and value as written.
+/// Reads the steps of a `@keyframes` block. The selectors are `from`, `to`
+/// or percentages, possibly several to a block.
+fn read_keyframes(name: &str, body: &str) -> Keyframes {
+    let mut frames = Vec::new();
+    let bytes = body.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        while index < bytes.len() && bytes[index].is_ascii_whitespace() {
+            index += 1;
+        }
+        if index >= bytes.len() {
+            break;
+        }
+        let start = index;
+        let mut depth = 0u32;
+        let mut quote: Option<u8> = None;
+        let mut escaped = false;
+        let mut open = None;
+        while index < bytes.len() {
+            let byte = bytes[index];
+            if escaped {
+                escaped = false;
+                index += 1;
+                continue;
+            }
+            match byte {
+                b'\\' => escaped = true,
+                b'"' | b'\'' if quote == Some(byte) => quote = None,
+                b'"' | b'\'' if quote.is_none() => quote = Some(byte),
+                b'(' if quote.is_none() => depth += 1,
+                b')' if quote.is_none() => depth = depth.saturating_sub(1),
+                b'{' if quote.is_none() && depth == 0 => {
+                    open = Some(index);
+                    break;
+                }
+                _ => {}
+            }
+            index += 1;
+        }
+        let Some(brace) = open else {
+            break;
+        };
+        let selector = body[start..brace].trim();
+        let Some(close) = matching_brace(body, brace) else {
+            break;
+        };
+        let steps = declarations(&body[brace + 1..close]);
+        for offset in crate::color::split_top(selector, ',') {
+            let offset = offset.trim().to_ascii_lowercase();
+            let offset = if offset == "from" {
+                Some(0.0)
+            } else if offset == "to" {
+                Some(1.0)
+            } else {
+                offset
+                    .strip_suffix('%')
+                    .and_then(|value| value.trim().parse::<f32>().ok())
+                    .map(|value| (value / 100.0).clamp(0.0, 1.0))
+            };
+            if let Some(offset) = offset {
+                frames.push(Keyframe {
+                    offset,
+                    declarations: steps.clone(),
+                });
+            }
+        }
+        index = close + 1;
+    }
+    frames.sort_by(|left, right| left.offset.total_cmp(&right.offset));
+    Keyframes {
+        name: name.to_owned(),
+        frames,
+    }
+}
+
 fn declarations(body: &str) -> Vec<Declaration> {
     let mut declarations = Vec::new();
     for piece in crate::color::split_top(body, ';') {

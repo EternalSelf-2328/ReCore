@@ -9,8 +9,12 @@ python3 -m http.server 8130 --directory site
 # open http://127.0.0.1:8130/
 ```
 
-- `index.html` — native client, theme, CSS interpreter, palette, build and
-  the theme builder.
+- `index.html` — download links for the latest release (Windows, Linux and
+  macOS), the live Appearance theme preview with the bundled palettes,
+  features, the CSS interpreter and the theme builder.
+- `home.js` — fills the download buttons from GitHub's latest release and
+  runs the theme preview, including the bundled Catppuccin, Tokyo Night,
+  Nord, Gruvbox and Solarized palettes.
 - `preview.html` — the ReCord interface preview with sounds.
 - `icons.html`, `sounds.html` — ReCord's icon and sound references.
 - `theme.css` — ReCord's tokens and Pixel Operator faces for the site itself.

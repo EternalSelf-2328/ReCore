@@ -10,8 +10,15 @@ web-only rules.
 `Ambxst.theme.css` is a theme inspired by
 [Axenide's Ambxst](https://github.com/Axenide/Ambxst): Ambxst's default warm
 Material You palette, rose accent, 16 px rounded panels and Roboto Condensed,
-in dark and paper-light. It works in Discord's browser clients and in ReCore,
-where it also turns ReCord's CRT layer off.
+in dark and paper-light. It mirrors the shell's `config/defaults/theme.js`
+surfaces, gradients, shadows, bar, dock and typography as options, and works
+in Discord's browser clients and in ReCore, where it also turns ReCord's CRT
+layer off.
+
+The other files are self-contained themes ReCore ships and the site previews:
+**Catppuccin Mocha**, **Tokyo Night**, **Nord Aurora**, **Gruvbox Ember** and
+**Solarized Paper**. Each has a dark or light palette, native region rules and
+the `--rl-*` options Appearance shows; none needs a remote import.
 
 ReCore reads every `.css` file in its themes folder, including theme packs in
 subfolders, so drop any Vencord, Vesktop or Discord theme here (or in the

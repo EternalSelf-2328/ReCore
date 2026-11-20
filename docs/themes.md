@@ -34,10 +34,21 @@ in `layout.json` beside `recore_accent`:
   `recore_background_filter`, `recore_background_brightness` and
   `recore_background_animate`; the background may be a still picture, an
   animated GIF/APNG/WebP, or a video (MP4, WebM, MOV or MKV), which plays
-  through the window's picture players, and keeps playing while nobody is
-  using ReCore or the window is out of focus;
+  through the window's picture players and rests on its first frame while
+  the window is unfocused;
 - `recore_font` (`pixel`, `mono` or `system`) and `recore_motion` (`full`,
   `subtle` or `off`).
+
+**Background dim** is a palette grade, not a black sheet. Each pixel is
+weighted towards the theme's own grounds, inks and signals by its distance
+from them, following the Gaussian palette shader in Ambxst's `palette.frag`.
+The lookup table is built once per frame at 32 levels per channel, so the
+per-pixel work is one index and one mix. The slider (0–100%) mixes the mapped
+colour back into the picture; at 0 the picture is untouched. The grade applies
+to still frames and animated frames alike, and to CSS themes as well as
+ReCore. Moving backgrounds rest while the window is unfocused and play at the
+renderer's scale, so a full-window frame is not resampled on the processor on
+every tick.
 
 The vignette starts at 0, off: it darkens the window's edges, its top and
 bottom most of all.
@@ -45,9 +56,9 @@ bottom most of all.
 The window boots with ReCord's signal: a stepped mark, a twelve-step loading
 bar, a blinking line and the same screen-in. Menus and dialogs use the
 theme's stepped 190 ms motion, a changed room flashes its channel and fades
-in over 260 ms, unread rail marks pulse, and speaking rings breathe. These
-are native iced animations, not DOM/CSS animations: Discord selectors whose
-targets do not exist in a native client are still not painted.
+in over 260 ms, unread rail marks pulse, and speaking rings breathe. These are native iced animations. CSS animations on the page or body are
+read as a quiet native ground wash; Discord selectors whose targets do not
+exist in a native client are still not painted.
 
 ## Ambxst
 
@@ -59,8 +70,21 @@ paper-light set. It is a complete theme for Vencord, Vesktop, Equicord,
 BetterDiscord and Legcord as well as a CSS theme ReCore reads: the same file
 carries Discord's tokens, ReCore's `--rl-*` palette and the native region
 rules. It turns ReCord's CRT layer off and keeps the window's rounded,
-shadowed Material surfaces. Drop it in the themes folder like any other
-`.theme.css` file; it has no remote imports.
+shadowed Material surfaces. Its options mirror the Ambxst shell's
+`config/defaults/theme.js`: the Material roles, opacity and transparency,
+blur and shadows, gradients, roundness, type sizes, bar, dock, notch and
+overview settings. Drop it in the themes folder like any other `.theme.css`
+file; it has no remote imports. The package carries it, so a fresh install
+has it without downloading anything.
+
+## Bundled themes
+
+Every package carries the themes in `themes/`: ReCore and ReCore Paper,
+Ambxst, Catppuccin Mocha, Tokyo Night, Nord Aurora, Gruvbox Ember and
+Solarized Paper. ReCore looks for the package's folder beside the binary, in
+the app's `share/recore/themes`, and in a macOS bundle's
+`Contents/Resources/themes`; the data folder's own `themes` folder comes first,
+so a person's copy wins. No theme needs a remote download to show up.
 
 ## CSS themes
 
@@ -121,14 +145,21 @@ theme carries:
 - Its fonts: `@font-face` with a `data:` URI, a file beside the theme or a
   remote URL is loaded into the window's font system, and `--font-primary`
   picks the family.
-- Its radius (`--radius-md` or ReCord's `--rl-radius`), a background picture
-  or video (`--rl-background-image`, `--background-image`) drawn under the
-  panels, and ReCord's CRT options
+- Its radius (`--radius-md` or ReCord's `--rl-radius`), a background picture,
+  CSS gradient or video (`--rl-background-image`, `--background-image`, or a
+  `body` / `body::before` background rule) drawn under the panels, its fit
+  (`--rl-background-size`: `cover`, `contain` or `100% 100%`), how opaque the
+  panels are over it (`--rl-panel-opacity` or `--rl-surface`), and ReCord's
+  CRT options
   (`--rl-motion`, `--rl-icons`, `--rl-scanline-opacity`,
   `--rl-grain-opacity`, `--rl-vignette-opacity`, `--rl-flicker-duration`,
   `--rl-beam-opacity`, `--rl-frame-opacity`, `--rl-avatar-filter`,
   `--rl-avatar-scanline`). The avatar filter and scanline grade the pictures
-  the client draws.
+  the client draws. A `@keyframes` animation on `:root` or `body` whose steps
+  change `background`, `background-color`, `color` or `opacity` is sampled by
+  the window and painted as a quiet moving ground; finite animations stop,
+  infinite ones repeat, and `alternate`/`reverse` are understood. Other
+  animations remain in the file.
 
 ReCord's own `--rl-*` palette is mapped exactly, so dropping
 [`themes/ReCord.theme.css`](../themes/ReCord.theme.css) in gives the built-in
@@ -216,13 +247,14 @@ colour where the native window cannot paint the full gradient.
 A Discord CSS theme is still written for Discord's web window. ReCore matches
 the selectors that name its regions, but it cannot reproduce arbitrary DOM
 structure, flexbox or grid layout, pseudo-elements, generated class hashes
-without a usable substring, or CSS animations. Those rules stay in the file
-without being painted. ReCord's scanlines, grain, vignette and corner frame
-are drawn natively over the window, including the rolling scan beam and
-flicker, which rest while the window is not focused; a CSS theme's DOM
-animations are not drawn. The note under
-**Appearance → Theme** says how many files were read and how many could not
-be.
+without a usable substring, or element-level CSS animations. Those rules stay
+in the file without being painted. A root/body animation of the ground is the
+exception: its colour and opacity keyframes become a quiet native wash, and a
+gradient background is painted at the background size. ReCord's scanlines,
+grain, vignette and corner frame are drawn natively over the window, including
+the rolling scan beam and flicker, which rest while the window is not focused.
+The note under **Appearance → Theme** says how many files were read and how
+many could not be.
 
 ## Custom themes
 

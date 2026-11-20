@@ -5,17 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="dark">
     <meta name="theme-color" content="#e94221">
-    <meta name="description" content="ReCore: a native Discord client with ReCord's terminal look and an interpreter for Vencord, Vesktop and Discord CSS themes.">
+    <meta name="description" content="Download ReCore, a native Discord client for Windows, Linux and macOS with ReCord's terminal look, sounds and an interpreter for Vencord, Vesktop and Discord CSS themes.">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://leriart.github.io/ReCore/">
     <meta property="og:title" content="ReCore / native Discord client">
-    <meta property="og:description" content="No browser. About 30 MB idle. ReCord's signal palette and a CSS theme interpreter.">
+    <meta property="og:description" content="Download ReCore for Windows, Linux or macOS. Native Discord, no browser engine, ReCord's palette and CSS themes.">
     <meta property="og:image" content="preview.png">
     <title>ReCore / native Discord client</title>
     <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="theme.css">
     <link rel="stylesheet" href="site.css">
     <script src="i18n.js" defer></script>
+    <script src="home.js" defer></script>
 </head>
 <body>
     <header class="topbar">
@@ -32,11 +33,12 @@
                 RECORE
             </a>
             <nav class="topnav" aria-label="Sections">
-                <a href="#native">NATIVE</a>
-                <a href="#preview">THEME</a>
-                <a href="#css">CSS</a>
+                <a href="#install">DOWNLOAD</a>
+                <a href="#preview">PREVIEW</a>
+                <a href="#native">WHY RECORE</a>
+                <a href="#css">THEMES</a>
+                <a href="#configure">CUSTOMIZE</a>
                 <a href="#palette">PALETTE</a>
-                <a href="#install">BUILD</a>
                 <a href="#releases">RELEASES</a>
                 <a href="#source">SOURCE</a>
                 <a href="https://leriart.github.io/ReCord/" title="ReCord, the theme">RECORD</a>
@@ -44,7 +46,7 @@
                 <a href="sounds.html">SOUNDS</a>
             </nav>
             <button type="button" class="lang-toggle" id="lang-toggle" aria-label="Language">ES</button>
-            <span class="top-version">V0.4.4</span>
+            <span class="top-version" id="top-version">V0.5.3</span>
         </div>
     </header>
 
@@ -62,13 +64,16 @@
                     </p>
 
                     <div class="hero-actions">
-                        <a class="btn" href="#install">BUILD OR DOWNLOAD</a>
-                        <a class="btn btn--ghost" href="preview.html">OPEN THEME PREVIEW</a>
+                        <a class="btn" id="download-primary" href="https://github.com/leriart/ReCore/releases/latest">
+                            DOWNLOAD RECORE <span id="download-primary-label">FOR YOUR SYSTEM</span>
+                        </a>
+                        <a class="btn btn--ghost" href="#preview">SEE THE THEME</a>
                     </div>
 
-                    <div class="raw-line">
-                        <code id="raw-url">https://github.com/leriart/ReCore</code>
-                        <button type="button" id="copy-raw">COPY SOURCE</button>
+                    <div class="hero-release">
+                        <span class="release-pill" id="release-version">LATEST RELEASE</span>
+                        <span id="hero-release-status">Checking GitHub…</span>
+                        <a href="https://github.com/leriart/ReCore/releases">All releases →</a>
                     </div>
 
                     <div class="hero-meta">
@@ -108,11 +113,209 @@
         </div>
 
         <div class="main">
+
+            <section class="section" id="install">
+                <div class="wrap">
+                    <div class="section-head">
+                        <div>
+                            <div class="section-label">// 01 <b>INSTALL</b></div>
+                            <h2>DOWNLOAD RECORE</h2>
+                        </div>
+                        <p class="section-note">
+                            Pick the download for the computer you use. Windows, Linux and macOS are published. The buttons below follow the
+                            latest stable GitHub release.
+                        </p>
+                    </div>
+
+                    <div class="download-panel">
+                        <div class="download-main">
+                            <div>
+                                <div class="download-kicker">
+                                    <span id="install-os-hint">DETECTING YOUR SYSTEM</span>
+                                    <span id="install-version">LATEST RELEASE</span>
+                                </div>
+                                <h3>RECORE</h3>
+                                <p class="download-lede">
+                                    A native Discord client with ReCord's terminal palette,
+                                    CSS theme support, ReCord sounds and a small memory footprint.
+                                    No browser engine.
+                                </p>
+                                <div class="hero-actions">
+                                    <a class="btn" id="install-primary" href="https://github.com/leriart/ReCore/releases/latest">
+                                        DOWNLOAD <span id="install-primary-label">LATEST RELEASE</span>
+                                    </a>
+                                    <a class="btn btn--ghost" href="#releases">ALL RELEASES</a>
+                                </div>
+                                <p class="download-note" id="install-note">
+                                    Links point to the latest stable release on GitHub. Checksums are published beside them.
+                                </p>
+                            </div>
+                            <div class="download-glyph" aria-hidden="true">
+                                <svg viewBox="0 0 24 24"><rect x="4" y="2" width="4" height="20"/><rect x="8" y="2" width="8" height="4"/><rect x="16" y="6" width="4" height="4"/><rect x="8" y="10" width="12" height="4"/><rect x="12" y="14" width="4" height="4"/><rect x="16" y="18" width="4" height="4"/></svg>
+                            </div>
+                        </div>
+
+                        <div class="os-download-grid">
+                            <article class="os-download" data-os="windows">
+                                <div class="os-download-head"><span>WINDOWS</span><span>ZIP</span></div>
+                                <p>Portable app. Unpack the ZIP and run ReCore.exe.</p>
+                                <div class="asset-links">
+                                    <a class="asset-link" id="download-windows" href="https://github.com/leriart/ReCore/releases/latest"><span>WINDOWS ZIP</span><small></small></a>
+                                </div>
+                            </article>
+                            <article class="os-download" data-os="linux">
+                                <div class="os-download-head"><span>LINUX</span><span>APPIMAGE</span></div>
+                                <p>AppImage for most distributions; Arch package for Arch Linux.</p>
+                                <div class="asset-links">
+                                    <a class="asset-link" id="download-linux" href="https://github.com/leriart/ReCore/releases/latest"><span>APPIMAGE</span><small></small></a>
+                                    <a class="asset-link" id="download-arch" href="https://github.com/leriart/ReCore/releases/latest"><span>ARCH PACKAGE</span><small></small></a>
+                                </div>
+                            </article>
+                            <article class="os-download" data-os="mac">
+                                <div class="os-download-head"><span>MACOS</span><span>DMG</span></div>
+                                <p>Builds for Apple Silicon and Intel Macs. Drag ReCore.app to Applications.</p>
+                                <div class="asset-links">
+                                    <a class="asset-link" id="download-mac" href="https://github.com/leriart/ReCore/releases/latest"><span>MACOS DMG</span><small></small></a>
+                                    <a class="asset-link" id="download-mac-zip" href="https://github.com/leriart/ReCore/releases/latest"><span>MACOS ZIP</span><small></small></a>
+                                </div>
+                            </article>
+                        </div>
+                    </div>
+
+                    <div class="install-steps">
+                        <article>
+                            <b>01 / DOWNLOAD</b>
+                            <p>Pick the Windows ZIP, the Linux AppImage, the Arch package or the macOS DMG above.</p>
+                        </article>
+                        <article>
+                            <b>02 / RUN IT</b>
+                            <p>Unpack the ZIP, mark the AppImage executable, or drag ReCore.app to Applications. The app is self-contained.</p>
+                        </article>
+                        <article>
+                            <b>03 / SIGN IN</b>
+                            <p>Scan Discord's QR code from the phone app. The token stays in the system credential store.</p>
+                        </article>
+                    </div>
+
+                    <div class="note">
+                        <b>THIRD-PARTY CLIENT.</b> Discord's Terms of Service do not allow third-party
+                        clients. In practice bans are rare, but use ReCore only if losing the account would
+                        not be a disaster. ReCore sends no analytics. Downloads come from the official
+                        <a href="https://github.com/leriart/ReCore/releases">GitHub releases</a>.
+                    </div>
+                </div>
+            </section>
+            <section class="section" id="preview">
+                <div class="wrap">
+                    <div class="section-head">
+                        <div>
+                            <div class="section-label">// 02 <b>THEME</b></div>
+                            <h2>SEE THE THEME LIVE</h2>
+                        </div>
+                        <p class="section-note">
+                            This is the 78 px window Appearance draws, scaled up: the rail,
+                            sidebar, two messages and composer. Choose a theme and accent, or
+                            open the full interactive demo with sounds.
+                        </p>
+                    </div>
+
+                    <div class="theme-preview-layout">
+                        <div class="theme-stage-card">
+                            <div class="preview-bar">
+                                <span>APPEARANCE / THEME PREVIEW</span>
+                                <span>78 PX / LIVE</span>
+                            </div>
+                            <div class="theme-stage" id="theme-stage" data-theme="recore">
+                                <div class="rc-preview" aria-hidden="true"></div>
+                            </div>
+                            <div class="theme-stage-caption">
+                                <b id="theme-name">ReCore</b>
+                                <span id="theme-note">Signal orange on warm charcoal.</span>
+                            </div>
+                        </div>
+
+                        <div class="theme-picker">
+                            <div class="theme-choice-grid">
+                                <button class="theme-choice is-active" type="button" data-theme="recore" aria-pressed="true">
+                                    <span class="rc-preview" aria-hidden="true"></span>
+                                    <span class="theme-choice-copy"><b>ReCore</b><small>Signal orange · dark</small></span>
+                                </button>
+                                <button class="theme-choice" type="button" data-theme="paper" aria-pressed="false">
+                                    <span class="rc-preview" aria-hidden="true"></span>
+                                    <span class="theme-choice-copy"><b>ReCore Paper</b><small>Signal orange · light</small></span>
+                                </button>
+                                <button class="theme-choice" type="button" data-theme="ambxst" aria-pressed="false">
+                                    <span class="rc-preview" aria-hidden="true"></span>
+                                    <span class="theme-choice-copy"><b>Ambxst</b><small>Material You · dark</small></span>
+                                </button>
+                                <button class="theme-choice" type="button" data-theme="ambxst-paper" aria-pressed="false">
+                                    <span class="rc-preview" aria-hidden="true"></span>
+                                    <span class="theme-choice-copy"><b>Ambxst Paper</b><small>Material You · light</small></span>
+                                </button>
+                                <button class="theme-choice" type="button" data-theme="catppuccin" aria-pressed="false">
+                                    <span class="rc-preview" aria-hidden="true"></span>
+                                    <span class="theme-choice-copy"><b>Catppuccin Mocha</b><small>Mauve · dark</small></span>
+                                </button>
+                                <button class="theme-choice" type="button" data-theme="tokyo-night" aria-pressed="false">
+                                    <span class="rc-preview" aria-hidden="true"></span>
+                                    <span class="theme-choice-copy"><b>Tokyo Night</b><small>Ink blue · dark</small></span>
+                                </button>
+                                <button class="theme-choice" type="button" data-theme="nord" aria-pressed="false">
+                                    <span class="rc-preview" aria-hidden="true"></span>
+                                    <span class="theme-choice-copy"><b>Nord Aurora</b><small>Arctic green · dark</small></span>
+                                </button>
+                                <button class="theme-choice" type="button" data-theme="gruvbox" aria-pressed="false">
+                                    <span class="rc-preview" aria-hidden="true"></span>
+                                    <span class="theme-choice-copy"><b>Gruvbox Ember</b><small>Warm ember · dark</small></span>
+                                </button>
+                                <button class="theme-choice" type="button" data-theme="solarized" aria-pressed="false">
+                                    <span class="rc-preview" aria-hidden="true"></span>
+                                    <span class="theme-choice-copy"><b>Solarized Paper</b><small>Solarized · light</small></span>
+                                </button>
+                            </div>
+                            <label class="theme-accent">
+                                <span>ACCENT</span>
+                                <input type="color" id="preview-accent" value="#e94221">
+                                <code id="preview-accent-value">#e94221</code>
+                            </label>
+                            <a class="btn btn--ghost" href="preview.html">OPEN INTERACTIVE DEMO</a>
+                            <p class="theme-preview-note">
+                                The demo lets you switch channels, type messages and hear the
+                                selected sound theme. The preview above uses the same palette
+                                values as ReCore's Appearance.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="feature-grid">
+                        <article class="feature">
+                            <div class="feature-num">01</div>
+                            <h3>PIXEL TYPE</h3>
+                            <p>Pixel Operator and Pixel Operator Mono, CC0, are bundled. The built-in themes and ReCord's CSS use them.</p>
+                        </article>
+                        <article class="feature">
+                            <div class="feature-num">02</div>
+                            <h3>CRT LAYER</h3>
+                            <p>Scanlines, film grain, a vignette, corner brackets, a rolling scan beam and flicker are drawn natively over the window.</p>
+                        </article>
+                        <article class="feature">
+                            <div class="feature-num">03</div>
+                            <h3>BACKGROUNDS</h3>
+                            <p>A CSS theme's background picture is decoded and placed under the panels; its dimming and panel opacity come from the theme's own variables.</p>
+                        </article>
+                        <article class="feature">
+                            <div class="feature-num">04</div>
+                            <h3>SOUNDS</h3>
+                            <p>ReCord's WAV pack is one sound theme in Settings → Sounds, beside Kenney and the twelve UI SFX themes.</p>
+                        </article>
+                    </div>
+                </div>
+            </section>
             <section class="section" id="native">
                 <div class="wrap">
                     <div class="section-head">
                         <div>
-                            <div class="section-label">// 01 <b>NATIVE</b></div>
+                            <div class="section-label">// 03 <b>WHY RECORE</b></div>
                             <h2>THE CLIENT WITHOUT THE BROWSER</h2>
                         </div>
                         <p class="section-note">
@@ -145,59 +348,11 @@
                     </div>
                 </div>
             </section>
-
-            <section class="section" id="preview">
-                <div class="wrap">
-                    <div class="section-head">
-                        <div>
-                            <div class="section-label">// 02 <b>THEME</b></div>
-                            <h2>TERMINAL IN PRACTICE</h2>
-                        </div>
-                        <p class="section-note">
-                            A static study of ReCord, the theme ReCore is built around: square panels, one-pixel
-                            rules, pixel type and a warm black surface. The native client paints the same palette,
-                            with its own CRT layer over the window.
-                        </p>
-                    </div>
-
-                    <div class="preview-frame">
-                        <div class="preview-bar">
-                            <span>RECORD / CHANNEL VIEW</span>
-                            <span>THEME PREVIEW / SIGNAL LOCKED</span>
-                        </div>
-                        <img src="preview.png" alt="ReCord theme preview with orange terminal panels, pixel typography and a dark CRT surface." width="1400" height="800">
-                    </div>
-
-                    <div class="feature-grid">
-                        <article class="feature">
-                            <div class="feature-num">01</div>
-                            <h3>PIXEL TYPE</h3>
-                            <p>Pixel Operator and Pixel Operator Mono, CC0, are bundled. The built-in themes and ReCord's CSS use them.</p>
-                        </article>
-                        <article class="feature">
-                            <div class="feature-num">02</div>
-                            <h3>CRT LAYER</h3>
-                            <p>Scanlines, film grain, a vignette, corner brackets, a rolling scan beam and flicker are drawn natively over the window. The CRT switch and low-power mode are in Appearance.</p>
-                        </article>
-                        <article class="feature">
-                            <div class="feature-num">03</div>
-                            <h3>BACKGROUNDS</h3>
-                            <p>A CSS theme's background picture is decoded and placed under the panels; its dimming and panel opacity come from the theme's own variables.</p>
-                        </article>
-                        <article class="feature">
-                            <div class="feature-num">04</div>
-                            <h3>SOUNDS</h3>
-                            <p>ReCord's WAV pack is one sound theme in Settings → Sounds, beside Kenney and the twelve UI SFX themes. Every call, message and interface sound can take a theme of its own.</p>
-                        </article>
-                    </div>
-                </div>
-            </section>
-
             <section class="section" id="css">
                 <div class="wrap">
                     <div class="section-head">
                         <div>
-                            <div class="section-label">// 03 <b>CSS</b></div>
+                            <div class="section-label">// 04 <b>CSS</b></div>
                             <h2>THE INTERPRETER</h2>
                         </div>
                         <p class="section-note">
@@ -226,7 +381,7 @@
                         <article class="feature">
                             <div class="feature-num">04</div>
                             <h3>NATIVE</h3>
-                            <p>Region rules for sidebar, chat, members, messages and composer reach the native window with text, surfaces and radius. Layouts, pseudo-elements and @keyframes still stay out.</p>
+                            <p>Region rules for sidebar, chat, members, messages and composer reach the native window with text, surfaces and radius. A root/body animation becomes a native ground wash; layouts, pseudo-elements and element-level animations still stay out.</p>
                         </article>
                     </div>
 
@@ -248,158 +403,16 @@
                     </div>
                 </div>
             </section>
-
-            <section class="section" id="palette">
-                <div class="wrap">
-                    <div class="section-head">
-                        <div>
-                            <div class="section-label">// 04 <b>COLOR</b></div>
-                            <h2>SIGNAL PALETTE</h2>
-                        </div>
-                        <p class="section-note">
-                            ReCord's orange, sampled from the REPLACED pause menu and logo. Paper and teal come
-                            from the Wingman device and the game's shadow tones. ReCore derives every accent shade
-                            from one colour.
-                        </p>
-                    </div>
-
-                    <div class="palette-grid">
-                        <div class="swatch">
-                            <div class="swatch-color" style="background:#e94221"></div>
-                            <div class="swatch-meta"><span class="swatch-name">SIGNAL ORANGE</span><span class="swatch-hex">#E94221</span><span class="swatch-source">PAUSE MENU / LOGO</span></div>
-                        </div>
-                        <div class="swatch">
-                            <div class="swatch-color" style="background:#a8231b"></div>
-                            <div class="swatch-meta"><span class="swatch-name">OXIDE</span><span class="swatch-hex">#A8231B</span><span class="swatch-source">LOGO SHADOW</span></div>
-                        </div>
-                        <div class="swatch">
-                            <div class="swatch-color" style="background:#d4b496"></div>
-                            <div class="swatch-meta"><span class="swatch-name">WINGMAN PAPER</span><span class="swatch-hex">#D4B496</span><span class="swatch-source">DEVICE INTERFACE</span></div>
-                        </div>
-                        <div class="swatch">
-                            <div class="swatch-color" style="background:#14322a"></div>
-                            <div class="swatch-meta"><span class="swatch-name">CHANNEL TEAL</span><span class="swatch-hex">#14322A</span><span class="swatch-source">SHADOW TONES</span></div>
-                        </div>
-                        <div class="swatch">
-                            <div class="swatch-color" style="background:#051f1c"></div>
-                            <div class="swatch-meta"><span class="swatch-name">DEEP TEAL</span><span class="swatch-hex">#051F1C</span><span class="swatch-source">DEVICE BEZEL</span></div>
-                        </div>
-                        <div class="swatch">
-                            <div class="swatch-color" style="background:#050605"></div>
-                            <div class="swatch-meta"><span class="swatch-name">VOID</span><span class="swatch-hex">#050605</span><span class="swatch-source">SURFACE BASE</span></div>
-                        </div>
-                    </div>
-
-                    <div class="note">
-                        <b>STATUS COLORS</b> keep their meaning inside the palette:
-                        <code>#79B59A</code> online, <code>#DDA052</code> idle, <code>#FF4626</code> do not disturb,
-                        <code>#6F655A</code> offline.
-                    </div>
-                </div>
-            </section>
-
-            <section class="section" id="install">
-                <div class="wrap">
-                    <div class="section-head">
-                        <div>
-                            <div class="section-label">// 05 <b>DEPLOY</b></div>
-                            <h2>BUILD OR DOWNLOAD</h2>
-                        </div>
-                        <p class="section-note">
-                            Releases carry the Windows installer and portable ZIP, the Linux AppImage and the Arch
-                            package. The pinned Nix shell builds the same binary from source.
-                        </p>
-                    </div>
-
-                    <div class="install">
-                        <ol class="steps">
-                            <li>
-                                <h3>GET THE BUILD</h3>
-                                <p>Download a release for Windows or Linux, or build from source with the pinned Nix environment. There is no macOS build yet.</p>
-                            </li>
-                            <li>
-                                <h3>LINK DISCORD</h3>
-                                <p>Scan Discord's QR code from the phone app. The token stays in the system's credential store and only goes to Discord.</p>
-                            </li>
-                            <li>
-                                <h3>MAKE IT YOURS</h3>
-                                <p>Settings → Appearance picks ReCore, ReCore Paper or a CSS theme, changes the accent and the CRT layer, and lists the options the theme exposes.</p>
-                            </li>
-                        </ol>
-
-                        <div>
-                            <div class="code-card os-card">
-                                <div class="code-card-head"><span>BUILD FROM SOURCE</span><span id="os-detected">DETECTING...</span></div>
-                                <div class="os-body">
-                                    <div class="os-tabs" role="tablist" aria-label="Operating system">
-                                        <button type="button" role="tab" data-os="windows">WINDOWS</button>
-                                        <button type="button" role="tab" data-os="mac">MACOS</button>
-                                        <button type="button" role="tab" data-os="linux">LINUX</button>
-                                    </div>
-                                    <p class="os-where" id="os-where"></p>
-                                    <pre class="os-command"><code id="os-command"></code></pre>
-                                    <div class="os-options">
-                                        <label><input type="radio" name="os-action" value="nix" checked> <span>WITH NIX</span></label>
-                                        <label><input type="radio" name="os-action" value="cargo"> <span>WITH CARGO</span></label>
-                                        <label><input type="radio" name="os-action" value="preview"> <span>PREVIEW</span></label>
-                                    </div>
-                                    <button type="button" class="btn" id="os-copy">COPY COMMAND</button>
-                                    <p class="accent-help" id="os-note"></p>
-                                </div>
-                            </div>
-                            <div class="code-card accent-card">
-                                <div class="code-card-head"><span>RELEASES</span><span>GITHUB</span></div>
-                                <p class="accent-help">A maintainer publishes by pushing a <code>v</code> tag; the Release workflow builds every asset.</p>
-                                <pre><span class="c">// Windows installer, portable ZIP, AppImage and Arch package</span>
-<span class="a">https://github.com/leriart/ReCore/releases/latest</span></pre>
-                            </div>
-                            <div class="code-card accent-card">
-                                <div class="code-card-head"><span>THEME FILE</span><span>CSS</span></div>
-                                <pre><span class="c">// ReCord, the reference CSS theme ReCore reads</span>
-<span class="a">themes/ReCord.theme.css</span></pre>
-                            </div>
-                            <div class="note">
-                                <b>THIRD-PARTY CLIENTS.</b> Discord's Terms of Service do not allow third-party
-                                clients. In practice bans are rare, but use ReCore only if losing the account would
-                                not be a disaster. ReCore sends no analytics.
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <section class="section" id="releases">
-                <div class="wrap">
-                    <div class="section-head">
-                        <div>
-                            <div class="section-label">// <b>RELEASES</b></div>
-                            <h2>LATEST BUILDS</h2>
-                        </div>
-                        <p class="section-note">
-                            Published by the release workflow from a tag, with the Windows ZIP, the Linux
-                            AppImage, the Arch package, the source snapshot and the checksums. This list reads
-                            GitHub's releases API, so it follows the repository.
-                        </p>
-                    </div>
-                    <div id="release-list" class="release-list">
-                        <p class="section-note" id="release-status">Loading releases…</p>
-                    </div>
-                    <div class="link-list" style="margin-top:18px">
-                        <a href="https://github.com/leriart/ReCore/releases">ALL RELEASES <span>GITHUB</span></a>
-                    </div>
-                </div>
-            </section>
-
             <section class="section" id="configure">
                 <div class="wrap">
                     <div class="section-head">
                         <div>
-                            <div class="section-label">// <b>CONFIGURE</b></div>
-                            <h2>BUILD A THEME</h2>
+                            <div class="section-label">// 05 <b>CUSTOMIZE</b></div>
+                            <h2>MAKE IT YOURS</h2>
                         </div>
                         <p class="section-note">
-                            Download a ReCord CSS theme with these settings baked in, then drop it in ReCore's
-                            themes folder. The native ReCore themes have their own accent and CRT switches in
+                            Download a ReCord CSS theme with these settings included, then drop it in ReCore's
+                            themes folder. The native ReCore themes keep their own accent and CRT switches in
                             Appearance.
                         </p>
                     </div>
@@ -470,57 +483,120 @@
                     </div>
                 </div>
             </section>
+            <section class="section" id="palette">
+                <div class="wrap">
+                    <div class="section-head">
+                        <div>
+                            <div class="section-label">// 06 <b>COLOR</b></div>
+                            <h2>SIGNAL PALETTE</h2>
+                        </div>
+                        <p class="section-note">
+                            ReCord's orange, sampled from the REPLACED pause menu and logo. Paper and teal come
+                            from the Wingman device and the game's shadow tones. ReCore derives every accent shade
+                            from one colour.
+                        </p>
+                    </div>
 
+                    <div class="palette-grid">
+                        <div class="swatch">
+                            <div class="swatch-color" style="background:#e94221"></div>
+                            <div class="swatch-meta"><span class="swatch-name">SIGNAL ORANGE</span><span class="swatch-hex">#E94221</span><span class="swatch-source">PAUSE MENU / LOGO</span></div>
+                        </div>
+                        <div class="swatch">
+                            <div class="swatch-color" style="background:#a8231b"></div>
+                            <div class="swatch-meta"><span class="swatch-name">OXIDE</span><span class="swatch-hex">#A8231B</span><span class="swatch-source">LOGO SHADOW</span></div>
+                        </div>
+                        <div class="swatch">
+                            <div class="swatch-color" style="background:#d4b496"></div>
+                            <div class="swatch-meta"><span class="swatch-name">WINGMAN PAPER</span><span class="swatch-hex">#D4B496</span><span class="swatch-source">DEVICE INTERFACE</span></div>
+                        </div>
+                        <div class="swatch">
+                            <div class="swatch-color" style="background:#14322a"></div>
+                            <div class="swatch-meta"><span class="swatch-name">CHANNEL TEAL</span><span class="swatch-hex">#14322A</span><span class="swatch-source">SHADOW TONES</span></div>
+                        </div>
+                        <div class="swatch">
+                            <div class="swatch-color" style="background:#051f1c"></div>
+                            <div class="swatch-meta"><span class="swatch-name">DEEP TEAL</span><span class="swatch-hex">#051F1C</span><span class="swatch-source">DEVICE BEZEL</span></div>
+                        </div>
+                        <div class="swatch">
+                            <div class="swatch-color" style="background:#050605"></div>
+                            <div class="swatch-meta"><span class="swatch-name">VOID</span><span class="swatch-hex">#050605</span><span class="swatch-source">SURFACE BASE</span></div>
+                        </div>
+                    </div>
+
+                    <div class="note">
+                        <b>STATUS COLORS</b> keep their meaning inside the palette:
+                        <code>#79B59A</code> online, <code>#DDA052</code> idle, <code>#FF4626</code> do not disturb,
+                        <code>#6F655A</code> offline.
+                    </div>
+                </div>
+            </section>
+            <section class="section" id="releases">
+                <div class="wrap">
+                    <div class="section-head">
+                        <div>
+                            <div class="section-label">// 07 <b>RELEASES</b></div>
+                            <h2>LATEST RELEASES</h2>
+                        </div>
+                        <p class="section-note">
+                            Every published version, with the Windows ZIP, Linux AppImage, Arch package,
+                            source snapshot and checksums. The list comes from GitHub, so it always follows
+                            the latest release.
+                        </p>
+                    </div>
+                    <div id="release-list" class="release-list">
+                        <p class="section-note" id="release-status">Loading releases…</p>
+                    </div>
+                    <div class="link-list" style="margin-top:18px">
+                        <a href="https://github.com/leriart/ReCore/releases">ALL RELEASES <span>GITHUB</span></a>
+                    </div>
+                </div>
+            </section>
             <section class="section" id="source">
                 <div class="wrap">
                     <div class="section-head">
                         <div>
-                            <div class="section-label">// 06 <b>SOURCE</b></div>
-                            <h2>FORKED, NOT REWRITTEN</h2>
+                            <div class="section-label">// 08 <b>SOURCE</b></div>
+                            <h2>OPEN SOURCE</h2>
                         </div>
                         <p class="section-note">
-                            Yapfast's client, protocol, voice and documentation are the foundation. ReCore adds
-                            the ReCord look, the CSS reader and the native CRT layer.
+                            ReCore is a fork of Yapfast. The client, CSS interpreter, themes,
+                            documentation and icon set live on GitHub. You do not need a
+                            development setup to use a release.
                         </p>
                     </div>
 
-                    <div class="tree">
-                        <pre><b>ReCore/</b>
-├── <b>crates/</b>
-│   ├── recore-core/        <span>Discord state, voice, sounds</span>
-│   ├── recore-css/         <span>CSS reader + option detection</span>
-│   ├── recore-discord/     <span>Discord protocol</span>
-│   ├── recore-iced/        <span>the window, Appearance</span>
-│   └── recore-iced-kit/    <span>widgets, fonts, CRT layer</span>
-├── themes/
-│   └── ReCord.theme.css    <span>reference CSS theme</span>
-├── site/                   <span>this page</span>
-├── sounds/                 <span>ReCord's CC0 signal pack</span>
-└── docs/                   <span>technical documentation</span></pre>
+                    <div class="link-list">
+                        <a id="download-source" href="https://github.com/leriart/ReCore/releases/latest">SOURCE SNAPSHOT <span>ZIP</span></a>
+                        <a href="https://github.com/leriart/ReCore">REPOSITORY <span>GITHUB</span></a>
+                        <a href="https://github.com/leriart/ReCore/tree/main/docs/themes.md">CSS THEMES DOC <span>MD</span></a>
+                        <a href="preview.html">INTERACTIVE PREVIEW <span>DEMO</span></a>
+                        <a href="icons.html">RECORD ICONS <span>SVG</span></a>
+                        <a href="sounds.html">SIGNAL PACK <span>AUDIO</span></a>
+                    </div>
 
-                        <div>
-                            <p>
-                                <b>Read:</b> the CSS reader lives in crates/recore-css. It has no
-                                dependencies and its tests read ReCord's real theme file.
-                            </p>
-                            <div class="code-card">
-                                <div class="code-card-head"><span>CHECK THE READER</span><span>CARGO</span></div>
-                                <pre><span class="c">$ </span>cargo test -p recore-css
-<span class="ok">28 passed</span>
-<span class="c">$ </span>cargo run --locked -- --preview</pre>
-                            </div>
-
-                            <div class="link-list" style="margin-top:18px">
-                                <a href="https://github.com/leriart/ReCore">REPOSITORY <span>GITHUB</span></a>
-                                <a href="https://github.com/leriart/ReCore/tree/main/docs/themes.md">CSS THEMES DOC <span>MD</span></a>
-                                <a href="preview.html">THEME PREVIEW <span>DEMO</span></a>
-                                <a href="icons.html">RECORD ICONS <span>SVG</span></a>
-                                <a href="sounds.html">SIGNAL PACK <span>AUDIO</span></a>
-                            </div>
-                        </div>
+                    <div class="note" style="margin-top:18px">
+                        <b>FOR CONTRIBUTORS.</b> Architecture, development and packaging notes are
+                        in the repository documentation. Users should install a published release
+                        from the download section above.
                     </div>
                 </div>
             </section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         </div>
     </main>
 
@@ -554,99 +630,7 @@
     </footer>
 
     <script>
-        const copyButton = document.getElementById("copy-raw");
-        const rawUrl = document.getElementById("raw-url");
-        copyButton.addEventListener("click", async () => {
-            const value = rawUrl.textContent.trim();
-            try { await navigator.clipboard.writeText(value); }
-            catch {
-                const area = document.createElement("textarea");
-                area.value = value;
-                document.body.appendChild(area);
-                area.select();
-                document.execCommand("copy");
-                area.remove();
-            }
-            const previous = copyButton.textContent;
-            copyButton.textContent = "COPIED";
-            copyButton.classList.add("copied");
-            window.setTimeout(() => {
-                copyButton.textContent = previous;
-                copyButton.classList.remove("copied");
-            }, 1600);
-        });
-    </script>
-    <script>
         const tr = text => (window.t ? window.t(text) : text);
-        const systems = {
-            windows: {
-                label: "WINDOWS",
-                where: "Open PowerShell in the repository and run:",
-                command: {
-                    nix: "nix develop path:./nix#windows --command scripts/build-windows",
-                    cargo: "cargo run --locked -- --preview",
-                    preview: "cargo run --locked -- --preview"
-                }
-            },
-            mac: {
-                label: "MACOS",
-                where: "There is no macOS release yet. The window and the CSS reader build; voice and packaging are untested:",
-                command: {
-                    nix: "nix develop path:./nix --command cargo run --locked -- --preview",
-                    cargo: "cargo run --locked -- --preview",
-                    preview: "cargo run --locked -- --preview"
-                }
-            },
-            linux: {
-                label: "LINUX",
-                where: "Open a terminal in the repository and run:",
-                command: {
-                    nix: "nix develop path:./nix --command cargo run --locked --preview",
-                    cargo: "cargo run --locked -- --preview",
-                    preview: "cargo run --locked -- --preview"
-                }
-            }
-        };
-        const notes = {
-            nix: "The pinned Nix shell brings Rust 1.97, Clang and the native libraries. This is the build the releases use.",
-            cargo: "Builds with rustup and the libraries listed in packaging/arch/PKGBUILD. Cargo downloads the same libwebrtc archive.",
-            preview: "Opens the fake Discord server, with no account and no network connection."
-        };
-        function detectSystem() {
-            const hint = `${navigator.userAgentData?.platform ?? ""} ${navigator.platform ?? ""} ${navigator.userAgent}`.toLowerCase();
-            if (/android|iphone|ipad|ipod/.test(hint)) return { os: "linux", mobile: true };
-            if (/win/.test(hint)) return { os: "windows" };
-            if (/mac/.test(hint)) return { os: "mac" };
-            return { os: "linux" };
-        }
-        const detected = detectSystem();
-        let currentSystem = detected.os;
-        function renderInstall() {
-            const system = systems[currentSystem];
-            const action = document.querySelector('input[name="os-action"]:checked').value;
-            document.getElementById("os-command").textContent = system.command[action];
-            document.getElementById("os-where").textContent = tr(system.where);
-            document.getElementById("os-note").textContent = tr(notes[action]);
-            document.getElementById("os-detected").textContent = detected.mobile
-                ? tr("DESKTOP ONLY")
-                : currentSystem === detected.os ? `${tr("DETECTED")}: ${system.label}` : system.label;
-            for (const tab of document.querySelectorAll(".os-tabs button")) {
-                tab.setAttribute("aria-selected", String(tab.dataset.os === currentSystem));
-            }
-            if (detected.mobile) document.getElementById("os-note").textContent = tr("ReCore is a desktop client. Run this on the computer where you use Discord.");
-        }
-        for (const tab of document.querySelectorAll(".os-tabs button")) {
-            tab.addEventListener("click", () => { currentSystem = tab.dataset.os; renderInstall(); });
-        }
-        for (const option of document.querySelectorAll('input[name="os-action"]')) option.addEventListener("change", renderInstall);
-        document.getElementById("os-copy").addEventListener("click", async () => {
-            await navigator.clipboard.writeText(document.getElementById("os-command").textContent);
-            document.getElementById("os-copy").textContent = tr("COPIED");
-            setTimeout(() => { document.getElementById("os-copy").textContent = tr("COPY COMMAND"); }, 1600);
-        });
-        document.getElementById("lang-toggle")?.addEventListener("click", () => setTimeout(renderInstall, 0));
-        renderInstall();
-        document.addEventListener("DOMContentLoaded", renderInstall);
 
         const $ = id => document.getElementById(id);
         const picker = $("accent");
@@ -757,119 +741,6 @@
             URL.revokeObjectURL(link.href);
             status.textContent = tr("Downloaded. Put it in ReCore's themes folder and press Reload CSS.");
         });
-    </script>
-    <script>
-        // The releases section reads GitHub's public API, so a new release
-        // appears without rebuilding the site. It runs after i18n.js, so the
-        // labels are born in the page's language.
-        (() => {
-            const list = document.getElementById("release-list");
-            if (!list) return;
-            const status = document.getElementById("release-status");
-            const tr = text => (window.t ? window.t(text) : text);
-            const api = "https://api.github.com/repos/leriart/ReCore/releases?per_page=10";
-            const english = /^[A-Za-z]/;
-
-            function assetLabel(name) {
-                if (name.endsWith(".AppImage")) return "AppImage";
-                if (name.endsWith(".AppImage.zsync")) return "AppImage .zsync";
-                if (name.includes(".pkg.tar.zst")) return "Arch package";
-                if (name.includes("windows-x64-setup")) return "Windows installer";
-                if (name.includes("windows-x64") && name.endsWith(".zip")) return "Windows ZIP";
-                if (name.endsWith("-source.zip")) return "Source";
-                if (name.endsWith("SHA256SUMS.txt")) return "Checksums";
-                if (name.endsWith(".minisig")) return "Signature";
-                return name;
-            }
-
-            function size(bytes) {
-                if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-                if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-                return `${bytes} B`;
-            }
-
-            function card(release, latest) {
-                const article = document.createElement("article");
-                article.className = "release-card";
-                const head = document.createElement("div");
-                head.className = "release-head";
-                const title = document.createElement("a");
-                title.className = "release-title";
-                title.href = release.html_url;
-                title.textContent = release.name || release.tag_name;
-                head.append(title);
-                if (latest) {
-                    const badge = document.createElement("span");
-                    badge.className = "release-badge";
-                    badge.textContent = tr("LATEST");
-                    head.append(badge);
-                }
-                if (release.prerelease) {
-                    const badge = document.createElement("span");
-                    badge.className = "release-badge release-badge--pre";
-                    badge.textContent = tr("PRE-RELEASE");
-                    head.append(badge);
-                }
-                article.append(head);
-
-                const meta = document.createElement("p");
-                meta.className = "release-meta";
-                const when = release.published_at
-                    ? new Intl.DateTimeFormat(document.documentElement.lang || "en", { dateStyle: "medium" }).format(new Date(release.published_at))
-                    : "";
-                meta.textContent = `${release.tag_name}${when ? ` · ${when}` : ""}`;
-                article.append(meta);
-
-                const assets = (release.assets || []).filter(asset => english.test(asset.name) || asset.name.includes("."));
-                if (assets.length) {
-                    const grid = document.createElement("div");
-                    grid.className = "release-assets";
-                    for (const asset of assets) {
-                        const link = document.createElement("a");
-                        link.className = "release-asset";
-                        link.href = asset.browser_download_url;
-                        link.download = asset.name;
-                        const label = document.createElement("span");
-                        label.textContent = tr(assetLabel(asset.name));
-                        const detail = document.createElement("small");
-                        detail.textContent = `${size(asset.size)}${asset.download_count ? ` · ${asset.download_count} ${tr("downloads")}` : ""}`;
-                        link.append(label, detail);
-                        grid.append(link);
-                    }
-                    article.append(grid);
-                }
-                return article;
-            }
-
-            async function load() {
-                try {
-                    const response = await fetch(api, {
-                        headers: { Accept: "application/vnd.github+json" },
-                        cache: "no-store"
-                    });
-                    if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
-                    const releases = (await response.json()).filter(release => !release.draft);
-                    if (!releases.length) {
-                        status.textContent = tr("No releases yet. Build one from source or run the Release workflow with a v tag.");
-                        return;
-                    }
-                    const latest = releases.find(release => !release.prerelease)?.tag_name;
-                    list.replaceChildren();
-                    for (const release of releases.slice(0, 8)) {
-                        list.append(card(release, release.tag_name === latest));
-                    }
-                } catch (error) {
-                    console.warn("ReCore releases:", error);
-                    status.textContent = tr("Could not load the releases from GitHub. Open the releases page instead.");
-                    const link = document.createElement("a");
-                    link.href = "https://github.com/leriart/ReCore/releases";
-                    link.textContent = tr("Open releases on GitHub");
-                    status.append(" ", link);
-                }
-            }
-
-            document.addEventListener("DOMContentLoaded", load);
-        })();
     </script>
 
 </body>

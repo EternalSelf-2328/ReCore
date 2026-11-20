@@ -348,6 +348,18 @@ development shell when you enter the folder, so commands need no
 `nix develop` prefix. On NixOS, `programs.direnv.enable = true;` installs direnv
 with nix-direnv, which caches the shell.
 
+## macOS
+
+`scripts/build-macos` builds the app on a Mac. Install the build tools with
+`brew install cmake ninja protobuf nasm pkg-config librsvg llvm`, point
+`LIBCLANG_PATH` at `$(brew --prefix llvm)/lib`, and run it from the repository
+root. LiveKit's prebuilt `webrtc-mac-arm64-release.zip` or
+`webrtc-mac-x64-release.zip` is downloaded by `webrtc-sys`; FFmpeg, libvpx,
+dav1d, x264, thorvg and the Rust dependencies compile with Apple's clang.
+`RECORE_TARGET=x86_64-apple-darwin` selects the Intel build on an Apple
+Silicon machine. The packaged app is ad-hoc signed; see
+[packaging](packaging.md#macos-app).
+
 ## Windows
 
 The Linux cross-build and portable ZIP route is documented in the

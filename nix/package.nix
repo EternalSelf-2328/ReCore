@@ -32,7 +32,7 @@ rustPlatform.buildRustPackage {
   src = lib.fileset.toSource {
     root = ../.;
     fileset = lib.fileset.unions [
-      ../Cargo.toml ../Cargo.lock ../build.rs ../src ../crates ../vendor ../packaging
+      ../Cargo.toml ../Cargo.lock ../build.rs ../src ../crates ../vendor ../packaging ../themes
     ];
   };
   cargoLock = {
@@ -79,6 +79,7 @@ rustPlatform.buildRustPackage {
     install -Dm644 packaging/icon.svg "$out/share/icons/hicolor/scalable/apps/${id}.svg"
     install -Dm644 packaging/linux/${id}.desktop -t "$out/share/applications"
     install -Dm644 packaging/linux/${id}.metainfo.xml -t "$out/share/metainfo"
+    install -Dm644 themes/*.theme.css -t "$out/share/recore/themes"
     # The GPU, audio and screen capture libraries are loaded at runtime, and
     # NixOS keeps the GPU driver's in /run/opengl-driver.
     wrapProgram "$out/bin/recore" \

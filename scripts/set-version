@@ -2,10 +2,10 @@
 # Sets ReCore's version in Cargo.toml and Cargo.lock, as the nightly release
 # does before building: `scripts/set-version 0.2.0-nightly.20261020.5`.
 # The app, the packages' names and SOURCE.txt's release link all take it. A
-# stable version also goes into the Arch PKGBUILD, which builds its tag, and
-# into the metainfo's releases, dated today: `scripts/set-version 0.2.0`
-# before committing and tagging v0.2.0. The README names no version, so
-# nothing else needs changing.
+# stable version also goes into the Arch PKGBUILD, the metainfo's releases,
+# dated today, and the landing page's last-known release:
+# `scripts/set-version 0.2.0` before committing and tagging v0.2.0. The README
+# names no version, so nothing else needs changing.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 version=${1:?usage: scripts/set-version VERSION}
@@ -22,7 +22,81 @@ sed -i "/^name = \"recore\"$/{n;s/^version = .*/version = \"$version\"/}" Cargo.
 if [[ $version != *-* ]]; then
   sed -i -e "s/^pkgver=.*/pkgver=$version/" -e "s/^pkgrel=.*/pkgrel=1/" packaging/arch/PKGBUILD
   metainfo=packaging/linux/io.github.leriart.ReCore.metainfo.xml
-  if ! grep -q "<release version=\"$version\"" "$metainfo"; then
-    sed -i "s|^  <releases>$|&\n    <release version=\"$version\" date=\"$(date +%F)\"/>|" "$metainfo"
-  fi
+  python3 - "$metainfo" "$version" <<'PY'
+import datetime
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+version = sys.argv[2]
+text = path.read_text(encoding="utf-8")
+if f'<release version="{version}"' not in text:
+    text = text.replace(
+        "  <releases>\n",
+        f'  <releases>\n    <release version="{version}" date="{datetime.date.today().isoformat()}"/>\n',
+        1,
+    )
+    path.write_text(text, encoding="utf-8")
+PY
+  # The landing page shows its last-known stable release before GitHub
+  # answers, and keeps it when the API is offline. Keep that fallback in
+  # step with the version the packages carry.
+  python3 - "$version" <<'PY'
+import datetime
+import re
+import sys
+from pathlib import Path
+
+version = sys.argv[1]
+path = Path("site/home.js")
+if not path.is_file():
+    raise SystemExit("scripts/set-version: site/home.js is missing")
+text = path.read_text(encoding="utf-8")
+base = f"https://github.com/leriart/ReCore/releases/download/v{version}"
+page = f"https://github.com/leriart/ReCore/releases/tag/v{version}"
+assets = [
+    (f"ReCore-{version}-windows-x64.zip", f"{base}/ReCore-{version}-windows-x64.zip"),
+    (f"ReCore-{version}-x86_64.AppImage", f"{base}/ReCore-{version}-x86_64.AppImage"),
+    (f"recore-{version}-1-x86_64.pkg.tar.zst", f"{base}/recore-{version}-1-x86_64.pkg.tar.zst"),
+    (f"ReCore-{version}-macos-arm64.dmg", f"{base}/ReCore-{version}-macos-arm64.dmg"),
+    (f"ReCore-{version}-macos-arm64.zip", f"{base}/ReCore-{version}-macos-arm64.zip"),
+    (f"ReCore-{version}-macos-x64.dmg", f"{base}/ReCore-{version}-macos-x64.dmg"),
+    (f"ReCore-{version}-macos-x64.zip", f"{base}/ReCore-{version}-macos-x64.zip"),
+    (f"ReCore-{version}-source.zip", f"{base}/ReCore-{version}-source.zip"),
+    ("SHA256SUMS.txt", f"{base}/SHA256SUMS.txt"),
+]
+lines = [
+    "    const FALLBACK_RELEASE = {",
+    f'        tag_name: "v{version}",',
+    f'        name: "ReCore {version}",',
+    f'        html_url: "{page}",',
+    f'        published_at: "{datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}",',
+    "        assets: [",
+]
+for index, (name, url) in enumerate(assets):
+    lines.extend(
+        [
+            "            {",
+            f'                name: "{name}",',
+            f'                browser_download_url: "{url}"',
+            "            }" + ("," if index + 1 < len(assets) else ""),
+        ]
+    )
+lines.extend(["        ]", "    };"])
+replacement = "\n".join(lines)
+text, count = re.subn(r"    const FALLBACK_RELEASE = \{.*?\n    \};", replacement, text, flags=re.S)
+if not count:
+    raise SystemExit("scripts/set-version: site/home.js has no FALLBACK_RELEASE block")
+path.write_text(text, encoding="utf-8")
+index = Path("site/index.html")
+if index.is_file():
+    page_text = index.read_text(encoding="utf-8")
+    page_text = re.sub(
+        r'(<span class="top-version" id="top-version">V)[^<]+',
+        rf"\g<1>{version}",
+        page_text,
+        count=1,
+    )
+    index.write_text(page_text, encoding="utf-8")
+PY
 fi

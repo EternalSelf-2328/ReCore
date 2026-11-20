@@ -4,7 +4,7 @@
 
 pkgname=recore
 # The release to build, by its tag; scripts/set-version keeps it at Cargo.toml's version.
-pkgver=0.5.2
+pkgver=0.5.3
 pkgrel=1
 _id=io.github.leriart.ReCore
 # The prebuilt native parts nix/native.nix pins.
@@ -99,4 +99,5 @@ package() {
   install -Dm644 packaging/icon.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/$_id.svg"
   install -Dm644 "packaging/linux/$_id.desktop" -t "$pkgdir/usr/share/applications"
   install -Dm644 "packaging/linux/$_id.metainfo.xml" -t "$pkgdir/usr/share/metainfo"
+  install -Dm644 themes/*.theme.css -t "$pkgdir/usr/share/recore/themes"
 }

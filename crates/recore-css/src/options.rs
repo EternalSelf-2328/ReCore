@@ -1382,10 +1382,20 @@ fn record(name: &str) -> Option<(&'static str, &'static str, Option<&'static str
             "Background",
             Some("How far the picture is dimmed behind the panels."),
         ),
-        "--rl-surface" => (
+        "--rl-surface" | "--rl-panel-opacity" => (
             "Panel opacity",
             "Background",
             Some("How see-through panels are over the picture."),
+        ),
+        "--rl-font-size" => (
+            "Text size",
+            "Typography",
+            Some("The size of the window's text."),
+        ),
+        "--rl-mono-font" => (
+            "Code font",
+            "Typography",
+            Some("The family used for code and monospaced text."),
         ),
         "--rl-background-size" => (
             "Background fit",
@@ -1835,8 +1845,74 @@ fn group_for(name: &str) -> &'static str {
         || name.contains("scrollbar")
     {
         "Interface"
+    } else if name.starts_with("--ambxst-") {
+        ambxst_group(&name)
+    } else if name.starts_with("--ctp-")
+        || name.starts_with("--tn-")
+        || name.starts_with("--gb-")
+        || name.starts_with("--sol-")
+        || name.starts_with("--nord")
+    {
+        palette_group(&name)
     } else {
         "Other"
+    }
+}
+
+/// A bundled theme's own palette names. Accent-like colours go under
+/// Accents; grounds and inks go under Base colours.
+fn palette_group(name: &str) -> &'static str {
+    if name.contains("accent")
+        || name.contains("orange")
+        || name.contains("yellow")
+        || name.contains("green")
+        || name.contains("aqua")
+        || name.contains("cyan")
+        || name.contains("blue")
+        || name.contains("purple")
+        || name.contains("magenta")
+        || name.contains("violet")
+        || name.contains("red")
+        || name.contains("mauve")
+        || name.contains("pink")
+    {
+        "Accents"
+    } else {
+        "Base colours"
+    }
+}
+
+/// The Ambxst shell's own settings, grouped by the part they dress.
+fn ambxst_group(name: &str) -> &'static str {
+    if name.contains("opacity")
+        || name.contains("transparency")
+        || name.contains("blur")
+        || name.contains("shadow")
+        || name.contains("gradient")
+        || name.contains("elevation")
+    {
+        "Effects"
+    } else if name.contains("primary")
+        || name.contains("secondary")
+        || name.contains("tertiary")
+        || name.contains("error")
+        || name.contains("surface")
+        || name.contains("outline")
+        || name.contains("scrim")
+        || name.contains("inverse")
+        || name.contains("overlay")
+        || name.contains("border-color")
+    {
+        "Base colours"
+    } else if name.contains("font")
+        || name.contains("size")
+        || name.contains("weight")
+        || name.contains("tracking")
+        || name.contains("height")
+    {
+        "Typography"
+    } else {
+        "Interface"
     }
 }
 

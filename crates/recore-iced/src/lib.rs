@@ -49,6 +49,7 @@ mod composer;
 mod control_file;
 mod controls;
 mod conversation;
+mod css_animation;
 mod ctx;
 mod desktop;
 mod slot;

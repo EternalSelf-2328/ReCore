@@ -12,7 +12,8 @@ use std::{
 use iced::{
     Element, Length, Point, Rectangle, Size, Theme, Vector,
     advanced::{
-        Clipboard, Layout, Shell, Widget, image::Handle, layout, mouse, renderer, widget::Tree,
+        Clipboard, Layout, Renderer as _, Shell, Widget, image::Handle, layout, mouse, renderer,
+        widget::Tree,
     },
     window,
 };
@@ -105,6 +106,10 @@ pub struct Animated<'a> {
     still: Option<Handle>,
     /// The background grade, identity for every other moving picture.
     grade: Grade,
+    /// Whether the renderer may scale the frame to the bounds. The window's
+    /// background does; rows and avatars keep their processor fit, which can
+    /// crop and round the picture exactly.
+    stretch: bool,
     playing: &'a RefCell<HashMap<PlayKey, Playing>>,
 }
 
@@ -125,6 +130,7 @@ impl<'a> Animated<'a> {
             opacity: 1.0,
             still: None,
             grade: Grade::default(),
+            stretch: false,
             playing,
         }
     }
@@ -160,6 +166,14 @@ impl<'a> Animated<'a> {
     /// Grades each frame as it is made, as the window's background does.
     pub fn grade(mut self, grade: Grade) -> Self {
         self.grade = grade;
+        self
+    }
+
+    /// Lets the renderer scale the decoded frame into the bounds, rather
+    /// than fitting every frame on the processor. The window's background
+    /// uses this; a picture that must crop exactly keeps the processor fit.
+    pub fn stretch(mut self, stretch: bool) -> Self {
+        self.stretch = stretch;
         self
     }
 }
@@ -257,14 +271,19 @@ impl Animated<'_> {
             if to_width == 0 || to_height == 0 {
                 return entry.player.due();
             }
-            entry.frame = Some(if (width, height) == (to_width, to_height) {
-                Handle::from_rgba(width, height, rgba)
-            } else {
-                // Fitted to the size drawn, so it's copied in one to one.
-                let fitted =
-                    paint::fitted(&rgba, (width, height), (to_width, to_height), self.cover);
-                Handle::from_rgba(to_width, to_height, fitted)
-            });
+            entry.frame = Some(
+                if self.stretch || (width, height) == (to_width, to_height) {
+                    // The renderer's linear sampler scales the frame, which is
+                    // much cheaper than resampling a full-window background per
+                    // frame on the processor.
+                    Handle::from_rgba(width, height, rgba)
+                } else {
+                    // Fitted to the size drawn, so it's copied in one to one.
+                    let fitted =
+                        paint::fitted(&rgba, (width, height), (to_width, to_height), self.cover);
+                    Handle::from_rgba(to_width, to_height, fitted)
+                },
+            );
         }
         entry.player.due()
     }
@@ -279,6 +298,30 @@ impl Animated<'_> {
             .and_then(|entry| entry.frame.as_ref())
             .or(self.still.as_ref());
         if let Some(frame) = frame {
+            if self.stretch {
+                // Draw the picture scaled to cover the bounds, then clip it
+                // back to them: the renderer samples the decoded frame and
+                // keeps its aspect ratio, with no per-frame CPU resize.
+                let (width, height) = (self.picture.width, self.picture.height);
+                if width > 0 && height > 0 {
+                    let scale = (bounds.width / width as f32).max(bounds.height / height as f32);
+                    let drawn = Size::new(width as f32 * scale, height as f32 * scale);
+                    let origin = Point::new(
+                        bounds.x + (bounds.width - drawn.width) / 2.0,
+                        bounds.y + (bounds.height - drawn.height) / 2.0,
+                    );
+                    renderer.with_layer(bounds, |renderer| {
+                        draw_picture(
+                            renderer,
+                            frame,
+                            Rectangle::new(origin, drawn),
+                            [0.0; 4],
+                            self.opacity,
+                        );
+                    });
+                    return;
+                }
+            }
             draw_picture(renderer, frame, bounds, self.radius, self.opacity);
         }
     }

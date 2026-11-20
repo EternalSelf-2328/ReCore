@@ -76,6 +76,8 @@ pub struct App {
     /// The window's motion clock, in 50 ms ticks: pulsing badges, the
     /// boot signal's blinking line and the screen-in.
     pub motion_phase: u32,
+    /// When the window began, for CSS themes whose ground animates.
+    pub css_clock: Instant,
     /// When the boot signal started, and the screen-in after it.
     pub boot: Option<Instant>,
     pub reveal: Option<Instant>,
@@ -336,6 +338,7 @@ impl App {
             bar_drag: Default::default(),
             announce_updates: false,
             motion_phase: 0,
+            css_clock: Instant::now(),
             boot: (!cfg!(test)).then(Instant::now),
             reveal: None,
             switched: None,

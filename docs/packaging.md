@@ -1,6 +1,6 @@
 # Packaging and releases
 
-How the Linux and Windows releases are made and published. Building and
+How the Linux, Windows and macOS releases are made and published. Building and
 checking ReCore for development is in [building](building.md).
 
 ## Linux AppImage
@@ -37,8 +37,9 @@ such as Ubuntu 22.04, would need a build against their own glibc.
 squashfs-tools and zsync added from the shell's nixpkgs, adds the
 licenses and notices, `THIRD-PARTY.json`, `SOURCE.txt` and `BUILD.json` to
 `usr/share/doc/recore`, as the Windows package has them, through the helpers
-in `scripts/release_package.py` that both packaging scripts use. Then it
-packs the AppDir with mksquashfs
+in `scripts/release_package.py` that all packaging scripts use. It also copies
+the bundled `.theme.css` files to `usr/share/recore/themes`; ReCore finds them
+beside the binary's prefix. Then it packs the AppDir with mksquashfs
 (zstd level 19, 1 MiB blocks, fixed owners and times, so the same AppDir packs
 to the same file) behind AppImage's official type-2 runtime, pinned by hash.
 The runtime is static: it mounts the image with FUSE 3's `fusermount3` and
@@ -47,6 +48,23 @@ The flake sees only the files Git tracks, so add a new file under `nix/` or
 `packaging/` before building.
 
 Screen sharing hasn't been tried from the AppImage.
+
+## macOS app
+
+`scripts/build-macos` builds the Discord-only app on a Mac, then
+`scripts/package-macos.py` makes `ReCore-VERSION-macos-ARCH.zip` and, when
+`hdiutil` is available, a `.dmg`. The `.app` holds the binary, the bundled
+themes in both `Contents/Resources/themes` and `Contents/MacOS/themes`, the
+licences and dependency notices. The package is ad-hoc signed with
+`codesign --sign -`; a distribution build can replace that with a Developer ID
+and notarisation. The GitHub workflow builds both `aarch64-apple-darwin` on
+`macos-15` and `x86_64-apple-darwin` on `macos-15-intel`. LiveKit publishes a
+libwebrtc archive per architecture, and `webrtc-sys` downloads it during the
+build. The FFmpeg, libvpx, dav1d and x264 sources build with Apple's clang.
+
+The app carries no installer; drag `ReCore.app` to Applications. Gatekeeper
+may need right-click → Open because the published build is not notarised.
+Data lives in `~/Library/Application Support/io.github.leriart.ReCore`.
 
 ## Arch Linux packages
 
@@ -80,18 +98,20 @@ Actions → Release with a tag in the box:
 ```bash
 scripts/set-version 0.5.0
 git add Cargo.toml Cargo.lock packaging/arch/PKGBUILD \
-  packaging/linux/io.github.leriart.ReCore.metainfo.xml
+  packaging/linux/io.github.leriart.ReCore.metainfo.xml site/home.js site/index.html
 git commit -m "release: v0.5.0"
 git tag v0.5.0
 git push origin main v0.5.0
 ```
 
 The workflow checks that the tag is a stable SemVer tag, then builds the
-Linux AppImage and Arch package, the Windows portable ZIP and the source
-snapshot, makes one `SHA256SUMS.txt` for every asset and publishes them on
-the tag's release page. It uses the same Nix and cargo-xwin builds as the
-nightly. Wine doesn't run on the runner, so the Windows asset is the ZIP, not
-the installer.
+Linux AppImage and Arch package, the Windows portable ZIP, the Apple Silicon
+and Intel macOS ZIPs and DMGs, and the source snapshot, makes one
+`SHA256SUMS.txt` for every asset and publishes them on the tag's release
+page. It uses the same Nix and cargo-xwin builds as the nightly; the macOS
+jobs use Apple's toolchain and the prebuilt libwebrtc archive. Wine doesn't
+run on the runner, so the Windows asset is the ZIP, not the installer. The
+source snapshot is identical in every job, so the release carries one copy.
 
 The site's **Releases** section reads
 `api.github.com/repos/leriart/ReCore/releases`, so it shows the new release

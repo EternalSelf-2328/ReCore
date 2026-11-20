@@ -76,44 +76,46 @@ impl App {
         // panels opaque hides it, as ReCord's panel opacity does.
         let base: Element<'_, Message> = match &self.themes.background_picture {
             Some(picture) => {
-                // The window's picture keeps moving whenever it's asked to,
-                // even while nobody is using ReCore or the window is out of
-                // focus: it is the window's look, not a message's picture.
+                // A moving background is the most expensive thing the window
+                // draws. It rests while the window is unfocused, as the CRT
+                // beam and flicker do; the first frame remains, so returning
+                // to the window starts the motion where it left off.
                 let animate = self.themes.recore.background_animate
+                    && self.shell.focused
                     && self.themes.motion() != crate::themes::Motion::Off
                     && !self.themes.low_power;
+                let fit = self.themes.background_fit();
+                let content_fit = match fit {
+                    recore_css::BackgroundFit::Cover => ContentFit::Cover,
+                    recore_css::BackgroundFit::Contain => ContentFit::Contain,
+                    recore_css::BackgroundFit::Fill => ContentFit::Fill,
+                };
                 let picture: Element<'_, Message> = if animate {
                     let size = Size::new(self.window.width, self.window.height);
                     let at = Rectangle::with_size(size);
                     self.win
                         .pictures
-                        .animated(picture, size, at, true)
+                        .animated(picture, size, at, fit != recore_css::BackgroundFit::Contain)
                         .still(self.themes.background.clone())
-                        .grade(self.themes.background_grade())
+                        .grade(self.themes.background_grade(&self.theme))
+                        // The renderer scales the decoded frame to the
+                        // window; fitting it here copied every pixel on the
+                        // processor for every frame.
+                        .stretch(fit != recore_css::BackgroundFit::Contain)
                         .into()
                 } else {
                     match &self.themes.background {
                         Some(still) => image(still.clone())
-                            .content_fit(ContentFit::Cover)
+                            .content_fit(content_fit)
                             .width(Length::Fill)
                             .height(Length::Fill)
                             .into(),
                         None => Space::new().into(),
                     }
                 };
-                let dim = self.themes.background_dim.clamp(0.0, 1.0);
-                let mut under = stack![picture];
-                if dim > 0.0 {
-                    under = under.push(
-                        container(Space::new())
-                            .width(Length::Fill)
-                            .height(Length::Fill)
-                            .style(move |_| {
-                                crate::style::fill(iced::Color::from_rgba(0.0, 0.0, 0.0, dim))
-                            }),
-                    );
-                }
-                stack![under, base]
+                // The dim is part of the grade now, so no flat black
+                // rectangle covers the picture.
+                stack![picture, base]
                     .width(Length::Fill)
                     .height(Length::Fill)
                     .into()
@@ -404,6 +406,22 @@ impl App {
         }
         if let Some(reveal) = self.reveal_view() {
             layers = layers.push(reveal);
+        }
+        // A CSS theme's root/body animation: a quiet moving wash over the
+        // window. Like the CRT layer it takes no pointer events.
+        if self.shell.focused
+            && !self.themes.low_power
+            && self.themes.motion() == crate::themes::Motion::Full
+            && self.themes.has_animations()
+        {
+            layers = layers.push(
+                iced::widget::Canvas::new(crate::css_animation::Ground {
+                    animations: self.themes.animations().to_vec(),
+                    started: self.css_clock,
+                })
+                .width(Length::Fill)
+                .height(Length::Fill),
+            );
         }
         // ReCord's CRT layer over the whole window. Its canvas takes no
         // pointer events, so everything under it behaves as if it weren't

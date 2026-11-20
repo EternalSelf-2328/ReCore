@@ -435,11 +435,42 @@ impl Themes {
         }
     }
 
+    /// A CSS theme's surface opacity, when it keeps a background picture
+    /// behind the panels. Both Ambxst and ReCord name this in their files.
+    fn paint_css(&self, css: &ThemeFile, shown: &mut Theme) {
+        if self.background_picture.is_none() || css.look.background.is_none() {
+            return;
+        }
+        let opacity = css.look.panel_opacity.unwrap_or(1.0).clamp(0.0, 1.0);
+        if opacity >= 1.0 {
+            return;
+        }
+        for colour in [
+            &mut shown.rail,
+            &mut shown.sidebar,
+            &mut shown.panel,
+            &mut shown.chat,
+            &mut shown.stage,
+            &mut shown.raised,
+            &mut shown.field,
+            &mut shown.sunken,
+            &mut shown.hover,
+            &mut shown.active,
+            &mut shown.row_hover,
+            &mut shown.button_default,
+            &mut shown.button_default_hover,
+        ] {
+            colour.a *= opacity;
+        }
+    }
+
     /// `id`'s theme, if it's one ReCore has, the person made, or a CSS theme
     /// in one of the folders.
     pub fn find(&self, id: &str) -> Option<Theme> {
         if let Some(css) = self.css.iter().find(|css| css.id == id) {
-            return Some(from_css(css));
+            let mut shown = from_css(css);
+            self.paint_css(css, &mut shown);
+            return Some(shown.worked_out());
         }
         palette::lookup(id, &self.custom).map(|(id, found)| {
             let found = match (id, self.accent) {
@@ -517,6 +548,7 @@ impl Themes {
     pub fn set_background_dim(&mut self, root: &Path, percent: u8) {
         self.recore.background_dim = f32::from(percent.min(100)) / 100.0;
         layout::store(root, "recore_background_dim", percent.min(100));
+        self.refresh_background_handle();
     }
 
     pub fn set_panel_opacity(&mut self, root: &Path, percent: u8) {
@@ -641,7 +673,12 @@ impl Themes {
                 Some(recore_css::Image::Url(url)) => {
                     remote_picture(url, BACKGROUND_WIDTH, BACKGROUND_HEIGHT)
                 }
-                _ => None,
+                Some(recore_css::Image::Gradient(gradient)) => Some(gradient_picture(
+                    gradient,
+                    BACKGROUND_WIDTH,
+                    BACKGROUND_HEIGHT,
+                )),
+                None => None,
             };
             (dim, background)
         };
@@ -656,21 +693,48 @@ impl Themes {
         self.refresh_background_handle();
     }
 
-    /// The grade the background is drawn with.
-    pub fn background_grade(&self) -> Grade {
+    /// The grade the background is drawn with. The dim maps the picture to
+    /// the palette the window is showing, so the panels and the ground agree
+    /// instead of a grey sheet covering the picture.
+    pub fn background_grade(&self, theme: &Theme) -> Grade {
         Grade::new(
             self.recore.background_filter,
             self.recore.background_brightness,
         )
+        .with_palette(background_palette(theme), self.background_dim)
     }
 
     /// Makes the still background from the source picture and its grade.
     fn refresh_background_handle(&mut self) {
+        let theme = self.shown();
         self.background = self.background_picture.as_ref().map(|picture| {
             let mut rgba = picture.rgba.to_vec();
-            background::apply(&mut rgba, picture.width, self.background_grade());
+            background::apply(&mut rgba, picture.width, self.background_grade(&theme));
             iced::widget::image::Handle::from_rgba(picture.width, picture.height, rgba)
         });
+    }
+
+    /// Whether the chosen CSS theme has a root or body animation ReCore can
+    /// paint. The caller then keeps a clock running for it.
+    pub fn has_animations(&self) -> bool {
+        self.chosen_css()
+            .is_some_and(|theme| !theme.look.animations.is_empty())
+    }
+
+    /// The chosen CSS theme's ground animations, in the order the file
+    /// declares them. The canvas owns the clock and paints them without
+    /// rebuilding the window for every step.
+    pub fn animations(&self) -> &[recore_css::Animation] {
+        self.chosen_css()
+            .map(|theme| theme.look.animations.as_slice())
+            .unwrap_or(&[])
+    }
+
+    /// How the chosen CSS theme asks its background to fill the window.
+    pub fn background_fit(&self) -> recore_css::BackgroundFit {
+        self.chosen_css()
+            .map(|theme| theme.look.background_fit)
+            .unwrap_or_default()
     }
 
     pub fn set_background_filter(&mut self, root: &Path, filter: Filter) {
@@ -742,6 +806,47 @@ pub fn prepare_fonts(root: &Path) {
 /// enough that a GIF's frames and a video's RGBA buffer stay reasonable.
 const BACKGROUND_WIDTH: u32 = 1280;
 const BACKGROUND_HEIGHT: u32 = 720;
+
+/// Paints a CSS gradient into a still picture at the background size. A
+/// theme's animated gradients become their first frame; the CSS animation
+/// layer carries the movement.
+fn gradient_picture(
+    gradient: &recore_css::Gradient,
+    width: u32,
+    height: u32,
+) -> recore_core::chat::Picture {
+    use recore_css::GradientKind;
+    let mut rgba = Vec::with_capacity((width * height * 4) as usize);
+    let (width_f, height_f) = (width.max(1) as f32, height.max(1) as f32);
+    let stops = gradient.resolved();
+    for y in 0..height {
+        for x in 0..width {
+            let nx = x as f32 / width_f;
+            let ny = y as f32 / height_f;
+            let t = match gradient.kind {
+                GradientKind::Linear(degrees) => {
+                    let radians = degrees.to_radians();
+                    ((nx - 0.5) * radians.sin() + (ny - 0.5) * -radians.cos() + 0.5).clamp(0.0, 1.0)
+                }
+                GradientKind::Radial => {
+                    (((nx - 0.5).powi(2) + (ny - 0.5).powi(2)).sqrt() / 0.707).clamp(0.0, 1.0)
+                }
+                GradientKind::Conic => {
+                    let angle = (ny - 0.5).atan2(nx - 0.5) + std::f32::consts::PI;
+                    (angle / std::f32::consts::TAU).fract()
+                }
+            };
+            let colour = recore_css::Gradient::sample(&stops, t);
+            rgba.extend_from_slice(&[colour.r, colour.g, colour.b, colour.a]);
+        }
+    }
+    recore_core::chat::Picture {
+        width,
+        height,
+        rgba: recore_core::chat::Pixels::new(width, height, rgba),
+        animation: None,
+    }
+}
 
 /// Loads a background picture from a file. GIF, APNG, WebP and video files
 /// keep their animation, which the window's picture players step.
@@ -1057,18 +1162,27 @@ fn theme_folders(root: &Path) -> Vec<PathBuf> {
     let _ = std::fs::create_dir_all(&own);
     let mut folders = Vec::new();
     let mut seen = BTreeSet::new();
-    let beside_the_binary = std::env::current_exe()
+    // Themes the packages carry. Windows keeps them beside recore.exe, the
+    // AppImage and a distribution install keep them in share/recore, and a
+    // macOS bundle keeps them in Contents/Resources. The first folder is
+    // the data folder's, so a person's own theme wins over a bundled one.
+    let mut bundled = Vec::new();
+    if let Some(binary) = std::env::current_exe()
         .ok()
-        .and_then(|binary| binary.parent().map(|folder| folder.join("themes")));
-    // Running from the repository finds the bundled ReCord theme too; a
-    // released binary doesn't take themes from whatever folder it was
-    // started in.
+        .and_then(|binary| binary.parent().map(Path::to_path_buf))
+    {
+        bundled.push(binary.join("themes"));
+        bundled.push(binary.join("../share/recore/themes"));
+        bundled.push(binary.join("../Resources/themes"));
+    }
+    // Running from the repository finds the bundled themes too; a released
+    // binary doesn't take themes from whatever folder it was started in.
     let here = PathBuf::from("themes");
     let here = cfg!(debug_assertions)
         .then_some(here)
         .filter(|folder| folder.is_dir());
     for folder in std::iter::once(own)
-        .chain(beside_the_binary)
+        .chain(bundled)
         .chain(here)
         .chain(recore_css::theme_folders())
     {
@@ -1136,7 +1250,8 @@ fn apply_kit_native(theme: &mut Theme, native: &NativeStyle) {
         };
     }
     set!(
-        rail, sidebar, panel, chat, raised, field, text, secondary, muted, hover, row_hover,
+        rail, sidebar, panel, chat, raised, field, text, secondary, muted, hover, row_hover, line,
+        accent,
     );
 }
 
@@ -1150,7 +1265,8 @@ fn apply_core_native(theme: &mut palette::Theme, native: &NativeStyle) {
         };
     }
     set!(
-        rail, sidebar, panel, chat, raised, field, text, secondary, muted, hover, row_hover,
+        rail, sidebar, panel, chat, raised, field, text, secondary, muted, hover, row_hover, line,
+        accent,
     );
 }
 
@@ -1162,6 +1278,30 @@ pub fn color(colour: Colour) -> Color {
         colour.blue(),
         f32::from(colour.alpha()) / 255.0,
     )
+}
+
+/// The colours Ambxst's wallpaper shader would see: the window's grounds,
+/// inks and signals. Twelve are enough for the palette dim's weighted
+/// average, and all are colours the window already shows.
+fn background_palette(theme: &Theme) -> [[u8; 3]; 12] {
+    let rgb = |colour: Color| {
+        let [red, green, blue, _] = colour.into_rgba8();
+        [red, green, blue]
+    };
+    [
+        rgb(theme.chat),
+        rgb(theme.rail),
+        rgb(theme.sidebar),
+        rgb(theme.raised),
+        rgb(theme.field),
+        rgb(theme.sunken),
+        rgb(theme.line),
+        rgb(theme.text),
+        rgb(theme.secondary),
+        rgb(theme.accent),
+        rgb(theme.link),
+        rgb(theme.danger),
+    ]
 }
 
 /// A CSS colour as iced's.
