@@ -579,6 +579,19 @@ button {
     line-height: 1.55;
 }
 
+.feature-source {
+    margin-top: 10px !important;
+    font-family: var(--rl-font-mono);
+    font-size: 10px !important;
+    letter-spacing: 0.06em;
+}
+
+.feature-source a {
+    color: var(--rl-signal);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
 .install {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(300px, 0.9fr);

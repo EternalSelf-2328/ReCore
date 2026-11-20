@@ -67,6 +67,28 @@ sampled each app's whole process tree once a second.
 
 </details>
 
+## Feature conditions
+
+The LIGHT card on the site names servers, DMs, threads, forums, friends,
+voice, screen sharing and GIFs. Each path has a headless UI/fake-Discord test,
+run together by `scripts/test-features`:
+
+| Condition | Test path |
+| --- | --- |
+| Servers, DMs, folders, channel switching | `crates/recore-iced/src/tests/navigation.rs`, `server.rs` |
+| Threads and forum posts | `crates/recore-iced/src/tests/threads.rs` |
+| Friends, people and profiles | `crates/recore-iced/src/tests/people.rs`, `cards.rs` |
+| Voice calls and call UI | `crates/recore-iced/src/tests/calls.rs`; [voice](../voice.md) |
+| Screen sharing | `crates/recore-iced/src/tests/calls.rs`; the measured 113 MB row above |
+| GIFs, picker and message pictures | `crates/recore-iced/src/tests/pickers.rs`, `media.rs`; `testing/fake_discord.ts`'s GIF endpoints |
+
+The fixture behind them is `testing/fake_discord.ts`; its environments and
+seeding options are in `testing/fake_discord_env.ts`, and it supplies servers,
+DMs, threads, forums, friends and GIFs deterministically. Only the idle,
+image-heavy, call and screen-sharing rows above make memory claims. A
+condition without a measured memory number is covered functionally, not
+assigned an invented number.
+
 ## Targets
 
 | Scenario | Ceiling |

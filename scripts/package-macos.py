@@ -64,17 +64,18 @@ def make_icon(resources):
     with tempfile.TemporaryDirectory(prefix="recore-iconset-") as temporary:
         iconset = Path(temporary) / "ReCore.iconset"
         iconset.mkdir()
-        sizes = [16, 32, 64, 128, 256, 512, 1024]
-        for side in sizes:
-            png = Path(temporary) / f"icon-{side}.png"
-            subprocess.run(
-                ["rsvg-convert", "-w", str(side), "-h", str(side), str(svg), "-o", str(png)],
-                check=True,
-                timeout=30,
-            )
-            shutil.copy2(png, iconset / f"icon_{side}x{side}.png")
-            if side <= 512:
-                shutil.copy2(png, iconset / f"icon_{side}x{side}@2x.png")
+        # iconutil's exact names: each size and its @2x companion, 1024 px
+        # for the largest @2x. A mismatched size makes iconutil refuse the set.
+        for side in (16, 32, 128, 256, 512):
+            for scale, suffix in ((1, ""), (2, "@2x")):
+                pixels = side * scale
+                png = Path(temporary) / f"icon-{pixels}.png"
+                subprocess.run(
+                    ["rsvg-convert", "-w", str(pixels), "-h", str(pixels), str(svg), "-o", str(png)],
+                    check=True,
+                    timeout=30,
+                )
+                shutil.copy2(png, iconset / f"icon_{side}x{side}{suffix}.png")
         subprocess.run(
             ["iconutil", "-c", "icns", str(iconset), "-o", str(resources / "ReCore.icns")],
             check=True,
@@ -111,8 +112,9 @@ def main():
         raise SystemExit(f"{binary} names {Path.home()}; build it with scripts/build-macos")
     if platform.system() == "Darwin":
         architectures = subprocess.check_output(["lipo", "-archs", str(binary)], text=True, timeout=30).strip()
-        if arch not in architectures.split():
-            raise SystemExit(f"{binary} is {architectures}, not {arch}")
+        expected = {"arm64": "arm64", "x64": "x86_64"}[arch]
+        if expected not in architectures.split():
+            raise SystemExit(f"{binary} is {architectures}, not {expected}")
     metadata = json.loads(
         subprocess.check_output(
             [

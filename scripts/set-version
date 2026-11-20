@@ -15,12 +15,45 @@ if ! [[ $version =~ ^$number\.$number\.$number(-$part(\.$part)*)?$ ]]; then
   echo "scripts/set-version: $version isn't a SemVer version" >&2
   exit 2
 fi
-# The package's version is the manifest's first; the lockfile's follows its name.
-sed -i "0,/^version = /s/^version = .*/version = \"$version\"/" Cargo.toml
-sed -i "/^name = \"recore\"$/{n;s/^version = .*/version = \"$version\"/}" Cargo.lock
+# The package's version is the manifest's first; the lockfile's follows its
+# name. Python keeps this portable: BSD sed's -i takes a backup suffix and
+# reads the file name as its script on macOS, which broke the macOS job.
+python3 - "$version" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+version = sys.argv[1]
+manifest = Path("Cargo.toml")
+text = manifest.read_text(encoding="utf-8")
+text, count = re.subn(r'(?m)^version = "[^"]+"', f'version = "{version}"', text, count=1)
+if count != 1:
+    raise SystemExit("scripts/set-version: Cargo.toml has no package version")
+manifest.write_text(text, encoding="utf-8")
+
+lock = Path("Cargo.lock")
+text = lock.read_text(encoding="utf-8")
+text, count = re.subn(
+    r'(?m)(name = "recore"\nversion = ")[^"]+"',
+    rf'\g<1>{version}"',
+    text,
+    count=1,
+)
+if count != 1:
+    raise SystemExit("scripts/set-version: Cargo.lock has no recore package")
+lock.write_text(text, encoding="utf-8")
+
 # A pkgver can't hold a prerelease's "-", and nightlies don't build from a tag.
+if "-" not in version:
+    pkgbuild = Path("packaging/arch/PKGBUILD")
+    text = pkgbuild.read_text(encoding="utf-8")
+    text, pkgver = re.subn(r'(?m)^pkgver=.*$', f"pkgver={version}", text, count=1)
+    text, pkgrel = re.subn(r'(?m)^pkgrel=.*$', "pkgrel=1", text, count=1)
+    if (pkgver, pkgrel) != (1, 1):
+        raise SystemExit("scripts/set-version: packaging/arch/PKGBUILD has no pkgver/pkgrel")
+    pkgbuild.write_text(text, encoding="utf-8")
+PY
 if [[ $version != *-* ]]; then
-  sed -i -e "s/^pkgver=.*/pkgver=$version/" -e "s/^pkgrel=.*/pkgrel=1/" packaging/arch/PKGBUILD
   metainfo=packaging/linux/io.github.leriart.ReCore.metainfo.xml
   python3 - "$metainfo" "$version" <<'PY'
 import datetime

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Runs the UI and fake-Discord tests behind the feature claims on the site:
+# servers, DMs, threads, forums, friends, voice, screen sharing and GIFs.
+# These are headless iced tests; the memory measurements are separate.
+#
+# This is deliberately a list of test modules rather than one broad `cargo
+# test`: a failure names the condition that broke.
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+cargo test -p recore-iced --lib --locked navigation::
+cargo test -p recore-iced --lib --locked people::
+cargo test -p recore-iced --lib --locked threads::
+cargo test -p recore-iced --lib --locked calls::
+cargo test -p recore-iced --lib --locked pickers::
+cargo test -p recore-iced --lib --locked media::
+cargo test -p recore-iced --lib --locked cards::

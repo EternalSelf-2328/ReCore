@@ -38,7 +38,7 @@ First run links your account by scanning a QR code with Discord's phone app. ReC
 
 ReCore is [Yapfast](https://github.com/yapfast/yapfast) with the [**ReCord**](https://leriart.github.io/ReCord/) theme as its own look and a CSS theme interpreter on top. It is not a browser wrapper: every message, menu, dialog and call tile is drawn natively.
 
-- **Native by construction.** Rust and iced; no Chromium, no WebView, no background browser process. Roughly 30 MB of RAM when idle.
+- **Native by construction.** Rust and iced; no Chromium, no WebView, no background browser process. 30 MB of RAM idle, 41 MB with pictures and GIFs in view, 44 MB in a call and 113 MB while sharing a 1080p screen; [the measurements](docs/measurements/README.md) give the method and conditions.
 - **ReCord, built in.** Signal orange on warm charcoal, Pixel Operator and Pixel Operator Mono, square panels, scanned avatars, scanlines, grain, a vignette, the rolling scan beam and ReCord's stepped motion.
 - **ReCore Paper.** The same terminal language in daylight, with a warm paper ground and dark ink.
 - **Themes that travel.** Vencord, Vesktop, Equicord, BetterDiscord, Legcord, Dorion, GoofCord, Replugged and ReCord `.theme.css` files become native colours, type, shape, backgrounds and effects.
