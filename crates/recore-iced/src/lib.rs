@@ -103,6 +103,8 @@ mod rail;
 mod reactions;
 use recore_iced_kit::reorder;
 mod search;
+mod search_filters;
+mod search_popout;
 mod server_dialogs;
 mod server_settings;
 mod settings;

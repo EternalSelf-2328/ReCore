@@ -125,8 +125,11 @@ def tail(path, lines=20):
 
 
 def build(profile, recore=True, tray=False, record=False):
-    targets = [*(['--bin', 'recore'] if recore else []), *(['--example', 'tray_host'] if tray else []),
-               *(['--example', 'record_host'] if record else [])]
+    # The hosts are a package of their own (testing/hosts), so this builds
+    # the same recore as a plain cargo build and scripts/check do.
+    hosts = [*(['--bin', 'tray_host'] if tray else []), *(['--bin', 'record_host'] if record else [])]
+    targets = [*(['-p', 'recore', '--bin', 'recore'] if recore else []),
+               *(['-p', 'recore-test-hosts', *hosts] if hosts else [])]
     command = ['nix', 'develop', 'path:./nix', '--command', 'cargo', 'build', '--locked', '--profile', profile,
                *targets]
     print('Building:', shlex.join(command[4:]), flush=True)
@@ -137,8 +140,8 @@ def build(profile, recore=True, tray=False, record=False):
         raise SystemExit(f'The build failed; see {log.relative_to(ROOT)}')
     # Replace, never overwrite, so a running copy keeps its file.
     built = [('recore', f'target/{profile}/recore')] if recore else []
-    built += [('tray-host', f'target/{profile}/examples/tray_host')] if tray else []
-    built += [('record-host', f'target/{profile}/examples/record_host')] if record else []
+    built += [('tray-host', f'target/{profile}/tray_host')] if tray else []
+    built += [('record-host', f'target/{profile}/record_host')] if record else []
     for name, path in built:
         copy = STATE / f'{name}.new'
         shutil.copy2(ROOT / path, copy)

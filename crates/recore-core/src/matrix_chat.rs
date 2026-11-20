@@ -2054,16 +2054,20 @@ async fn publish_timeline(
                         author: display_name(&embedded.sender, &embedded.sender_profile),
                         avatar: None,
                         body: summary(&embedded.content),
+                        emoji: Vec::new(),
                         item,
                         color: None,
+                        tag: None,
                     }
                 }
                 TimelineDetails::Error(_) => Reply {
                     author: String::new(),
                     avatar: None,
                     body: "The original message could not be loaded.".into(),
+                    emoji: Vec::new(),
                     item,
                     color: None,
+                    tag: None,
                 },
                 _ => {
                     if open.requested.insert(reply.event_id.to_string()) {
@@ -2078,8 +2082,10 @@ async fn publish_timeline(
                         author: String::new(),
                         avatar: None,
                         body: "Loading the original message...".into(),
+                        emoji: Vec::new(),
                         item,
                         color: None,
+                        tag: None,
                     }
                 }
             });
