@@ -590,6 +590,9 @@ const ES = {
     "Logged. Moving to the next node.": "Registrado. Me muevo al siguiente nodo.",
     "Received. Keep the channel open.": "Recibido. Mant\u00e9n el canal abierto.",
     "Acknowledged. No trace on the relay.": "Confirmado. Sin rastro en el rel\u00e9.",
+    "ACK 2": "REC 2",
+    "MIC": "MIC",
+    "CFG": "CFG",
 };
 
 const clean = text => text.replace(/\s+/g, " ").trim();
