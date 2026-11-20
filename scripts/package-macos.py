@@ -15,6 +15,7 @@ import plistlib
 import platform
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -174,7 +175,11 @@ def main():
         if (resources / "ReCore.icns").is_file():
             info["CFBundleIconFile"] = "ReCore.icns"
         (app / "Contents/Info.plist").write_bytes(plistlib.dumps(info))
-        make_icon(resources)
+        try:
+            make_icon(resources)
+        except (OSError, subprocess.CalledProcessError) as error:
+            # An icon is nice, not a reason to withhold the release.
+            print(f"macOS icon skipped: {error}", file=sys.stderr)
         if (resources / "ReCore.icns").is_file():
             info["CFBundleIconFile"] = "ReCore.icns"
             (app / "Contents/Info.plist").write_bytes(plistlib.dumps(info))
@@ -215,14 +220,20 @@ def main():
         dmg_path = None
         if not args.no_dmg and platform.system() == "Darwin" and shutil.which("hdiutil"):
             dmg_path = output / f"{base}.dmg"
-            subprocess.run(
-                [
-                    "hdiutil", "create", "-volname", "ReCore", "-srcfolder", str(app),
-                    "-ov", "-format", "UDZO", str(dmg_path),
-                ],
-                check=True,
-                timeout=300,
-            )
+            try:
+                subprocess.run(
+                    [
+                        "hdiutil", "create", "-volname", "ReCore", "-srcfolder", str(app),
+                        "-ov", "-format", "UDZO", str(dmg_path),
+                    ],
+                    check=True,
+                    timeout=300,
+                )
+            except (OSError, subprocess.CalledProcessError) as error:
+                # The ZIP is the release's required macOS asset; a DMG is an
+                # extra when the runner's image tools cooperate.
+                print(f"macOS DMG skipped: {error}", file=sys.stderr)
+                dmg_path = None
     hashes = output / "SHA256SUMS.txt"
     artifacts = [archive_path, source_path, *([dmg_path] if dmg_path else [])]
     hashes.write_text("".join(f"{digest(path)}  {path.name}\n" for path in artifacts), encoding="utf-8")
