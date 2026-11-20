@@ -150,10 +150,12 @@ fn build(root: &Path, include: &Path, target: &Target, per_depth: bool) -> cc::B
 fn assemble(root: &Path, out: &Path, target: &Target) -> Vec<PathBuf> {
     let nasm = env::var_os("NASM").unwrap_or_else(|| "nasm".into());
     let x86 = root.join("common/x86");
-    let format = if target.os == "windows" {
-        "win64"
-    } else {
-        "elf64"
+    // NASM's object format belongs to the target, not to the host: an ELF
+    // object in a Mach-O archive links as "not a mach-o file".
+    let format = match target.os.as_str() {
+        "windows" => "win64",
+        "macos" => "macho64",
+        _ => "elf64",
     };
     let files =
         std::iter::once(("cpu-a.asm", false)).chain(X86_ASM.iter().map(|file| (*file, true)));
@@ -207,6 +209,7 @@ impl Target {
     /// x264 would round its large buffers up to 2 MiB pages for them.
     fn config_h(&self) -> String {
         let linux = self.os == "linux";
+        let macos = self.os == "macos";
         let windows = self.os == "windows";
         let gnu = !self.msvc;
         let mut defines = vec![
@@ -215,6 +218,7 @@ impl Target {
             ("HAVE_MMX", u8::from(self.x86_64)),
             ("ARCH_X86_64", u8::from(self.x86_64)),
             ("SYS_LINUX", u8::from(linux)),
+            ("SYS_MACOSX", u8::from(macos)),
             ("SYS_WINDOWS", u8::from(windows)),
             ("HAVE_POSIXTHREAD", u8::from(!windows)),
             ("HAVE_WIN32THREAD", u8::from(windows)),

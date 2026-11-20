@@ -356,7 +356,9 @@ with nix-direnv, which caches the shell.
 root. LiveKit's prebuilt `webrtc-mac-arm64-release.zip` or
 `webrtc-mac-x64-release.zip` is downloaded by `webrtc-sys`; FFmpeg, libvpx,
 dav1d, x264, thorvg and the Rust dependencies compile with Apple's clang.
-`RECORE_TARGET=x86_64-apple-darwin` selects the Intel build on an Apple
+On the Intel target, x264's x86-64 assembly is assembled with NASM's
+`macho64` format; NASM must be installed, as the workflow's Homebrew setup
+does. `RECORE_TARGET=x86_64-apple-darwin` selects the Intel build on an Apple
 Silicon machine. The packaged app is ad-hoc signed; see
 [packaging](packaging.md#macos-app).
 
