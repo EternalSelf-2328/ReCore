@@ -156,6 +156,7 @@ jobs:
           echo "LIBCLANG_PATH=$(brew --prefix llvm)/lib" >> "$GITHUB_ENV"
           echo "PROTOC=$(brew --prefix protobuf)/bin/protoc" >> "$GITHUB_ENV"
           echo "NASM=$(brew --prefix nasm)/bin/nasm" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG=$(brew --prefix pkgconf)/bin/pkgconf" >> "$GITHUB_ENV"
       - run: scripts/set-version "${{ needs.version.outputs.version }}"
       - name: Build the app, ZIP and DMG
         env:
