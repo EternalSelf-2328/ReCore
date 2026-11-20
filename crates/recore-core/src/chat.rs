@@ -2742,6 +2742,11 @@ pub struct CommandRun {
 /// Commands only the linked Discord account carries out.
 #[derive(Clone)]
 pub enum DiscordCommand {
+    /// Local settings for preparing outgoing Discord attachments.
+    AttachmentPrivacy {
+        strip_image_metadata: bool,
+        anonymize_names: bool,
+    },
     /// Fetches the Activity panel's feed; [`Event::ActivityFeed`] follows,
     /// and [`Event::ActivityFeedDue`] when it's time to ask again.
     ActivityFeed,
@@ -5257,6 +5262,8 @@ pub async fn run(
         Ok(discord) => (discord, None),
         Err(error) => (None, Some(discord_failed(&error))),
     };
+    #[cfg(feature = "discord")]
+    let mut attachment_privacy = recore_discord::attachment_privacy::AttachmentPrivacy::default();
     // Voice reaches Discord through this, so linking and unlinking reach it too.
     #[cfg(feature = "discord")]
     let linked =
@@ -5355,6 +5362,19 @@ pub async fn run(
                 }
                 #[cfg(feature = "discord")]
                 Route::Discord => match command {
+                    Command::Discord(DiscordCommand::AttachmentPrivacy {
+                        strip_image_metadata,
+                        anonymize_names,
+                    }) => {
+                        attachment_privacy =
+                            recore_discord::attachment_privacy::AttachmentPrivacy {
+                                strip_image_metadata,
+                                anonymize_names,
+                            };
+                        if let Some(discord) = &discord {
+                            discord.service().set_attachment_privacy(attachment_privacy);
+                        }
+                    }
                     Command::Discord(DiscordCommand::Start) => {
                         if discord.is_none() {
                             // Linking saved the login just before.
@@ -5363,6 +5383,7 @@ pub async fn run(
                             });
                             match started {
                                 Ok(started) => {
+                                    started.service().set_attachment_privacy(attachment_privacy);
                                     discord = Some(started);
                                     discord_error = None;
                                 }

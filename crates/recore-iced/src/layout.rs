@@ -209,6 +209,8 @@ pub struct Prefs {
     pub reply_ping: Option<bool>,
     pub strip_tracking: Option<bool>,
     pub share_typing: Option<bool>,
+    pub strip_image_metadata: Option<bool>,
+    pub anonymize_attachment_names: Option<bool>,
     pub animate: Animate,
     /// The rail's folders show a plain folder instead of their servers'
     /// pictures, and the GIF picker opens in Favorites.

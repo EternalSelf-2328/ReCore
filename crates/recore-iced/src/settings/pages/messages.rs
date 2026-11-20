@@ -248,6 +248,18 @@ impl<'a> Page<'a> {
                 prefs.strip_tracking.unwrap_or(true),
                 Pref::StripTracking,
             ),
+            self.flip(
+                "Remove metadata from image attachments",
+                "Discord uploads of JPEG, PNG and WebP lose location, camera and other optional metadata. Colors and orientation are kept.",
+                prefs.strip_image_metadata.unwrap_or(false),
+                Pref::StripImageMetadata,
+            ),
+            self.flip(
+                "Anonymize attachment names",
+                "Discord receives a random name for each attachment. File extensions and spoiler markers are kept.",
+                prefs.anonymize_attachment_names.unwrap_or(false),
+                Pref::AnonymizeAttachmentNames,
+            ),
         ])
     }
 
