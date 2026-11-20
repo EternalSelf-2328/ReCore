@@ -1721,6 +1721,8 @@ impl OpenChannel {
                         Shown::Message => Placement::Message,
                         Shown::Embed(index) | Shown::Poster(index) => Placement::Embed(index),
                         Shown::Thumbnail(index) => Placement::Thumbnail(index),
+                        Shown::AuthorIcon(index) => Placement::AuthorIcon(index),
+                        Shown::FooterIcon(index) => Placement::FooterIcon(index),
                         Shown::Sticker => Placement::Sticker,
                         Shown::Component(slot) => Placement::Component(slot),
                     },
@@ -1845,7 +1847,9 @@ impl OpenChannel {
                 .map(|reaction| Reaction {
                     key: reaction.key.clone(),
                     count: reaction.count,
+                    burst: reaction.burst,
                     mine: reaction.me,
+                    mine_burst: reaction.me_burst,
                 })
                 .collect(),
             attachments,
@@ -2038,9 +2042,12 @@ fn change(messages: &mut BTreeMap<u64, Message>, channel: &str, event: &Live) ->
             emoji,
             me,
             added,
+            burst,
         } if id == channel => {
             let order = message.parse().unwrap_or_default();
-            messages.get_mut(&order)?.react(key, emoji, *me, *added);
+            messages
+                .get_mut(&order)?
+                .react(key, emoji, *me, *added, *burst);
             Some(order)
         }
         Live::ReactionsCleared {

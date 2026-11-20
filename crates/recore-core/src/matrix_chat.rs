@@ -2096,7 +2096,9 @@ async fn publish_timeline(
             .map(|(key, senders)| Reaction {
                 key: key.clone(),
                 count: senders.len(),
+                burst: 0,
                 mine: own.as_ref().is_some_and(|own| senders.contains_key(own)),
+                mine_burst: false,
             })
             .collect();
         message.delivery = match event.send_state() {
@@ -3081,7 +3083,9 @@ mod tests {
                             == vec![Reaction {
                                 key: "👍".into(),
                                 count: 1,
+                                burst: 0,
                                 mine: true,
+                                mine_burst: false,
                             }]
                 })
             })

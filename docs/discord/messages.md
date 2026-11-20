@@ -227,7 +227,8 @@ ReCore is back, rather than showing an error.
   server are asked for over the gateway first, so the names are server
   nicknames, as Discord's client shows them. A moderator removes someone's
   reaction with `DELETE …/reactions/{emoji}/0/{user}?location=Message&burst=false`.
-  Super reactions aren't listed apart yet.
+  Super reactions count with the rest, and their chip carries a star in
+  the accent; who super reacted isn't listed apart yet.
 - Notices take a message's place as Discord's do, each with its icon: joins,
   pins, group additions and removals, channel name and icon changes, boosts
   and the levels they reach, channel follows, Discovery warnings, Stage
@@ -256,7 +257,8 @@ ReCore is back, rather than showing an error.
   message: Discord's servers read the linked page's Open Graph tags, often a
   moment after sending, and the preview arrives in a message update. A card
   shows the site, author, title, description, fields and footer behind a bar
-  of its colour, with its picture large for articles and videos and small
+  of its colour, the author's name opening its link and their 20px icon
+  beside it, the footer's icon before its text, with its picture large for articles and videos and small
   beside the text otherwise. In the iced client the card on a dark theme is a
   darker ground (#242429) with a 1px line (#313137) round it that its 4px bar
   covers at the left, the bar #3a3a40 when the embed gives no colour; the

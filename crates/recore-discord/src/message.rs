@@ -522,6 +522,10 @@ pub enum Shown {
     Thumbnail(usize),
     /// Large, as the poster of the video embed at this index.
     Poster(usize),
+    /// Small, beside the author of the embed at this index.
+    AuthorIcon(usize),
+    /// Small, before the footer of the embed at this index.
+    FooterIcon(usize),
     /// On its own, without a frame: a sticker.
     Sticker,
     /// In the component row with this slot: [`crate::components::Row::Media`]
@@ -536,7 +540,11 @@ pub struct Reaction {
     /// What Discord's API takes: the emoji itself, or `name:id`.
     pub emoji: String,
     pub count: usize,
+    /// How many of `count` are super reactions.
+    pub burst: usize,
     pub me: bool,
+    /// Whether this account's is a super reaction.
+    pub me_burst: bool,
 }
 
 impl Message {
@@ -589,7 +597,9 @@ impl Message {
     /// account's reaction counts once: adding it again, or removing it when
     /// it isn't there, changes nothing, as clicks faster than the gateway
     /// can bring such events.
-    pub fn react(&mut self, key: &str, emoji: &str, me: bool, added: bool) {
+    /// Adds or removes a reaction, `burst` for a super reaction: Discord
+    /// counts the two apart while showing one total.
+    pub fn react(&mut self, key: &str, emoji: &str, me: bool, added: bool, burst: bool) {
         match self
             .reactions
             .iter()
@@ -597,15 +607,30 @@ impl Message {
         {
             Some(index) => {
                 let reaction = &mut self.reactions[index];
-                if me && reaction.me == added {
+                let mine = if burst {
+                    reaction.me_burst
+                } else {
+                    reaction.me
+                };
+                if me && mine == added {
                     return;
                 }
                 if added {
                     reaction.count += 1;
-                    reaction.me |= me;
+                    if burst {
+                        reaction.burst += 1;
+                        reaction.me_burst |= me;
+                    } else {
+                        reaction.me |= me;
+                    }
                 } else {
                     reaction.count = reaction.count.saturating_sub(1);
-                    reaction.me &= !me;
+                    if burst {
+                        reaction.burst = reaction.burst.saturating_sub(1);
+                        reaction.me_burst &= !me;
+                    } else {
+                        reaction.me &= !me;
+                    }
                     if reaction.count == 0 {
                         self.reactions.remove(index);
                     }
@@ -615,7 +640,9 @@ impl Message {
                 key: key.to_owned(),
                 emoji: emoji.to_owned(),
                 count: 1,
+                burst: usize::from(burst),
                 me,
+                me_burst: burst && me,
             }),
             None => {}
         }
@@ -932,7 +959,11 @@ pub fn parse(value: &Value) -> Option<Message> {
                 key,
                 emoji,
                 count: reaction["count"].as_u64().unwrap_or(1) as usize,
+                burst: reaction["count_details"]["burst"]
+                    .as_u64()
+                    .unwrap_or_default() as usize,
                 me: reaction["me"].as_bool().unwrap_or(false),
+                me_burst: reaction["me_burst"].as_bool().unwrap_or(false),
             })
         })
         .collect();
@@ -2838,31 +2869,31 @@ mod tests {
         assert_eq!(message.timestamp(), 1_730_014_552);
 
         let mut message = message;
-        message.react("👍", "👍", true, false);
+        message.react("👍", "👍", true, false, false);
         assert_eq!(
             (message.reactions[0].count, message.reactions[0].me),
             (1, false)
         );
-        message.react("pog", "pog:5", false, false);
-        message.react(":pog:", "pog:5", false, false);
+        message.react("pog", "pog:5", false, false, false);
+        message.react(":pog:", "pog:5", false, false, false);
         assert_eq!(message.reactions.len(), 1);
 
         // This account's reaction counts once, however often the gateway
         // says it was added or removed.
-        message.react("👍", "👍", true, true);
-        message.react("👍", "👍", true, true);
+        message.react("👍", "👍", true, true, false);
+        message.react("👍", "👍", true, true, false);
         assert_eq!(
             (message.reactions[0].count, message.reactions[0].me),
             (2, true)
         );
-        message.react("👍", "👍", true, false);
-        message.react("👍", "👍", true, false);
+        message.react("👍", "👍", true, false, false);
+        message.react("👍", "👍", true, false, false);
         assert_eq!(
             (message.reactions[0].count, message.reactions[0].me),
             (1, false)
         );
         // Others' still count each time.
-        message.react("👍", "👍", false, true);
+        message.react("👍", "👍", false, true, false);
         assert_eq!(message.reactions[0].count, 2);
 
         // A boost is a notice now, not a message it drops.
@@ -2884,6 +2915,54 @@ mod tests {
             unknown.unwrap().reply,
             Some(Reply::Unknown { id: "500".into() })
         );
+    }
+
+    #[test]
+    fn counts_super_reactions_apart_and_tracks_this_accounts() {
+        let mut message = parse(&json!({
+            "id": "1", "type": 0, "channel_id": "11", "author": {"id": "1"},
+            "content": "",
+            "reactions": [{
+                "emoji": {"id": null, "name": "🔥"}, "count": 7,
+                "count_details": {"burst": 3, "normal": 4},
+                "me": true, "me_burst": true, "burst_colors": ["#ff0000"],
+            }],
+        }))
+        .unwrap();
+        let reaction = &message.reactions[0];
+        assert_eq!((reaction.count, reaction.burst), (7, 3));
+        assert!(reaction.me && reaction.me_burst);
+
+        // Adding a super reaction this account already has changes
+        // nothing; taking it back moves both counts and leaves its normal
+        // one, then adding it again restores both.
+        message.react("🔥", "🔥", true, true, true);
+        message.react("🔥", "🔥", true, true, true);
+        let reaction = &message.reactions[0];
+        assert_eq!((reaction.count, reaction.burst), (7, 3));
+        message.react("🔥", "🔥", true, false, true);
+        let reaction = &message.reactions[0];
+        assert_eq!((reaction.count, reaction.burst), (6, 2));
+        assert!(reaction.me && !reaction.me_burst);
+        message.react("🔥", "🔥", true, true, true);
+        let reaction = &message.reactions[0];
+        assert_eq!((reaction.count, reaction.burst), (7, 3));
+        assert!(reaction.me && reaction.me_burst);
+
+        // A normal one keeps its own count untouched.
+        message.react("🔥", "🔥", false, true, false);
+        assert_eq!(
+            (message.reactions[0].count, message.reactions[0].burst),
+            (8, 3)
+        );
+        // A super reaction from someone else is still a burst, not mine.
+        message.react("🎉", "🎉", false, true, true);
+        let party = message
+            .reactions
+            .iter()
+            .find(|one| one.key == "🎉")
+            .unwrap();
+        assert_eq!((party.count, party.burst, party.me_burst), (1, 1, false));
     }
 
     #[test]

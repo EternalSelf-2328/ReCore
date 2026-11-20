@@ -539,6 +539,7 @@ pub enum Live {
         emoji: String,
         me: bool,
         added: bool,
+        burst: bool,
     },
     /// Someone voted for an answer of a poll, or took their vote back.
     Vote {
@@ -3772,6 +3773,24 @@ impl Discord {
     /// client.
     pub async fn join_thread(&self, thread: &str, join: bool, location: &str) -> Result<()> {
         self.api.thread_member(thread, join, location).await
+    }
+
+    /// Closes a thread, which archives it, or opens it again, and locks or
+    /// unlocks it; the fields left out stay as they are.
+    pub async fn edit_thread(
+        &self,
+        thread: &str,
+        archived: Option<bool>,
+        locked: Option<bool>,
+    ) -> Result<()> {
+        let mut body = json!({});
+        if let Some(archived) = archived {
+            body["archived"] = json!(archived);
+        }
+        if let Some(locked) = locked {
+            body["locked"] = json!(locked);
+        }
+        self.api.edit_channel(thread, &body).await
     }
 
     /// Leaves a server this account doesn't own. Snapshots drop it once its

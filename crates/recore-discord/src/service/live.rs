@@ -33,6 +33,7 @@ pub(super) fn live_events(
             emoji,
             me: data["user_id"] == me,
             added,
+            burst: data["burst"].as_bool().unwrap_or(false),
         })
     };
     // Discord sends an answer's id as a number, but takes either.
@@ -210,6 +211,7 @@ pub(super) fn live_events(
                         emoji: emoji.clone(),
                         me: *user == me,
                         added: true,
+                        burst: false,
                     })
                 })
                 .collect()

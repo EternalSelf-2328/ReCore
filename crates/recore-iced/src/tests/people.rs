@@ -237,12 +237,16 @@ fn view_reactions_opens_from_a_messages_menu_and_escape_closes_it() {
                         Reaction {
                             key: "👍".into(),
                             count: 2,
+                            burst: 0,
                             mine: true,
+                            mine_burst: false,
                         },
                         Reaction {
                             key: "🎉".into(),
                             count: 5,
+                            burst: 0,
                             mine: false,
+                            mine_burst: false,
                         },
                     ];
                 }

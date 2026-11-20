@@ -2090,6 +2090,13 @@ pub enum Action {
         join: bool,
         location: &'static str,
     },
+    /// Close a Discord thread, which archives it, or open it again, and
+    /// lock or unlock it, by its room id.
+    EditThread {
+        room: String,
+        archived: Option<bool>,
+        locked: Option<bool>,
+    },
     /// Open the invite dialog of a Discord server, by its server id, or of
     /// a channel, by its room id, which makes a link at once; make another
     /// that lasts `max_age` seconds, 0 for good, and works `max_uses`
@@ -3777,6 +3784,11 @@ impl Application {
                 join,
                 location,
             } => self.join_thread(room, join, location),
+            Action::EditThread {
+                room,
+                archived,
+                locked,
+            } => self.edit_thread(room, archived, locked),
             Action::OpenInvite(place) => self.open_invite(place),
             Action::MakeInvite { max_age, max_uses } => self.make_invite(max_age, max_uses),
             Action::CloseInvite => {

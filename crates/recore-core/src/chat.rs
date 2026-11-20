@@ -1469,7 +1469,11 @@ pub fn wire_emoji(text: &str, usable: &[CustomEmoji]) -> String {
 pub struct Reaction {
     pub key: String,
     pub count: usize,
+    /// How many of `count` are super reactions.
+    pub burst: usize,
     pub mine: bool,
+    /// Whether this account's is a super reaction.
+    pub mine_burst: bool,
 }
 
 /// Someone who reacted to a message, as a list of them shows them.
@@ -1868,6 +1872,10 @@ pub enum Placement {
     Embed(usize),
     /// Small, beside the text of the embed at this index.
     Thumbnail(usize),
+    /// Small, beside the author of the embed at this index.
+    AuthorIcon(usize),
+    /// Small, before the footer of the embed at this index.
+    FooterIcon(usize),
     /// On its own, without a frame: a Discord sticker.
     Sticker,
     /// In the Discord component row with this slot: [`CardRow::Media`], or
@@ -1883,6 +1891,8 @@ pub struct Embed {
     /// The site, such as "YouTube".
     pub provider: String,
     pub author: String,
+    /// Where the author's name leads, when it does.
+    pub author_url: String,
     pub title: String,
     /// Where the title leads.
     pub url: String,
@@ -3077,6 +3087,13 @@ pub enum DiscordCommand {
         room: String,
         join: bool,
         location: &'static str,
+    },
+    /// Close a Discord thread, which archives it, or open it again, and
+    /// lock or unlock it; the fields left out stay as they are.
+    EditThread {
+        room: String,
+        archived: Option<bool>,
+        locked: Option<bool>,
     },
     /// Move a Discord server's channels and categories, by the server's id,
     /// as dragging them in its channel list does, locking the permissions

@@ -914,6 +914,7 @@ pub(super) fn chat_embed(
         color: embed.color,
         provider: text(&embed.provider),
         author: text(&embed.author),
+        author_url: text(&embed.author_url),
         title: text(&embed.title),
         url: text(&embed.url),
         description: embed

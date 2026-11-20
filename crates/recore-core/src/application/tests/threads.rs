@@ -120,6 +120,109 @@ fn discord_threads_open_once_listed() {
 
 #[test]
 #[cfg(feature = "discord")]
+fn a_threads_creator_closes_opens_and_locks_it_from_its_menu() {
+    use recore_discord::{
+        ready::{Channel, Server, Thread},
+        service::{Snapshot, Status},
+    };
+    let snapshot = |archived, locked| Snapshot {
+        status: Status::Online,
+        user_id: Some("1".into()),
+        servers: vec![MarkedServer::from(Server {
+            id: "10".into(),
+            name: "Test".into(),
+            threads: vec![Channel {
+                id: "30".into(),
+                name: "Plans".into(),
+                parent: Some("21".into()),
+                thread: Some(Box::new(Thread {
+                    owner: Some("1".into()),
+                    joined: true,
+                    archived,
+                    locked,
+                    ..Default::default()
+                })),
+                ..Default::default()
+            }],
+            ..Default::default()
+        })],
+        ..Default::default()
+    };
+    let mut app = connected();
+    app.apply(Event::Rooms(RoomIndex {
+        rooms: vec![ChatRoom {
+            id: "discord:10:30".into(),
+            name: "Plans".into(),
+            parent: Some("discord:10:21".into()),
+            ..preview_room("thread", "Plans", false, 3)
+        }],
+        servers: vec![],
+    }));
+    app.apply(discord_event(snapshot(false, false)));
+    let choices = app.menu_choices("discord:10:30");
+    assert!(choices.contains(&MenuChoice::CloseThread));
+    assert!(!choices.contains(&MenuChoice::LockThread), "only archived");
+    let effects = app.dispatch(Action::EditThread {
+        room: "discord:10:30".into(),
+        archived: Some(true),
+        locked: None,
+    });
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::Backend(Command::Discord(DiscordCommand::EditThread {
+            room,
+            archived: Some(true),
+            locked: None,
+        }))] if room == "discord:10:30"
+    ));
+
+    app.apply(discord_event(snapshot(true, false)));
+    let choices = app.menu_choices("discord:10:30");
+    assert!(choices.contains(&MenuChoice::OpenThread));
+    assert!(choices.contains(&MenuChoice::LockThread));
+    assert!(!choices.contains(&MenuChoice::CloseThread));
+    let effects = app.dispatch(Action::EditThread {
+        room: "discord:10:30".into(),
+        archived: None,
+        locked: Some(true),
+    });
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::Backend(Command::Discord(DiscordCommand::EditThread {
+            room,
+            archived: None,
+            locked: Some(true),
+        }))] if room == "discord:10:30"
+    ));
+    // Someone else's thread offers none of it without Manage Threads.
+    let mut theirs = connected();
+    theirs.apply(discord_event(Snapshot {
+        status: Status::Online,
+        user_id: Some("2".into()),
+        servers: vec![MarkedServer::from(Server {
+            id: "10".into(),
+            name: "Test".into(),
+            threads: vec![Channel {
+                id: "30".into(),
+                name: "Plans".into(),
+                parent: Some("21".into()),
+                thread: Some(Box::new(Thread {
+                    owner: Some("1".into()),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            }],
+            ..Default::default()
+        })],
+        ..Default::default()
+    }));
+    let choices = theirs.menu_choices("discord:10:30");
+    assert!(!choices.contains(&MenuChoice::CloseThread));
+    assert!(!choices.contains(&MenuChoice::LockThread));
+}
+
+#[test]
+#[cfg(feature = "discord")]
 fn discord_threads_show_beside_their_channel() {
     use recore_discord::{
         ready::{Channel, Server, Thread},

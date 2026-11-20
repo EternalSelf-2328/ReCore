@@ -121,6 +121,13 @@ pub enum MenuChoice {
     /// Join a Discord thread this account isn't in, or leave one it is.
     JoinThread,
     LeaveThread,
+    /// Close a Discord thread, which archives it, or open it again; lock
+    /// an archived one, or unlock it, so only those who may manage threads
+    /// write in it or open it.
+    CloseThread,
+    OpenThread,
+    LockThread,
+    UnlockThread,
     /// Change this account's nickname in a Discord server, through a
     /// member's nickname dialog.
     EditServerProfile,

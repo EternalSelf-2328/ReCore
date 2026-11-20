@@ -303,6 +303,12 @@ impl Application {
             && self.manages(category)
     }
 
+    /// Whether this account may manage Discord threads in the server or
+    /// channel a thread is in.
+    fn manages_thread(&self, place: &str) -> bool {
+        self.state.discord_online && self.may(place, Permission::ManageThreads)
+    }
+
     /// Whether this account may make, change and delete channels in a
     /// Discord server, category or channel, while Discord takes it.
     fn manages(&self, place: &str) -> bool {
@@ -339,6 +345,29 @@ impl Application {
                         MenuChoice::JoinThread
                     },
                 );
+            }
+            if let Some((_, archived, locked, mine)) = self.thread_details(id)
+                && (mine || self.manages_thread(id))
+            {
+                let at = usize::from(choices.first() == Some(&MenuChoice::MarkRead));
+                choices.insert(
+                    at,
+                    if archived {
+                        MenuChoice::OpenThread
+                    } else {
+                        MenuChoice::CloseThread
+                    },
+                );
+                if archived {
+                    choices.insert(
+                        at + 1,
+                        if locked {
+                            MenuChoice::UnlockThread
+                        } else {
+                            MenuChoice::LockThread
+                        },
+                    );
+                }
             }
             return choices;
         }
@@ -436,12 +465,53 @@ impl Application {
         }
     }
 
+    /// A Discord thread's joined, archived and locked state, and whether
+    /// this account started it, by its room id.
+    pub(super) fn thread_details(&self, room: &str) -> Option<(bool, bool, bool, bool)> {
+        #[cfg(feature = "discord")]
+        {
+            let (guild, channel) = discord::parse_room(room)?;
+            let snapshot = self.discord.as_ref()?;
+            let server = snapshot.servers.iter().find(|server| server.id == guild)?;
+            let known = server.channel(channel)?;
+            let thread = known.thread.as_ref()?;
+            let mine = thread.owner.is_some() && thread.owner == snapshot.user_id;
+            return Some((thread.joined, thread.archived, thread.locked, mine));
+        }
+        #[cfg(not(feature = "discord"))]
+        {
+            let _ = room;
+            None
+        }
+    }
+
     /// Whether this account follows a Discord thread, by its room id, where
     /// it may join or leave it now: nothing while Discord is away.
     pub fn thread_followed(&self, room: &str) -> Option<bool> {
         self.thread_state(room)
             .map(|(joined, _)| joined)
             .filter(|_| self.state.discord_online)
+    }
+
+    /// Closes a Discord thread, which archives it, or opens it again, or
+    /// locks or unlocks it, from its menu. Discord sends the change back as
+    /// CHANNEL_UPDATE, which shows it.
+    pub(super) fn edit_thread(
+        &self,
+        room: String,
+        archived: Option<bool>,
+        locked: Option<bool>,
+    ) -> Vec<Effect> {
+        if !self.state.discord_online || self.thread_details(&room).is_none() {
+            return vec![];
+        }
+        vec![Effect::Backend(Command::Discord(
+            DiscordCommand::EditThread {
+                room,
+                archived,
+                locked,
+            },
+        ))]
     }
 
     /// What a Discord thread header's More menu offers, by its room id, as

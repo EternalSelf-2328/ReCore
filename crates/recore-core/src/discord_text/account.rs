@@ -1820,6 +1820,19 @@ fn change_person(
                     "leave the thread"
                 },
             ),
+            DiscordCommand::EditThread {
+                room,
+                archived,
+                locked,
+            } => (
+                discord.edit_thread(&channel(&room), archived, locked).await,
+                match (archived, locked) {
+                    (Some(true), _) => "close the thread",
+                    (Some(false), _) => "open the thread",
+                    (_, Some(true)) => "lock the thread",
+                    _ => "unlock the thread",
+                },
+            ),
             DiscordCommand::Mute { room, muting } => {
                 let (muted, seconds) = mute(muting);
                 let result = discord.mute_private(&channel(&room), muted, seconds).await;

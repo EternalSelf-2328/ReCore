@@ -471,7 +471,11 @@ membership: when it joined, its mute and its notification level (flags 2,
 permission overwrites from its parent: it shows with View Channel, a
 private one only to its members or with Manage Threads, and writing in it
 takes Send Messages in Threads, which a locked thread also asks Manage
-Threads for.
+Threads for. Its menu joins or leaves it; the account that started it, or
+one with Manage Threads, may also close it, which archives it, open it
+again, and lock or unlock it. ReCore asks `PATCH /channels/{id}` with
+`archived` or `locked`, and the CHANNEL_UPDATE it sends back shows the
+change.
 
 The sidebar lists each active thread the account is in under its channel,
 joined to it by a line, with its own unread state and mentions, read at

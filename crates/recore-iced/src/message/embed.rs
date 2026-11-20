@@ -72,12 +72,35 @@ pub(super) fn embed<'a>(
         );
     }
     if !embed.author.is_empty() {
-        card = card.push(
-            text(embed.author.as_str())
-                .size(14)
-                .font(MEDIUM())
-                .color(theme.text),
-        );
+        let icon = message
+            .attachments
+            .iter()
+            .find(|attachment| attachment.placement == Placement::AuthorIcon(place))
+            .and_then(|attachment| attachment.preview.as_ref());
+        let name = text(embed.author.as_str())
+            .size(14)
+            .font(MEDIUM())
+            .color(theme.text);
+        let name: Element<'a, Message> = if embed.author_url.is_empty() {
+            name.into()
+        } else {
+            button(name)
+                .padding(0)
+                .on_press(Message::Link(embed.author_url.clone(), Point::ORIGIN))
+                .style(|_, _| button::Style::default())
+                .into()
+        };
+        let mut line = row![].spacing(6).align_y(iced::Alignment::Center);
+        if let Some(icon) = icon {
+            line = line.push(
+                ctx.shot(
+                    Shot::new(Some(icon), Size::new(20.0, 20.0))
+                        .fit(Fit::Contain)
+                        .radius(10.0),
+                ),
+            );
+        }
+        card = card.push(line.push(name));
     }
     if !embed.title.is_empty() {
         let title = text(embed.title.as_str()).size(16).font(SEMIBOLD());
@@ -152,7 +175,22 @@ pub(super) fn embed<'a>(
         );
     }
     if !embed.footer.is_empty() {
-        card = card.push(text(embed.footer.as_str()).size(12).color(theme.text));
+        let icon = message
+            .attachments
+            .iter()
+            .find(|attachment| attachment.placement == Placement::FooterIcon(place))
+            .and_then(|attachment| attachment.preview.as_ref());
+        let mut line = row![].spacing(6).align_y(iced::Alignment::Center);
+        if let Some(icon) = icon {
+            line = line.push(
+                ctx.shot(
+                    Shot::new(Some(icon), Size::new(20.0, 20.0))
+                        .fit(Fit::Contain)
+                        .radius(10.0),
+                ),
+            );
+        }
+        card = card.push(line.push(text(embed.footer.as_str()).size(12).color(theme.text)));
     }
     let mut beside = row![card].spacing(16);
     if let Some(at) = thumbnail {

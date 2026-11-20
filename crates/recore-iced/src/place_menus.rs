@@ -303,6 +303,16 @@ pub fn choose_place(app: &mut App, place: String, choice: MenuChoice) -> Task<Me
             join: choice == MenuChoice::JoinThread,
             location: "Context Menu",
         },
+        MenuChoice::CloseThread | MenuChoice::OpenThread => Action::EditThread {
+            room: place,
+            archived: Some(choice == MenuChoice::CloseThread),
+            locked: None,
+        },
+        MenuChoice::LockThread | MenuChoice::UnlockThread => Action::EditThread {
+            room: place,
+            archived: None,
+            locked: Some(choice == MenuChoice::LockThread),
+        },
         MenuChoice::CopyLink => return iced::clipboard::write(network_link(&place)),
         MenuChoice::CopyId => return iced::clipboard::write(network_id(&place).to_owned()),
         // The rest of a DM's are about its person, as their own menu.
@@ -613,6 +623,10 @@ pub fn group_of(choice: MenuChoice) -> u8 {
         | MenuChoice::CopyId
         | MenuChoice::JoinThread
         | MenuChoice::LeaveThread
+        | MenuChoice::CloseThread
+        | MenuChoice::OpenThread
+        | MenuChoice::LockThread
+        | MenuChoice::UnlockThread
         | MenuChoice::Invite
         | MenuChoice::PinChannel
         | MenuChoice::UnpinChannel
@@ -690,7 +704,8 @@ pub fn icon(choice: MenuChoice) -> Icon {
         C::CreateCategory => Icon::FolderPlus,
         C::DuplicateChannel => Icon::CopyPlus,
         C::DeleteChannel => Icon::Trash,
-        C::JoinThread => Icon::Thread,
+        C::JoinThread | C::CloseThread | C::OpenThread => Icon::Thread,
+        C::LockThread | C::UnlockThread => Icon::Lock,
     }
 }
 
@@ -760,6 +775,10 @@ pub fn label(choice: MenuChoice) -> &'static str {
         MenuChoice::LeaveServer => "Leave server",
         MenuChoice::JoinThread => "Join thread",
         MenuChoice::LeaveThread => "Leave thread",
+        MenuChoice::CloseThread => "Close thread",
+        MenuChoice::OpenThread => "Open thread",
+        MenuChoice::LockThread => "Lock thread",
+        MenuChoice::UnlockThread => "Unlock thread",
         MenuChoice::EditServerProfile => "Edit server profile",
         MenuChoice::ServerSettings => "Server settings",
     }

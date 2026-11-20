@@ -53,7 +53,9 @@ impl Application {
                     message.reactions.push(Reaction {
                         key,
                         count: 1,
+                        burst: 0,
                         mine: true,
+                        mine_burst: false,
                     });
                 }
             });

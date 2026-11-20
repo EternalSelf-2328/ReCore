@@ -20,6 +20,8 @@ pub struct Embed {
     /// The site, such as "YouTube".
     pub provider: Option<String>,
     pub author: Option<String>,
+    /// Where the author's name leads.
+    pub author_url: Option<String>,
     pub title: Option<String>,
     /// Where the title leads.
     pub url: Option<String>,
@@ -81,6 +83,31 @@ fn picture(value: &Value, shown: Shown, thumbnail: bool) -> Option<Attachment> {
         video_url: None,
         link_url: None,
         animated: crate::message::animated(value),
+        shown,
+        spoiler: false,
+        description: None,
+    })
+}
+
+/// An author's or footer's icon, which Discord sends as a proxy of a
+/// square picture without dimensions; it shows at 20px.
+fn icon(value: &Value, shown: Shown) -> Option<Attachment> {
+    let source = value["icon_url"].as_str();
+    let proxy = value["proxy_url"].as_str();
+    let url = proxy.or(source)?;
+    let name = file_name(source.unwrap_or(url)).unwrap_or("icon.png");
+    Some(Attachment {
+        name: name.to_owned(),
+        size: None,
+        url: url.into(),
+        image: true,
+        dimensions: None,
+        preview_url: Some(url.to_owned()),
+        view_url: Some(url.to_owned()),
+        still_url: None,
+        video_url: None,
+        link_url: None,
+        animated: false,
         shown,
         spoiler: false,
         description: None,
@@ -211,6 +238,14 @@ pub fn parse(embeds: &Value) -> Parsed {
                 .pictures
                 .extend(picture(&embed["thumbnail"], Shown::Thumbnail(index), true));
         }
+        // Discord draws the author's and footer's icons at 20px beside
+        // their text.
+        parsed
+            .pictures
+            .extend(icon(&embed["author"], Shown::AuthorIcon(index)));
+        parsed
+            .pictures
+            .extend(icon(&embed["footer"], Shown::FooterIcon(index)));
         let footer = text(&embed["footer"]["text"]);
         let when = embed["timestamp"].as_str().and_then(iso_ms).map(date);
         parsed.embeds.push(Embed {
@@ -219,6 +254,7 @@ pub fn parse(embeds: &Value) -> Parsed {
                 .and_then(|color| u32::try_from(color).ok()),
             provider: text(&embed["provider"]["name"]),
             author: text(&embed["author"]["name"]),
+            author_url: text(&embed["author"]["url"]),
             title: text(&embed["title"]),
             url,
             description: text(&embed["description"]),
@@ -315,6 +351,41 @@ mod tests {
         assert_eq!(gif.link_url.as_deref(), Some("https://tenor.com/view/cat"));
         assert!(gif.animated);
         assert_eq!(parsed.hides, ["https://tenor.com/view/cat"]);
+    }
+
+    #[test]
+    fn cards_keep_their_authors_link_and_icons() {
+        let parsed = parse(&json!([{
+            "type": "rich", "title": "A card",
+            "author": {
+                "name": "Ann", "url": "https://example.com/ann",
+                "icon_url": "https://example.com/ann.png",
+                "proxy_url": "https://images-ext-1.discordapp.net/external/x/https/example.com/ann.png",
+                "width": 20, "height": 20,
+            },
+            "footer": {
+                "text": "Example",
+                "icon_url": "https://example.com/footer.png",
+                "proxy_url": "https://images-ext-1.discordapp.net/external/x/https/example.com/footer.png",
+                "width": 20, "height": 20,
+            },
+        }]));
+        assert_eq!(
+            parsed.embeds[0].author_url.as_deref(),
+            Some("https://example.com/ann")
+        );
+        let icons: Vec<_> = parsed
+            .pictures
+            .iter()
+            .map(|picture| (picture.name.as_str(), picture.shown, picture.image))
+            .collect();
+        assert_eq!(
+            icons,
+            [
+                ("ann.png", Shown::AuthorIcon(0), true),
+                ("footer.png", Shown::FooterIcon(0), true),
+            ]
+        );
     }
 
     #[test]

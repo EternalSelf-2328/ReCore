@@ -563,7 +563,9 @@ fn a_reactions_tooltip_and_window_ask_for_who_reacted() {
     let reaction = |key: &str, count| Reaction {
         key: key.into(),
         count,
+        burst: 0,
         mine: false,
+        mine_burst: false,
     };
     reacted.reactions = vec![reaction("👍", 2), reaction("🎉", 5)];
     app.apply(Event::Timeline {

@@ -397,7 +397,9 @@ fn a_click_on_a_reaction_adds_to_it_and_another_takes_it_back() {
     let reaction = |count, mine| Reaction {
         key: "wave".into(),
         count,
+        burst: 0,
         mine,
+        mine_burst: false,
     };
     react_to(&mut app, text, vec![reaction(1, false)]);
     let reactions = |app: &crate::app::App| {
@@ -427,7 +429,9 @@ fn reacting_follows_what_the_channel_allows() {
         vec![Reaction {
             key: "wave".into(),
             count: 5,
+            burst: 0,
             mine: false,
+            mine_burst: false,
         }],
     );
     // A Discord channel, which says what reacting its permissions leave.
@@ -482,7 +486,9 @@ fn many_reactions_go_onto_more_lines() {
             .map(|index| recore_core::chat::Reaction {
                 key: format!("reaction{index}"),
                 count: 1,
+                burst: 0,
                 mine: false,
+                mine_burst: false,
             })
             .collect::<Vec<_>>()
     };
@@ -1189,12 +1195,16 @@ fn an_animated_custom_emoji_plays_in_text_and_its_reaction_with_one_player_for_i
             Reaction {
                 key: ":party:".into(),
                 count: 2,
+                burst: 0,
                 mine: false,
+                mine_burst: false,
             },
             Reaction {
                 key: ":calm:".into(),
                 count: 1,
+                burst: 0,
                 mine: false,
+                mine_burst: false,
             },
         ],
         ..Default::default()

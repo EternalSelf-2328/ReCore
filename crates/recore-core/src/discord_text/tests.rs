@@ -111,6 +111,7 @@ fn live_events_echoes_and_failed_sends() {
         emoji: "👍".into(),
         me: true,
         added: true,
+        burst: false,
     }));
     let edited = Message {
         content: "changed".into(),
@@ -347,6 +348,7 @@ fn changes_render_again_only_the_messages_they_change() {
         emoji: "👍".into(),
         me: false,
         added: true,
+        burst: false,
     });
     assert_eq!(kept(&open), [3, 7, 9]);
     show(&mut open);

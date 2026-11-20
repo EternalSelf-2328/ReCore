@@ -12,6 +12,7 @@ use crate::{
     app::Message,
     controls,
     fonts::{BOLD, MEDIUM},
+    pictures::Icon,
     widgets::Pic,
 };
 
@@ -77,12 +78,16 @@ pub(super) fn reactions<'a>(
     let clicks = message.can_react && reacts(ctx, index) != Reacts::None;
     let mut chips = Vec::with_capacity(message.reactions.len());
     for reaction in &message.reactions {
-        // The accent's wash and edge when this account reacted.
-        let (ground, edge, count) = if reaction.mine {
+        // The accent's wash and edge when this account reacted; a super
+        // reaction keeps the accent even when it's someone else's, with a
+        // star beside its count, as Discord marks one.
+        let burst = reaction.burst > 0;
+        let mine = reaction.mine || reaction.mine_burst;
+        let (ground, edge, count) = if mine || burst {
             (
                 theme.accent_soft,
                 Color {
-                    a: 0.7,
+                    a: if mine { 0.7 } else { 0.45 },
                     ..theme.accent
                 },
                 theme.accent,
@@ -108,20 +113,22 @@ pub(super) fn reactions<'a>(
         } else {
             text(reaction.key.as_str()).color(theme.text).into()
         };
-        let chip = container(
-            row![
-                face,
-                text(reaction.count.to_string()).font(BOLD()).color(count)
-            ]
-            .spacing(4)
-            .align_y(Alignment::Center),
-        )
-        .padding([0, 8])
-        .height(CHIP_HEIGHT)
-        .align_y(Alignment::Center)
-        .style(move |_| {
-            crate::style::outlined(ground, edge, if ctx.look.theme.square { 0.0 } else { 8.0 })
-        });
+        let mut contents = row![
+            face,
+            text(reaction.count.to_string()).font(BOLD()).color(count)
+        ]
+        .spacing(4)
+        .align_y(Alignment::Center);
+        if burst {
+            contents = contents.push(ctx.look.glyph(Icon::StarFilled, 11, theme.accent));
+        }
+        let chip = container(contents)
+            .padding([0, 8])
+            .height(CHIP_HEIGHT)
+            .align_y(Alignment::Center)
+            .style(move |_| {
+                crate::style::outlined(ground, edge, if ctx.look.theme.square { 0.0 } else { 8.0 })
+            });
         let mut chip = mouse_area(chip);
         if clicks {
             chip = chip
