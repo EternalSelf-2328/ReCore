@@ -885,18 +885,25 @@ pub fn composer_button(
 
 pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
     let look = composer_look(ctx);
+    // The bars over the composer keep their places whether they show or
+    // not: iced matches a column's children by position, so a bar pushed
+    // only while it shows would move the field to another slot, and the
+    // field's state (the focus, and so Tab, Enter and the edits with it)
+    // would be made anew on the frame the bar appears. An empty slot holds
+    // the place and takes no room.
     let mut compose = column![];
     if let Some(title) = &look.request {
         compose = compose.push(request_bar(ctx, title));
     } else {
-        if let Some((label, ping)) = reply_label(ctx.state.compose()) {
-            compose = compose.push(reply_bar(ctx, label, ping));
-        }
-        if ctx.layout.prefs.word_suggestions.unwrap_or(true)
-            && let Some(suggestion) = crate::spelling::current(ctx.composer)
-        {
-            compose = compose.push(spelling_bar(ctx, suggestion));
-        }
+        compose = compose.push(match reply_label(ctx.state.compose()) {
+            Some((label, ping)) => reply_bar(ctx, label, ping),
+            None => Space::new().into(),
+        });
+        let offered = ctx.layout.prefs.word_suggestions.unwrap_or(true);
+        compose = compose.push(match crate::spelling::current(ctx.composer) {
+            Some(suggestion) if offered => spelling_bar(ctx, suggestion),
+            _ => Space::new().into(),
+        });
         compose = compose.push(if look.locked {
             locked_bar(ctx)
         } else {
