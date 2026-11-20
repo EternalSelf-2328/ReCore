@@ -171,6 +171,12 @@ fn assemble(root: &Path, out: &Path, target: &Target) -> Vec<PathBuf> {
         if target.os != "windows" {
             command.arg("-DPIC");
         }
+        // Mach-O C symbols have a leading underscore; x86inc's mangle()
+        // adds it only when PREFIX is defined. Without this the C objects
+        // ask for _x264_8_* and the assembly exports x264_8_*.
+        if target.os == "macos" {
+            command.arg("-DPREFIX");
+        }
         if per_depth {
             command.args(["-DBIT_DEPTH=8", "-Dprivate_prefix=x264_8"]);
         }

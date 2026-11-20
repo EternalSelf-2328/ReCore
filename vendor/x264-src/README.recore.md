@@ -12,8 +12,9 @@ command-line tool, its filters and the other processors' code are left out.
 compiles the C files with the compiler `cc` picks (clang, or clang-cl for
 Windows), and assembles the x86-64 assembly with nasm (`$NASM`, or `nasm` on
 the PATH). NASM's object format follows the target: `elf64` for Linux,
-`win64` for Windows and `macho64` for macOS. On other processors it builds
-the plain C code, without assembly.
+`win64` for Windows and `macho64` for macOS; Mach-O assembly also gets
+x86inc's `PREFIX`, so its symbols carry the leading underscore C expects.
+On other processors it builds the plain C code, without assembly.
 Two settings differ from configure's: the stack alignment is 16 bytes on every
 compiler, which x264's assembly realigns for, and transparent huge pages stay
 off, which would round x264's large buffers up to 2 MiB pages.
