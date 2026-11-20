@@ -437,6 +437,7 @@ const GUILD = "1400000000000000100";
 const PRIVATE_GUILD = "1400000000000000990";
 const CATEGORY = "1400000000000000101";
 const GENERAL = "1400000000000000102";
+const ANNOUNCEMENT = "1400000000000000107";
 const LOUNGE = "1400000000000000103";
 // A bot makes a room for whoever joins Create Room and moves them there.
 const CREATE_ROOM = "1400000000000000104";
@@ -1402,6 +1403,7 @@ type Message = {
 };
 const messages = new Map<string, Message[]>([
   [GENERAL, []],
+  [ANNOUNCEMENT, []],
   [FORUM, []],
   [LOUNGE, []],
   [CREATE_ROOM, []],
@@ -1682,6 +1684,7 @@ const welcome = post(
   HISTORY_START,
 );
 welcome.reactions.push({ name: "👍", id: null, users: new Set([users.carol.id, ALICE]) });
+post(ANNOUNCEMENT, users.alice, "Patch notes", HISTORY_START + 30_000);
 post(GENERAL, users.bob, "", HISTORY_START + 60_000, { files: [sunsetFile] });
 post(GENERAL, users.bob, "", HISTORY_START + 120_000, { files: [notesFile] });
 post(GENERAL, users.bob, "The welcome has the plan", HISTORY_START + 180_000, {
@@ -2514,6 +2517,7 @@ function guildChannels(): GuildChannel[] {
   return [
     channel(CATEGORY, "Channels", 4, 0, null),
     channel(GENERAL, "general", 0, 0, CATEGORY),
+    channel(ANNOUNCEMENT, "announcements", 5, 2, CATEGORY),
     channel(FORUM, "ideas", 15, 1, CATEGORY),
     channel(LOUNGE, "Lounge", 2, 1, CATEGORY),
     channel(CREATE_ROOM, "Create Room", 2, 2, CATEGORY),
@@ -6614,6 +6618,15 @@ async function api(req: Request, path: string, origin: string): Promise<Response
       }
       return json(wireMessage(message, origin));
     }
+  }
+
+  // Publishing an announcement channel's message to its followers.
+  if (method === "POST" && (m = path.match(/^\/channels\/(\d+)\/messages\/(\d+)\/crosspost$/))) {
+    const message = byId.get(m[2]!);
+    if (!message || message.channel !== m[1]) return notFound("Unknown Message", 10008);
+    message.flags = (message.flags ?? 0) | 1;
+    dispatch("MESSAGE_UPDATE", dispatched(message, origin));
+    return json(wireMessage(message, origin));
   }
 
   if ((m = path.match(/^\/channels\/(\d+)\/messages\/(\d+)$/))) {

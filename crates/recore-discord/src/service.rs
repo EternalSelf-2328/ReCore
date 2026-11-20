@@ -1830,6 +1830,12 @@ impl Discord {
         self.api.delete(channel, id).await
     }
 
+    /// Publishes a message in an announcement channel to its followers. The
+    /// gateway's MESSAGE_UPDATE carries its new CROSSPOSTED flag.
+    pub async fn crosspost(&self, channel: &str, id: &str) -> Result<()> {
+        self.api.crosspost(channel, id).await
+    }
+
     /// Pins a message, or unpins it. The gateway's MESSAGE_UPDATE says so too.
     pub async fn pin(&self, channel: &str, id: &str, pinned: bool) -> Result<()> {
         self.api.pin(channel, id, pinned).await

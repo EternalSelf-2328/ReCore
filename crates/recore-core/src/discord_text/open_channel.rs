@@ -908,6 +908,24 @@ impl OpenChannel {
         });
     }
 
+    /// Publishes a message in an announcement channel, as Discord's
+    /// crosspost does. Its `CROSSPOSTED` flag shows once the gateway says.
+    pub fn crosspost(&self, discord: &Discord, done: &UnboundedSender<Done>, item: &str) {
+        let Some(id) = sent_id(item).map(str::to_owned) else {
+            return;
+        };
+        let (discord, done) = (discord.clone(), done.clone());
+        let (room, channel) = (self.room.clone(), self.channel.clone());
+        tokio::spawn(async move {
+            if let Err(error) = discord.crosspost(&channel, &id).await {
+                let _ = done.send(Done::Failed {
+                    room,
+                    message: format!("Could not publish the message: {error}"),
+                });
+            }
+        });
+    }
+
     /// Pins a message, or unpins it. It shows so once Discord says it did.
     pub fn pin(
         &mut self,
@@ -1690,6 +1708,19 @@ impl OpenChannel {
                 .unwrap_or_else(|| fallback.to_owned())
         };
         let own = message.author_id == me;
+        // Discord publishes a message to an announcement channel's followers
+        // when its author, or a manager, asks; a published one stays as it is.
+        let can_crosspost = message.flags & (1 << 0) == 0
+            && message.system.is_none()
+            && server.is_some_and(|server| {
+                server.server.channel(&self.channel).is_some_and(|channel| {
+                    channel.announcement
+                        && (own
+                            || server.channel_permissions(channel, me, &server.marks.roles)
+                                & recore_discord::ready::permission::MANAGE_MESSAGES
+                                != 0)
+                })
+            });
         let author = name(&message.author_id, &message.author);
         let marks = server.map(|server| &*server.marks);
         let server = server.map(|server| &*server.server);
@@ -1879,6 +1910,7 @@ impl OpenChannel {
             can_delete: shared && self.rendered_with.deletes.allow(message, me),
             can_react: ordinary && shared,
             can_forward: message.forwardable && self.rendered_with.may_forward,
+            can_crosspost,
             pinned: message.pinned,
             can_pin: ordinary && shared && self.rendered_with.may_pin,
             thread: self.thread_link(server, message),

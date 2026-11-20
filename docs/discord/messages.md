@@ -1151,6 +1151,15 @@ embeds or stickers couldn't be posted, and an age-restricted one. ReCore
 lists those, and Discord's refusal shows when the forward fails there.
 Mentions and custom emoji in the message added go as typed.
 
+## Publishing
+
+An announcement channel's message offers Publish in its menu to its author,
+or to an account with Manage Messages, as Discord's client does. ReCore sends
+`POST /channels/{channel}/messages/{message}/crosspost`; Discord answers
+with the message and then its MESSAGE_UPDATE, whose CROSSPOSTED flag
+(`1 << 0`) takes Publish away. A system message, or one already published,
+offers none.
+
 ## Notification settings
 
 Discord keeps the account's notification settings per server, and one set

@@ -556,6 +556,25 @@ fn notifications_say_whether_they_mention_this_account() {
 }
 
 #[test]
+fn only_a_publishable_message_is_crossposted() {
+    let mut app = connected();
+    let mut announcement = message("e:$bob", false);
+    announcement.can_crosspost = true;
+    app.apply(Event::Timeline {
+        room: "dm".into(),
+        messages: timeline(vec![announcement, message("e:$other", false)]),
+    });
+    assert!(matches!(
+        app.dispatch(Action::Crosspost("e:$bob".into())).as_slice(),
+        [Effect::Backend(Command::Crosspost { item, .. })] if item == "e:$bob"
+    ));
+    assert!(
+        app.dispatch(Action::Crosspost("e:$other".into()))
+            .is_empty()
+    );
+}
+
+#[test]
 fn a_reactions_tooltip_and_window_ask_for_who_reacted() {
     use crate::chat::Reactor;
     let mut app = connected();

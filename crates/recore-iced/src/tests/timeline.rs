@@ -56,6 +56,32 @@ fn deleting_ones_own_message_asks_first() {
 }
 
 #[test]
+fn a_publishable_message_offers_publish_in_its_menu() {
+    let (mut app, _folder) = preview();
+    let text = "Yep. I should be free after dinner.";
+    change(&mut app, |state| {
+        let messages = state
+            .messages
+            .iter()
+            .map(|message| {
+                let mut message = (**message).clone();
+                if message.body == text {
+                    message.can_crosspost = true;
+                }
+                Arc::new(message)
+            })
+            .collect();
+        state.messages = Arc::new(messages);
+    });
+    interact(&mut app, |ui| right_click(ui, text));
+    assert!(shows(&app, "Publish"), "the announcement's action");
+    interact(&mut app, |ui| {
+        ui.click("Publish").expect("Publish");
+    });
+    assert!(app.win.menu.is_none(), "Publish closes the menu");
+}
+
+#[test]
 fn shift_and_a_click_on_the_menus_delete_deletes_without_asking() {
     let (mut app, _folder) = preview();
     let text = "Nice, let's get a game going.";

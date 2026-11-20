@@ -2075,6 +2075,9 @@ pub struct ChatMessage {
     pub can_react: bool,
     /// A sent message whose content can be sent again to another conversation.
     pub can_forward: bool,
+    /// A message in an announcement channel this account may publish to the
+    /// channels following it, as Discord's crosspost does.
+    pub can_crosspost: bool,
     /// Among its conversation's pinned messages.
     pub pinned: bool,
     /// This account may pin it, or unpin it: [`Command::Pin`].
@@ -2356,6 +2359,12 @@ pub enum Command {
         burst: bool,
     },
     Delete {
+        room: String,
+        item: String,
+    },
+    /// Publish a message in an announcement channel to the channels that
+    /// follow it, as Discord's crosspost does.
+    Crosspost {
         room: String,
         item: String,
     },
@@ -4132,6 +4141,7 @@ impl Command {
             | Command::Voters { room, .. }
             | Command::RemoveReactor { room, .. }
             | Command::Delete { room, .. }
+            | Command::Crosspost { room, .. }
             | Command::Pin { room, .. }
             | Command::Retry { room, .. }
             | Command::Cancel { room, .. }

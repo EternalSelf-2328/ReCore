@@ -76,6 +76,22 @@ impl Application {
         vec![]
     }
 
+    /// Publishes a message in an announcement channel, by item, as Discord's
+    /// Publish does.
+    pub(super) fn crosspost(&self, item: String) -> Vec<Effect> {
+        let Some(room) = self.state.room_of(&item).cloned() else {
+            return vec![];
+        };
+        if !self
+            .state
+            .message(&item)
+            .is_some_and(|message| message.can_crosspost)
+        {
+            return vec![];
+        }
+        vec![Effect::Backend(Command::Crosspost { room, item })]
+    }
+
     pub(super) fn delete_now(&mut self, item: String) -> Vec<Effect> {
         if !self
             .state

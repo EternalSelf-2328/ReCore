@@ -140,6 +140,7 @@ pub fn command(
         | Command::Voters { room, .. }
         | Command::RemoveReactor { room, .. }
         | Command::Delete { room, .. }
+        | Command::Crosspost { room, .. }
         | Command::Pin { room, .. }
         | Command::Retry { room, .. }
         | Command::Cancel { room, .. }
@@ -324,6 +325,7 @@ pub fn command(
             ..
         } => channel.remove_reactor(discord, done, &item, &key, user, burst),
         Command::Delete { item, .. } => channel.delete(discord, done, &item),
+        Command::Crosspost { item, .. } => channel.crosspost(discord, done, &item),
         Command::Pin { item, pinned, .. } => channel.pin(discord, done, &item, pinned),
         Command::Retry { item, .. } => {
             channel.retry(discord, done, &item);

@@ -161,6 +161,8 @@ pub enum MenuAct {
     Edit,
     Reply,
     Forward,
+    /// Publish an announcement channel's message to its followers.
+    Crosspost,
     CopyText,
     /// Translate the message's text, then show it in a card.
     Translate,
@@ -404,6 +406,9 @@ pub fn open_menu(app: &mut App, index: usize, at: Point) -> Task<Message> {
     }
     if message.can_forward && crate::forward::allowed(app.client.state()) {
         rows.push(row(MenuAct::Forward, "Forward", Icon::Forward));
+    }
+    if message.can_crosspost {
+        rows.push(row(MenuAct::Crosspost, "Publish", Icon::Announcement));
     }
     // A message someone wrote starts a thread, or leads to its own.
     if index < crate::timeline::ASIDE
@@ -793,6 +798,10 @@ pub fn act(
         MenuAct::Forward => {
             app.client.dispatch(Action::StartForward(item));
             Task::batch([app.sync(), app.forward.open(app.client.state())])
+        }
+        MenuAct::Crosspost => {
+            app.client.dispatch(Action::Crosspost(item));
+            Task::batch([app.sync(), focus])
         }
         MenuAct::EndPoll => {
             app.client.dispatch(Action::AskEndPoll(item));

@@ -1048,6 +1048,13 @@ impl Api {
             .await
     }
 
+    /// Publishes a message in an announcement channel to the channels that
+    /// follow it; Discord sends MESSAGE_UPDATE with its CROSSPOSTED flag.
+    pub async fn crosspost(&self, channel: &str, message: &str) -> Result<()> {
+        let path = format!("/channels/{channel}/messages/{message}/crosspost");
+        self.empty(self.request(Method::POST, &path)).await
+    }
+
     /// Pins a message to its channel's pinned messages, or unpins it.
     pub async fn pin(&self, channel: &str, message: &str, pinned: bool) -> Result<()> {
         let path = format!("/channels/{channel}/messages/pins/{message}");

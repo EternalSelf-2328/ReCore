@@ -192,7 +192,8 @@ slash command, where one may write, is written in the composer
   Reactions, the hover bar, the menu and the `+` key offer no new one.
 - A message's menu, on a right click or More: the
   four reactions used most, Add reaction, View Reactions, Edit, Reply,
-  Forward, Copy text, Copy selection, End Poll Now (asked about in the poll's card), Pin or
+  Forward, Publish on an announcement channel's message, Copy text, Copy
+  selection, End Poll Now (asked about in the poll's card), Pin or
   Unpin, Mark Unread, Copy Message Link, Delete and Copy Message ID.
   A right click on a link in its text adds Copy Link and Open Link, with
   the web address the link goes to, which a masked link's words don't say;

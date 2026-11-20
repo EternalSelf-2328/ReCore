@@ -927,6 +927,46 @@ async fn highlights_mentions() {
     );
 }
 
+/// Publishing an announcement channel's message to its followers, as
+/// Discord's Publish does; part of [`talks_to_the_fake_server`].
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "starts testing/fake_discord.ts with bun; run scripts/test-fake-discord"]
+async fn crossposts_announcements_as_discords_client_does() {
+    let Fixture {
+        _fake,
+        discord,
+        snapshot,
+        guild,
+        ..
+    } = Fixture::start("crossposts_announcements_as_discords_client_does").await;
+    let channel = snapshot.servers[0]
+        .text_channels()
+        .find(|channel| channel.name == "announcements")
+        .map(|channel| channel.id.clone())
+        .expect("the announcements channel");
+    let latest = discord
+        .history(&guild, &channel, Span::Latest)
+        .await
+        .unwrap();
+    let message = latest
+        .messages
+        .iter()
+        .find(|message| message.content == "Patch notes")
+        .expect("the announcement");
+    assert_eq!(message.flags & 1, 0, "not published yet");
+    discord.crosspost(&channel, &message.id).await.unwrap();
+    let after = discord
+        .history(&guild, &channel, Span::Latest)
+        .await
+        .unwrap();
+    let after = after
+        .messages
+        .iter()
+        .find(|after| after.id == message.id)
+        .expect("the published announcement");
+    assert_ne!(after.flags & 1, 0, "published");
+}
+
 /// Who reacted to a message, a page at a time, as a reaction's tooltip and
 /// the Reactions window ask; and a moderator removing someone's reaction.
 /// Part of [`talks_to_the_fake_server`], whose session it shares.

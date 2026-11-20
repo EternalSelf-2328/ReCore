@@ -1709,6 +1709,8 @@ pub enum Action {
     /// Delete a message without asking first, as Shift and a click on its
     /// Delete do in Discord's client.
     DeleteNow(String),
+    /// Publish a message in an announcement channel to its followers.
+    Crosspost(String),
     /// Vote for these answers of a Discord message's poll, by item, in
     /// place of this account's vote; none takes it back.
     Vote {
@@ -3475,6 +3477,7 @@ impl Application {
             Action::React { item, key } => self.react(item, key),
             Action::RequestDelete(item) => self.request_delete(item),
             Action::DeleteNow(item) => self.delete_now(item),
+            Action::Crosspost(item) => self.crosspost(item),
             Action::Vote { item, answers } => self.vote(item, answers),
             Action::OpenPollDraft => self.open_poll_draft(),
             Action::EditPoll(edit) => self.edit_poll(edit),
