@@ -104,6 +104,11 @@ git tag v0.5.0
 git push origin main v0.5.0
 ```
 
+`scripts/set-version` edits `Cargo.toml`, `Cargo.lock`, the PKGBUILD and the
+metainfo with Python rather than `sed -i`, so the same command runs on the
+Linux, Windows and macOS jobs; BSD sed's `-i` takes a backup suffix and broke
+the macOS job.
+
 The workflow checks that the tag is a stable SemVer tag, then builds the
 Linux AppImage and Arch package, the Windows portable ZIP, the Apple Silicon
 and Intel macOS ZIPs and DMGs, and the source snapshot, makes one
