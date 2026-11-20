@@ -310,6 +310,10 @@ impl App {
         layout.prefs.apply_clock();
         recore_core::discord::set_custom_games(&layout.prefs.game_executables);
         client.share_typing = layout.prefs.share_typing.unwrap_or(true);
+        client.set_attachment_privacy(
+            layout.prefs.strip_image_metadata.unwrap_or(false),
+            layout.prefs.anonymize_attachment_names.unwrap_or(false),
+        );
         let autocorrect = crate::autocorrect::Autocorrect::load(
             client.root(),
             crate::autocorrect::language(&layout.prefs),

@@ -20,6 +20,7 @@ chrono.workspace = true
 # files kept on disk: see src/cache/sealed.rs.
 aes-gcm = "0.10.3"
 chacha20poly1305 = { version = "0.10.1", features = ["stream"] }
+crc32fast = "1"
 davey = "0.1.4"
 rand = "0.9"
 # Linking by QR code: Discord's remote login encrypts what it sends with the

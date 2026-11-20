@@ -11,7 +11,7 @@ use std::{
 use recore_core::{
     application::{Action, AppState, Application, Effect},
     backend::Backend,
-    chat::Event,
+    chat::{Command, DiscordCommand, Event},
     discord_link::Progress,
     runtime::{BackgroundRuntime, BackgroundTask},
 };
@@ -45,6 +45,7 @@ pub struct Client {
     /// Others see when this account types, as Messages' settings say; off,
     /// the core's typing commands go nowhere.
     pub share_typing: bool,
+    attachment_privacy: (bool, bool),
     /// A backend started since the window last looked, as an account
     /// signing in starts one: the window hands the core what this device
     /// kept for it.
@@ -71,6 +72,7 @@ impl Client {
             alerts: Vec::new(),
             copied_picture: None,
             share_typing: true,
+            attachment_privacy: (false, false),
             #[cfg(test)]
             sent: Vec::new(),
         }
@@ -153,6 +155,21 @@ impl Client {
         self.backend = None;
     }
 
+    pub fn set_attachment_privacy(&mut self, strip_image_metadata: bool, anonymize_names: bool) {
+        self.attachment_privacy = (strip_image_metadata, anonymize_names);
+        self.update_attachment_privacy();
+    }
+
+    fn update_attachment_privacy(&self) {
+        if let Some(backend) = &self.backend {
+            let (strip_image_metadata, anonymize_names) = self.attachment_privacy;
+            let _ = backend.send(Command::Discord(DiscordCommand::AttachmentPrivacy {
+                strip_image_metadata,
+                anonymize_names,
+            }));
+        }
+    }
+
     fn execute(&mut self, effects: Vec<Effect>) {
         for effect in effects {
             match effect {
@@ -163,6 +180,7 @@ impl Client {
                         Backend::start(self.runtime.clone(), self.root.clone(), start);
                     self.backend = Some(backend);
                     self.events = Some(events);
+                    self.update_attachment_privacy();
                 }
                 Effect::Backend(recore_core::chat::Command::Typing { .. })
                     if !self.share_typing => {}
