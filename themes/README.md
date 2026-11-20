@@ -8,12 +8,12 @@ themes in `crates/recore-core/src/theme.rs` are the same palette without the
 web-only rules.
 
 `Ambxst.theme.css` is a theme inspired by
-[Axenide's Ambxst](https://github.com/Axenide/Ambxst): Ambxst's default warm
-Material You palette, rose accent, 16 px rounded panels and Roboto Condensed,
-in dark and paper-light. It mirrors the shell's `config/defaults/theme.js`
-surfaces, gradients, shadows, bar, dock and typography as options, and works
-in Discord's browser clients and in ReCore, where it also turns ReCord's CRT
-layer off.
+[Axenide's Ambxst](https://github.com/Axenide/Ambxst): Ambxst's exact default
+warm Material You roles, all nineteen `sr*` surfaces, rose accent, 16 px
+rounded panels and Roboto Condensed, in dark and paper-light. It mirrors the
+shell's `config/defaults/theme.js`, `Colors.qml`, `StyledRect.qml` and the
+component geometry as options, and works in Discord's browser clients and in
+ReCore, where it also turns ReCord's CRT layer off.
 
 The other files are self-contained themes ReCore ships and the site previews:
 **Catppuccin Mocha**, **Tokyo Night**, **Nord Aurora**, **Gruvbox Ember** and
@@ -28,7 +28,9 @@ Settings is open, and names each custom property from its variable name, the
 comment beside it and the section heading above it; `@property` rules and
 BetterDiscord `@var` labels and types are read too, and a comment that lists
 choices (`off: ... , hide: ...`) becomes buttons. What is read and what is not
-is in [docs/themes.md](../docs/themes.md).
+is in [docs/themes.md](../docs/themes.md). The full inventory of Ambxst's
+colours, surface variants, component geometry and preset differences is in
+[docs/ambxst.md](../docs/ambxst.md).
 
 ReCord's theme is Apache-2.0, by leriart; the licence is in
 [`LICENSE-Apache-2.0.txt`](LICENSE-Apache-2.0.txt). Pixel Operator is CC0 by Jayvee Enaguas

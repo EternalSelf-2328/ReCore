@@ -2754,7 +2754,7 @@ html.theme-light:not([data-rl-mode="dark"]) {
             "{:?}",
             dark.look.animations
         );
-        assert!(matches!(dark.look.background, Some(Image::Gradient(_))));
+        assert_eq!(dark.look.background, None);
         let light = load_str(css, None, &Options::with_mode(Mode::Light)).unwrap();
         assert_eq!(light.palette.chat, Rgba::rgb(0xff, 0xf8, 0xf7));
         assert_eq!(light.palette.accent, Rgba::rgb(0x90, 0x4a, 0x46));

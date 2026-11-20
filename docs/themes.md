@@ -63,19 +63,23 @@ exist in a native client are still not painted.
 ## Ambxst
 
 [`themes/Ambxst.theme.css`](../themes/Ambxst.theme.css) is a Discord theme
-inspired by [Axenide's Ambxst](https://github.com/Axenide/Ambxst): its default
-Material You palette (warm charcoal, rose `#ffb3ae`, pastel secondary and
-tertiary tones), 16 px rounded panels and Roboto Condensed, in a dark and a
-paper-light set. It is a complete theme for Vencord, Vesktop, Equicord,
-BetterDiscord and Legcord as well as a CSS theme ReCore reads: the same file
-carries Discord's tokens, ReCore's `--rl-*` palette and the native region
-rules. It turns ReCord's CRT layer off and keeps the window's rounded,
-shadowed Material surfaces. Its options mirror the Ambxst shell's
-`config/defaults/theme.js`: the Material roles, opacity and transparency,
-blur and shadows, gradients, roundness, type sizes, bar, dock, notch and
-overview settings. Drop it in the themes folder like any other `.theme.css`
-file; it has no remote imports. The package carries it, so a fresh install
-has it without downloading anything.
+inspired by [Axenide's Ambxst](https://github.com/Axenide/Ambxst): its exact
+default dark adapter (`#1a1111` ground, `#302625` surface, rose `#ffb3ae`)
+and a paper-light counterpart, 16 px rounded panels and Roboto Condensed.
+It is a complete theme for Vencord, Vesktop, Equicord, BetterDiscord and
+Legcord as well as a CSS theme ReCore reads: the same file carries every
+Material role from `Colors.qml`, all nineteen `sr*` surface variants from
+Ambxst's default `theme.json`, Discord's semantic tokens, ReCore's `--rl-*`
+palette and the native region rules. It turns ReCord's CRT layer off and keeps
+the window's rounded, shadowed Material surfaces. Its options cover the
+Material roles, surface gradients and borders, opacity and transparency, blur
+and shadows, gradients, roundness, type sizes, bar, dock, notch, overview,
+context-menu, action-grid and notification geometry. Drop it in the themes
+folder like any other `.theme.css` file; it has no remote imports. The
+package carries it, so a fresh install has it without downloading anything.
+[docs/ambxst.md](ambxst.md) is the source-by-source inventory, including the
+nine Ambxst presets and the parts of the Quickshell shell a Discord window
+cannot paint.
 
 ## Bundled themes
 

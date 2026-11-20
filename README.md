@@ -57,7 +57,7 @@ ReCore is [Yapfast](https://github.com/yapfast/yapfast) with the [**ReCord**](ht
 | --- | --- |
 | **ReCore** | ReCord's signal-orange terminal on charcoal; square, pixel type and CRT effects. |
 | **ReCore Paper** | The same palette in daylight. |
-| **Ambxst** | Warm Material You rose, rounded panels, Roboto Condensed, quiet shadows and a slow ground drift. Its options mirror the Ambxst shell's surfaces, gradients, shadows, bar, dock and typography. |
+| **Ambxst** | Warm Material You rose, rounded panels, Roboto Condensed, quiet shadows and a slow ground drift. Its options carry every Material role, all nineteen surface variants, gradients, shadows, bar, dock, notch, overview and component geometry from the shell. |
 | **Catppuccin Mocha** | Midnight base, mauve accent and a soft aurora behind the panels. |
 | **Tokyo Night** | Ink-blue city grounds with neon blue, cyan and violet. |
 | **Nord Aurora** | Arctic Polar Night and Snow Storm with an aurora-green signal. |
@@ -82,7 +82,7 @@ ReCore reads:
 
 Remote imports, fonts and pictures are cached in memory and on disk. A changed base theme is picked up by **Reload CSS** without restarting.
 
-The full behavior, including the exact limits of native selectors, is in [docs/themes.md](docs/themes.md).
+The full behavior, including the exact limits of native selectors, is in [docs/themes.md](docs/themes.md); the Ambxst colour, surface and preset inventory is in [docs/ambxst.md](docs/ambxst.md).
 
 ### Make a theme
 
