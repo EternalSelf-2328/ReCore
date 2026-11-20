@@ -593,6 +593,7 @@ const ES = {
     "ACK 2": "REC 2",
     "MIC": "MIC",
     "CFG": "CFG",
+    "Synth": "Sintetizado",
 };
 
 const clean = text => text.replace(/\s+/g, " ").trim();

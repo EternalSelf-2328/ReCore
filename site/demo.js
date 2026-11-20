@@ -124,6 +124,11 @@ $("demo-power").addEventListener("click", async () => {
     }
 
     const select = $("demo-set");
+    select.replaceChildren();
+    const synth = document.createElement("option");
+    synth.value = "synth";
+    synth.textContent = translate("Synth");
+    select.append(synth);
     for (const [id, set] of Object.entries(manifest.sets ?? {})) {
         const option = document.createElement("option");
         option.value = id;
