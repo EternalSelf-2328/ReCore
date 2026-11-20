@@ -604,6 +604,8 @@ impl Matrix {
             }
             // ReCore removes others' Matrix reactions only as Discord's.
             Command::RemoveReactor { .. } => {}
+            // Matrix has no announcement channels to publish to.
+            Command::Crosspost { .. } => {}
             // ReCore shows only Discord's polls.
             Command::Vote { .. }
             | Command::SendPoll { .. }
