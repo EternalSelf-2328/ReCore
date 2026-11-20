@@ -594,6 +594,17 @@ const ES = {
     "MIC": "MIC",
     "CFG": "CFG",
     "Synth": "Sintetizado",
+    "UI SFX Sci-fi": "UI SFX Ciencia ficci\u00f3n",
+    "UI SFX Mechanical": "UI SFX Mec\u00e1nico",
+    "UI SFX Minimal": "UI SFX Minimalista",
+    "UI SFX Glass": "UI SFX Cristal",
+    "UI SFX Cinematic": "UI SFX Cinem\u00e1tico",
+    "UI SFX Studio": "UI SFX Estudio",
+    "UI SFX Soft": "UI SFX Suave",
+    "UI SFX Rubber": "UI SFX Goma",
+    "UI SFX Organic": "UI SFX Org\u00e1nico",
+    "UI SFX Dreamy": "UI SFX On\u00edrico",
+    "UI SFX Zen": "UI SFX Zen",
 };
 
 const clean = text => text.replace(/\s+/g, " ").trim();

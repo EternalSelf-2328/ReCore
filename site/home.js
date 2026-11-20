@@ -16,7 +16,7 @@
         tag_name: "v0.5.3",
         name: "ReCore 0.5.3",
         html_url: "https://github.com/leriart/ReCore/releases/tag/v0.5.3",
-        published_at: "2026-11-20T18:11:16Z",
+        published_at: "2026-11-20T18:18:07Z",
         assets: [
             {
                 name: "ReCore-0.5.3-windows-x64.zip",

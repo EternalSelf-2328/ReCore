@@ -130,6 +130,22 @@ if index.is_file():
         page_text,
         count=1,
     )
+    # The scripts carry the release in their cache key, so a visitor who
+    # already loaded one release's translations gets the next one.
+    page_text = re.sub(
+        r'(src="(?:i18n|home|demo)\.js\?v=)[^"]+"',
+        rf'\g<1>{version}"',
+        page_text,
+    )
     index.write_text(page_text, encoding="utf-8")
+    preview = Path("site/preview.html")
+    if preview.is_file():
+        preview_text = preview.read_text(encoding="utf-8")
+        preview_text = re.sub(
+            r'(src="(?:i18n|demo)\.js\?v=)[^"]+"',
+            rf'\g<1>{version}"',
+            preview_text,
+        )
+        preview.write_text(preview_text, encoding="utf-8")
 PY
 fi
