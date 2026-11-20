@@ -1704,8 +1704,8 @@ for (let index = 0; index < extra; index++) {
       png(w, h, (x, y) => [shade[0]! + Math.floor((55 * x) / w), shade[1]! + Math.floor((55 * y) / h), shade[2]!, 255]);
     files.push(addFile({ id: snowflake(ms, 1), channel: GENERAL, filename: `photo-${index}.png`, contentType: "image/png", data: draw(480, 320), width: 480, height: 320, draw }));
   }
-  // The oldest of the latest page is a boost, which ReCore doesn't show but
-  // which still counts toward the page.
+  // The oldest of the latest page is a boost, which ReCore shows as a notice
+  // and which still counts toward the page.
   if (index === extra - 50) post(GENERAL, users.bob, "", ms, { type: 8 });
   else if (index < extra - 1) post(GENERAL, users.bob, sample(index), ms, { files });
   else {

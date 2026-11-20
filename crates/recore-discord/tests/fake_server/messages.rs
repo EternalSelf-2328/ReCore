@@ -91,15 +91,20 @@ async fn reads_history_and_member_lists() {
     let last_read = general_shown.marks.last_read;
 
     // Two pages of history: 50, then the rest, oldest first. The latest
-    // starts with a boost, which counts but doesn't show.
+    // starts with a boost, which counts and shows as a notice.
     let latest = discord
         .history(&guild, &general, Span::Latest)
         .await
         .unwrap();
     assert!(latest.full);
     let (oldest, latest) = (latest.oldest.unwrap(), latest.messages);
-    assert_eq!(latest.len(), 49);
-    assert!(oldest < latest[0].order());
+    assert_eq!(latest.len(), 50);
+    assert_eq!(
+        latest[0].system.as_deref(),
+        Some("boosted the server!"),
+        "the boost now shows"
+    );
+    assert!(oldest <= latest[0].order());
     assert_eq!(
         last_read.to_string(),
         latest[latest.len() - 6].id,
