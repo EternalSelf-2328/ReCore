@@ -77,7 +77,7 @@ impl Pointer {
 
     /// Where it is now, unless the platform won't say.
     pub fn at(&self) -> Option<Drag> {
-        let (x, y) = match &self.source {
+        let (x, y): (f64, f64) = match &self.source {
             #[cfg(target_os = "linux")]
             Source::X11(connection, window) => {
                 use x11rb::protocol::xproto::ConnectionExt;
