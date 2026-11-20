@@ -127,7 +127,7 @@ $("demo-power").addEventListener("click", async () => {
     for (const [id, set] of Object.entries(manifest.sets ?? {})) {
         const option = document.createElement("option");
         option.value = id;
-        option.textContent = set.label;
+        option.textContent = translate(set.label);
         select.append(option);
     }
 
