@@ -135,9 +135,64 @@ fn up_in_an_empty_composer_edits_ones_last_message_in_its_row() {
     assert_eq!(saved.body, format!("{before} Now?"));
 }
 
+/// A model in the preview's data folder, as a download would keep it.
+fn model(app: &mut crate::app::App, language: &str, words: &str) {
+    let folder = app.client.root().join("autocorrect");
+    std::fs::create_dir_all(&folder).expect("the model's folder");
+    std::fs::write(folder.join(format!("{language}.txt")), words).expect("the model");
+    app.autocorrect = crate::autocorrect::Autocorrect::load(app.client.root(), language.into());
+}
+
+#[test]
+fn a_downloaded_model_offers_accents_and_takes_them() {
+    let (mut app, _folder) = preview();
+    model(
+        &mut app,
+        "es",
+        "que 1000\nde 900\nla 800\npasión 300\npasion 1\nteléfono 200\ntelefono 2\n",
+    );
+    app.composer.draft.replace("pasion", 6);
+    let text = app.composer.draft.text();
+    let caret = app.composer.draft.caret();
+    app.composer.spelling = crate::autocorrect::for_draft(&app, &text, caret);
+    assert_eq!(
+        app.composer
+            .spelling
+            .as_ref()
+            .map(|suggestion| suggestion.fixed()),
+        Some("pasión")
+    );
+    assert!(crate::spelling::apply(&mut app));
+    assert_eq!(app.client.state().draft(), "pasión");
+}
+
+#[test]
+fn a_downloaded_model_corrects_a_word_just_finished() {
+    let (mut app, _folder) = preview();
+    model(
+        &mut app,
+        "en",
+        "the 1000\nand 900\nform 800\nfrom 700\nreceive 600\n",
+    );
+    app.composer.draft.replace("hola teh ", 9);
+    let text = app.composer.draft.text();
+    let caret = app.composer.draft.caret();
+    app.composer.spelling = crate::autocorrect::for_draft(&app, &text, caret);
+    assert_eq!(
+        app.composer
+            .spelling
+            .as_ref()
+            .map(|suggestion| suggestion.fixed()),
+        Some("the")
+    );
+    assert!(crate::spelling::apply(&mut app));
+    assert_eq!(app.client.state().draft(), "hola the ");
+}
+
 #[test]
 fn a_word_missing_its_accent_is_offered_under_the_composer_and_tab_takes_it() {
     let (mut app, _folder) = preview();
+    app.autocorrect.language = "es".into();
     interact(&mut app, |ui| {
         ui.click(Id::new(COMPOSER)).expect("the composer");
         ui.typewrite("pasion");
@@ -156,6 +211,7 @@ fn a_word_missing_its_accent_is_offered_under_the_composer_and_tab_takes_it() {
 #[test]
 fn a_word_an_input_method_is_still_composing_is_offered_and_tab_takes_it() {
     let (mut app, _folder) = preview();
+    app.autocorrect.language = "es".into();
     app.composer.draft.replace("pasion", 6);
     crate::spelling::composing(&mut app, crate::composer::Writing::Draft);
     assert!(shows(&app, "pasión"), "the word held in the preedit");

@@ -90,6 +90,8 @@ pub enum Message {
     /// A frame of the window's stepped motion: the boot signal, badges,
     /// presence and the screen-in.
     MotionTick,
+    /// Autocorrect's model: a download asked, finished or removed.
+    Autocorrect(crate::autocorrect::Event),
     /// One of ReCord's interface sounds.
     Interface(recore_core::sounds::InterfaceSound),
     /// Nothing to do: a click a backdrop takes.

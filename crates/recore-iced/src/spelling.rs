@@ -193,11 +193,20 @@ impl Suggestion {
     pub fn fixed(&self) -> &str {
         &self.fixed
     }
+
+    /// `word` at `at`, as the model or the list offers it.
+    pub(crate) fn new(at: usize, word: &str, fixed: String) -> Self {
+        Self {
+            at,
+            word: word.to_owned(),
+            fixed,
+        }
+    }
 }
 
-/// The word being written in the draft, `text`, with the caret at `caret`,
-/// when its accents are missing and the list knows it.
-pub fn for_draft(text: &str, caret: usize) -> Option<Suggestion> {
+/// The word being written in `text` at `caret`: where it starts and its
+/// letters, when it is a word to correct.
+pub(crate) fn word_before(text: &str, caret: usize) -> Option<(usize, &str)> {
     let mut caret = caret.min(text.len());
     while caret > 0 && !text.is_char_boundary(caret) {
         caret -= 1;
@@ -210,8 +219,7 @@ pub fn for_draft(text: &str, caret: usize) -> Option<Suggestion> {
         .map(|(at, c)| at + c.len_utf8())
         .unwrap_or(0);
     let word = &before[start..];
-    let letters = word.chars().count();
-    if !(3..=24).contains(&letters) || !word.chars().all(char::is_alphabetic) {
+    if !(3..=24).contains(&word.chars().count()) || !word.chars().all(char::is_alphabetic) {
         return None;
     }
     // A mention, a channel, an emoji's name or a command isn't a word to
@@ -224,16 +232,69 @@ pub fn for_draft(text: &str, caret: usize) -> Option<Suggestion> {
     {
         return None;
     }
+    Some((start, word))
+}
+
+/// The word just finished before `caret`, with a space or punctuation after
+/// it: where it starts and its letters. None while a word is still being
+/// written.
+pub(crate) fn finished_word(text: &str, caret: usize) -> Option<(usize, &str)> {
+    let mut caret = caret.min(text.len());
+    while caret > 0 && !text.is_char_boundary(caret) {
+        caret -= 1;
+    }
+    let before = &text[..caret];
+    let last = before.chars().next_back()?;
+    if last.is_alphabetic() {
+        return None;
+    }
+    // Back over the space or punctuation after the word.
+    let mut end = caret;
+    while let Some((at, c)) = before[..end].char_indices().next_back() {
+        if c.is_alphabetic() {
+            break;
+        }
+        end = at;
+    }
+    if end == 0 || end == caret {
+        return None;
+    }
+    let mut start = end;
+    while let Some((at, c)) = before[..start].char_indices().next_back() {
+        if !c.is_alphabetic() {
+            break;
+        }
+        start = at;
+    }
+    let word = &text[start..end];
+    if !(3..=24).contains(&word.chars().count()) || !word.chars().all(char::is_alphabetic) {
+        return None;
+    }
+    if start > 0
+        && matches!(
+            before[..start].chars().next_back(),
+            Some('@' | '#' | ':' | '/')
+        )
+    {
+        return None;
+    }
+    Some((start, word))
+}
+
+/// The word being written in the draft, `text`, with the caret at `caret`,
+/// when its accents are missing and the list knows it, in the language
+/// written in: the list only has Spanish words.
+pub fn for_language(text: &str, caret: usize, language: &str) -> Option<Suggestion> {
+    if !language.to_ascii_lowercase().starts_with("es") {
+        return None;
+    }
+    let (at, word) = word_before(text, caret)?;
     // A word already carrying an accent is taken as written.
     if !word.is_ascii() {
         return None;
     }
-    let fixed = lookup(&word)?;
-    Some(Suggestion {
-        at: start,
-        word: word.to_owned(),
-        fixed: case_like(word, fixed),
-    })
+    let fixed = lookup(word)?;
+    Some(Suggestion::new(at, word, case_like(word, fixed)))
 }
 
 /// The word in the list whose letters are `typed`'s, found by comparing the
@@ -275,17 +336,7 @@ fn folded_table() -> &'static [(String, &'static str)] {
 /// core's draft yet, is offered all the same, so Tab can take it before the
 /// method commits it.
 pub fn composing(app: &mut App, which: Writing) {
-    if which != Writing::Draft {
-        return;
-    }
-    let offer = app.layout.prefs.word_suggestions.unwrap_or(true);
-    app.composer.spelling = offer
-        .then(|| {
-            let draft = &app.composer.draft;
-            let text = draft.text();
-            for_draft(&text, draft.caret())
-        })
-        .flatten();
+    crate::autocorrect::composing(app, which);
 }
 
 /// The suggestion still matching the draft and its caret, for the bar and
@@ -293,7 +344,7 @@ pub fn composing(app: &mut App, which: Writing) {
 pub fn current(composer: &crate::composer::Composer) -> Option<&Suggestion> {
     let suggestion = composer.spelling.as_ref()?;
     let caret = composer.draft.caret();
-    (caret == suggestion.at + suggestion.word.len()
+    (caret >= suggestion.at + suggestion.word.len()
         && composer.draft.text_at(suggestion.at, suggestion.word()))
     .then_some(suggestion)
 }
@@ -303,29 +354,28 @@ pub fn apply(app: &mut App) -> bool {
     let Some(suggestion) = app.composer.spelling.take() else {
         return false;
     };
-    if for_draft(&app.composer.draft.text(), app.composer.draft.caret()).is_none() {
-        return false;
-    }
     let text = app.composer.draft.text();
     let mut caret = app.composer.draft.caret().min(text.len());
     while caret > 0 && !text.is_char_boundary(caret) {
         caret -= 1;
     }
-    if text.get(suggestion.at..caret) != Some(suggestion.word.as_str()) {
+    let end = suggestion.at + suggestion.word.len();
+    if caret < end || text.get(suggestion.at..end) != Some(suggestion.word.as_str()) {
         return false;
     }
+    let after = caret - end;
     let mut fixed = String::with_capacity(text.len() + 4);
     fixed.push_str(&text[..suggestion.at]);
     fixed.push_str(&suggestion.fixed);
-    fixed.push_str(&text[caret..]);
-    let at = suggestion.at + suggestion.fixed.len();
+    fixed.push_str(&text[end..]);
+    let at = suggestion.at + suggestion.fixed.len() + after;
     crate::composer::replace_text(app, Writing::Draft, fixed, at);
     true
 }
 
 /// `known` with `word`'s capital: all caps stay all caps, a first capital
 /// stays first, and the rest is the list's.
-fn case_like(word: &str, known: &str) -> String {
+pub(crate) fn case_like(word: &str, known: &str) -> String {
     let upper = word.chars().filter(|c| c.is_uppercase()).count();
     let letters = word.chars().filter(|c| c.is_alphabetic()).count();
     if letters > 1 && upper == letters {
@@ -363,35 +413,55 @@ mod tests {
 
     #[test]
     fn a_word_missing_its_accent_is_offered() {
-        let suggestion = for_draft("hola pasion", 11).expect("a suggestion");
+        let suggestion = for_language("hola pasion", 11, "es").expect("a suggestion");
         assert_eq!(suggestion.word(), "pasion");
         assert_eq!(suggestion.fixed(), "pasión");
         assert_eq!(
-            for_draft("Hola Pasion", 11).expect("a suggestion").fixed(),
+            for_language("Hola Pasion", 11, "es")
+                .expect("a suggestion")
+                .fixed(),
             "Pasión"
         );
         assert_eq!(
-            for_draft("HOLA PASION", 11).expect("a suggestion").fixed(),
+            for_language("HOLA PASION", 11, "es")
+                .expect("a suggestion")
+                .fixed(),
             "PASIÓN"
         );
     }
 
     #[test]
     fn words_that_are_right_unaccented_or_already_accented_are_left() {
-        assert!(for_draft("esta", 4).is_none(), "a word of its own");
-        assert!(for_draft("está", 4).is_none(), "already accented");
-        assert!(for_draft("pasión", 6).is_none());
-        assert!(for_draft("p", 1).is_none(), "too short");
-        assert!(for_draft("@pasion", 7).is_none(), "a mention");
-        assert!(for_draft(":pasion", 7).is_none(), "an emoji's name");
-        assert!(for_draft("pasion ", 7).is_none(), "the word ended");
+        assert!(for_language("esta", 4, "es").is_none(), "a word of its own");
+        assert!(for_language("está", 4, "es").is_none(), "already accented");
+        assert!(for_language("pasión", 6, "es").is_none());
+        assert!(for_language("p", 1, "es").is_none(), "too short");
+        assert!(for_language("@pasion", 7, "es").is_none(), "a mention");
+        assert!(
+            for_language(":pasion", 7, "es").is_none(),
+            "an emoji's name"
+        );
+        assert!(for_language("pasion ", 7, "es").is_none(), "the word ended");
     }
 
     #[test]
     fn the_caret_in_the_middle_still_finds_the_word() {
-        let suggestion = for_draft("una cancion triste", 11).expect("a suggestion");
+        let suggestion = for_language("una cancion triste", 11, "es").expect("a suggestion");
         assert_eq!(suggestion.at, 4);
         assert_eq!(suggestion.fixed(), "canción");
+    }
+
+    #[test]
+    fn the_list_is_only_for_spanish() {
+        assert!(for_language("pasion", 6, "en").is_none());
+        assert!(for_language("pasion", 6, "es-ES").is_some());
+    }
+
+    #[test]
+    fn a_word_finished_with_a_space_is_found_for_its_typo() {
+        assert_eq!(word_before("hola pasion", 11), Some((5, "pasion")));
+        assert_eq!(finished_word("hola pasion ", 12), Some((5, "pasion")));
+        assert_eq!(finished_word("hola pasion", 11), None, "still written");
     }
 
     #[test]

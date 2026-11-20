@@ -24,8 +24,9 @@ a double click unsets it. Everything that places itself by either panel
 reads `sidebar::width`, `members::width` or `conversation::navigation`,
 never the panels' own widths.
 
-The rail and the sidebar keep where they were scrolled as the room or
-server opens; a click on a channel moves neither.
+The rail keeps where it was scrolled as the room or server opens; a server
+or the DM home opens its channels at the sidebar's top, and a click on a
+channel moves neither.
 
 The sidebar (`sidebar/`: its rows' model in `rows.rs`, the top, channels,
 voice and DM rows each a file) shows, on the DM

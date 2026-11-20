@@ -9,7 +9,8 @@ use super::{ANIMATES, Pref, message_size, pref};
 use crate::settings::{Drop, Event as SettingsEvent, Page};
 use crate::{
     app::Message,
-    controls::choices,
+    autocorrect::{self, Status},
+    controls::{Kind, action, choices},
     fonts::BOLD,
     form::{self, switch},
 };
@@ -115,14 +116,14 @@ impl<'a> Page<'a> {
             form::group([
                 form::heading(theme, "WRITING"),
                 switch(
-                    "Suggest accented words",
+                    "Autocorrect while writing",
                     prefs.word_suggestions.unwrap_or(true),
                     Some(pref(Pref::WordSuggestions(
                         !prefs.word_suggestions.unwrap_or(true),
                     ))),
                 )
                 .description(
-                    "While you write, a word missing its accents is offered under the composer; Tab takes it, and nothing changes on its own.",
+                    "A word missing its accents, or a common typo once the word is finished, is offered under the composer. Tab or a press takes it; nothing changes on its own.",
                 )
                 .view(self.cx.look),
             ]),
@@ -154,9 +155,10 @@ impl<'a> Page<'a> {
                 .view(self.cx.look),
                 form::note(
                     theme,
-                    "The language your messages are written in. Detect automatically lets Google tell it for each message.",
+                    "The language your messages are written in, and the one autocorrect uses. Detect automatically lets Google tell it for each message; autocorrect takes the language from the desktop.",
                 ),
             ]),
+            self.autocorrect_model_group(),
             form::group([
                 form::heading(theme, "LANGUAGE TO SEND IN"),
                 form::dropdown(
@@ -247,5 +249,67 @@ impl<'a> Page<'a> {
                 Pref::StripTracking,
             ),
         ])
+    }
+
+    /// The optional word list that corrects typos and accents in the
+    /// language written in. Spanish accents work without it.
+    fn autocorrect_model_group(self) -> Element<'a, Message> {
+        let theme = self.cx.look.theme;
+        let autocorrect = self.cx.autocorrect;
+        let language = autocorrect.language_name();
+        let mut parts = vec![
+            form::heading(theme, "AUTOCORRECT MODEL"),
+            form::note(
+                theme,
+                "Word frequencies from FrequencyWords (CC BY-SA 4.0), built from OpenSubtitles. The list is kept on this device; nothing is sent while you type.",
+            ),
+        ];
+        match &autocorrect.status {
+            Status::Missing => {
+                parts.push(form::note(
+                    theme,
+                    format!(
+                        "The {language} model isn't downloaded. Without it, autocorrect only offers Spanish accents."
+                    ),
+                ));
+                parts.push(
+                    action(
+                        theme,
+                        format!("Download {language} model"),
+                        Kind::Plain,
+                        Some(Message::Autocorrect(autocorrect::Event::Download)),
+                    )
+                    .into(),
+                );
+            }
+            Status::Downloading => parts.push(form::note(
+                theme,
+                format!("Downloading the {language} model..."),
+            )),
+            Status::Ready { words } => parts.push(form::beside(
+                text(format!("{words} words kept on this device."))
+                    .size(14)
+                    .color(theme.secondary),
+                action(
+                    theme,
+                    "Remove",
+                    Kind::Plain,
+                    Some(Message::Autocorrect(autocorrect::Event::Remove)),
+                ),
+            )),
+            Status::Failed(error) => {
+                parts.push(form::note_in(error.clone(), theme.danger));
+                parts.push(
+                    action(
+                        theme,
+                        "Try again",
+                        Kind::Plain,
+                        Some(Message::Autocorrect(autocorrect::Event::Download)),
+                    )
+                    .into(),
+                );
+            }
+        }
+        form::group(parts)
     }
 }

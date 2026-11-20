@@ -63,6 +63,9 @@ The fork adds:
 - **ReCord options in Appearance**: accent presets, motion level, typeface,
   background picture, background dimming, panel opacity, CRT levels and
   switches, low power and avatar filtering.
+- **An optional autocorrect word list** for the language you write in,
+  downloaded on request from Messages and kept on the device; without it,
+  Spanish accents are still offered under the composer.
 - **ReCord's sounds** as the `ReCord` sound set in Settings → Sounds:
   call and message sounds, plus interface feedback for hover, menus,
   navigation, typing, send, Escape and the boot signal, with a master

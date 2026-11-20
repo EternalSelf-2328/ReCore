@@ -9,7 +9,8 @@
 //! ReCore), `quit`, `hide` and `show`, `stage PATH` and `stage-aside PATH`
 //! (a file for the next message), `pick KIND PATH` (a picture for a profile
 //! or a server's settings), `theme ID` (a theme, built in or custom, as
-//! Appearance chooses it).
+//! Appearance chooses it), and `autocorrect` (the word list for the
+//! language written in, as Messages' Download does).
 
 use std::{collections::VecDeque, path::PathBuf, time::Duration};
 
@@ -84,6 +85,8 @@ pub enum Command {
     Act(Action),
     /// Show and keep a theme, by its id.
     Theme(String),
+    /// Download autocorrect's list for the language written in.
+    Autocorrect,
     Unknown,
 }
 
@@ -97,6 +100,7 @@ pub fn parse(command: &str) -> Command {
         "open" | "create" => Command::Open,
         "hide" => Command::Hide,
         "show" => Command::Show,
+        "autocorrect" => Command::Autocorrect,
         _ => {
             if let Some(path) = command.strip_prefix("stage ") {
                 Command::Act(Action::Stage(vec![PathBuf::from(path)]))
@@ -196,6 +200,9 @@ pub(crate) fn control(app: &mut App, command: &str) -> Task<Message> {
                 tracing::warn!(id, "no such theme");
             }
         }
+        Command::Autocorrect => {
+            return crate::autocorrect::update(app, crate::autocorrect::Event::Download);
+        }
         Command::Unknown => tracing::warn!(command, "unknown window control"),
     }
     Task::none()
@@ -232,6 +239,7 @@ mod tests {
             })
         ));
         assert!(matches!(parse("theme sakura"), Command::Theme(id) if id == "sakura"));
+        assert!(matches!(parse("autocorrect"), Command::Autocorrect));
         assert!(matches!(parse("open"), Command::Open));
         assert!(matches!(parse("dance"), Command::Unknown));
     }

@@ -32,6 +32,7 @@ mod active_now;
 mod animated;
 mod app;
 mod arrange;
+mod autocorrect;
 mod away;
 mod background;
 mod banners;

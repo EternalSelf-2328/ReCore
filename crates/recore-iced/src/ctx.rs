@@ -32,6 +32,8 @@ pub struct Ctx<'a> {
     pub plays: bool,
     /// What `layout.json` keeps, and the themes it offers.
     pub layout: &'a Layout,
+    /// The autocorrect model and its download.
+    pub autocorrect: &'a crate::autocorrect::Autocorrect,
     pub themes: &'a Themes,
     /// The account's card, as the rail's foot shows it.
     pub account: &'a Account,
@@ -134,6 +136,8 @@ pub enum Request {
     Focus(Focus),
     /// A preference changed that others show: each screen hears of it.
     Changed(Pref),
+    /// The language written in changed: autocorrect takes its model.
+    AutocorrectReload,
     /// The whole window's zoom, as Settings' interface size chooses it.
     Zoom(f32),
     /// The window's title bar: the system's, or ReCore's own.

@@ -253,6 +253,7 @@ impl Settings {
                     .flatten();
                 prefs.translate_source = code.map(str::to_owned);
                 cx.keep("translate_source", code);
+                cx.request(Request::AutocorrectReload);
             }
             Pref::TranslateTarget(index) => {
                 let (code, _) = crate::translate::LANGUAGES

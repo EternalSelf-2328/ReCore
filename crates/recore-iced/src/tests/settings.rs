@@ -89,12 +89,22 @@ fn a_popover_open_before_settings_does_not_take_the_first_click() {
 }
 
 #[test]
+fn messages_offer_the_autocorrect_model_for_the_language_written_in() {
+    let (mut app, _folder) = preview();
+    app.autocorrect.language = "es".into();
+    app.layout.prefs.translate_source = Some("es".into());
+    open(&mut app, Section::Messages);
+    assert!(shows(&app, "AUTOCORRECT MODEL"));
+    assert!(shows(&app, "Download Spanish model"));
+}
+
+#[test]
 fn the_accent_suggestions_switch_turns_them_off() {
     let (mut app, _folder) = preview();
     open(&mut app, Section::Messages);
     interact(&mut app, |ui| {
-        ui.click("Suggest accented words")
-            .expect("the suggestions' switch");
+        ui.click("Autocorrect while writing")
+            .expect("the autocorrect's switch");
     });
     assert_eq!(
         app.layout.prefs.word_suggestions,

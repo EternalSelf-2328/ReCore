@@ -26,6 +26,7 @@ impl App {
             state: self.client.state(),
             plays: crate::pictures::plays(self),
             layout: &self.layout,
+            autocorrect: &self.autocorrect,
             themes: &self.themes,
             account: &self.account,
             build: &self.build,
@@ -219,6 +220,11 @@ impl App {
                         if !heard.contains(&pref) {
                             heard.push(pref);
                         }
+                    }
+                    Request::AutocorrectReload => {
+                        let language = crate::autocorrect::language(&self.layout.prefs);
+                        self.autocorrect.reload(self.client.root(), language);
+                        self.composer.spelling = None;
                     }
                     Request::Zoom(level) => tasks.push(self.set_zoom(level)),
                     Request::TitleBar(system) => {

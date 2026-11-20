@@ -26,8 +26,17 @@ no word, in Spanish is offered under the composer with its accents
 (`spelling.rs`): Tab takes it, and so does a press on it, and nothing
 changes on its own. An input method's word is offered while it composes it,
 before it's committed, and Tab takes it then too; the method's stale commit
-is dropped. Messages' "Suggest accented words" turns the offers off. Words
-like `esta`/`está` and `el`/`él` are left to the sentence.
+is dropped. Words like `esta`/`está` and `el`/`él` are left to the sentence.
+
+A downloaded word list (`autocorrect.rs`) corrects common typos as well, in
+the language Messages says messages are written in, or the desktop's when
+that's automatic, where that language is written with an alphabet. It is optional: Messages' "Autocorrect while writing"
+turns the offers off, and its "Autocorrect model" downloads the list for the
+chosen language when asked, from
+[FrequencyWords](https://github.com/hermitdave/FrequencyWords) (CC BY-SA 4.0,
+built from OpenSubtitles). The list stays in `autocorrect/` in the data
+folder and nothing is sent while typing. Without it, only the Spanish
+accents are offered.
 
 Files go with the next message (`uploads.rs`) from the system's file
 dialog (the + where nothing else can start, or the + menu's "Upload a

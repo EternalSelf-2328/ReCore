@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use recore_core::application::Navigation;
+use recore_core::application::{Action, Navigation};
 
 use super::{change, interact, preview, shows, start, unread};
 use crate::app::{App, Message};
@@ -19,6 +19,20 @@ fn a_channel_clicked_in_the_list_opens() {
     assert_eq!(app.header.name, "games");
     assert!(!app.header.direct);
     assert!(shows(&app, "What are we playing next?"));
+}
+
+#[test]
+fn a_server_or_the_dm_home_opens_its_channels_at_the_top() {
+    let (mut app, _folder) = preview();
+    // A list left scrolled far down, then another place opened.
+    app.sidebar.scroll.offset = 420.0;
+    app.client
+        .dispatch(Action::Navigate(Navigation::DirectMessages));
+    let _ = app.sync();
+    assert_eq!(
+        app.sidebar.scroll.offset, 0.0,
+        "the new list starts at its top"
+    );
 }
 
 #[test]

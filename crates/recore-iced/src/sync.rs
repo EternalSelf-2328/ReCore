@@ -197,7 +197,8 @@ impl App {
         let state = self.client.state();
         // The DM search's filter is the DM home's: it goes as the rail
         // goes to a server, or back home.
-        if self.sidebar.filtered_in.as_ref() != Some(&state.navigation) {
+        let entered = self.sidebar.filtered_in.as_ref() != Some(&state.navigation);
+        if entered {
             self.sidebar.filtered_in = Some(state.navigation.clone());
             if !self.sidebar.filter.is_empty() {
                 self.sidebar.filter.clear();
@@ -222,6 +223,19 @@ impl App {
             crate::profile::profile_sync(self),
             self.status.sync(self.client.state()),
         ];
+        // A server or the DM home opens at the top of its channels: the
+        // offset of the one left would otherwise skip the rows there, and
+        // leave the list's first rows blank until it's scrolled.
+        if entered {
+            self.sidebar.scroll.offset = 0.0;
+            tasks.push(operation::scroll_to(
+                crate::sidebar::LIST,
+                AbsoluteOffset {
+                    x: None,
+                    y: Some(0.0),
+                },
+            ));
+        }
         self.cards.sync(&self.client.app, &self.profiles);
         crate::friends::friends_sync(self);
         self.quick.sync(self.client.state());

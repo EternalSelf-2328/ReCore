@@ -92,6 +92,8 @@ pub struct App {
     /// What the window keeps in `layout.json`: open folders, collapsed
     /// categories.
     pub layout: crate::layout::Layout,
+    /// The optional autocorrect model for the language written in.
+    pub autocorrect: crate::autocorrect::Autocorrect,
     /// The thread beside's width as its edge was pressed, while it's dragged.
     pub aside_drag: Option<f32>,
     /// The minute now, as the clocks that show minutes read it, and the
@@ -305,6 +307,10 @@ impl App {
         layout.prefs.apply_clock();
         recore_core::discord::set_custom_games(&layout.prefs.game_executables);
         client.share_typing = layout.prefs.share_typing.unwrap_or(true);
+        let autocorrect = crate::autocorrect::Autocorrect::load(
+            client.root(),
+            crate::autocorrect::language(&layout.prefs),
+        );
         // The window opens at its size in the desktop's pixels whatever the
         // zoom, and its layout gets fewer.
         let zoom = recore_core::zoom::saved(layout.zoom);
@@ -331,6 +337,7 @@ impl App {
             win: Window::new(crate::pictures::Pictures::new(fitter)),
             pointed: Pointed::default(),
             layout,
+            autocorrect,
             aside_drag: None,
             minute: recore_core::clock::now_ms() / 1000 / 60 * 60,
             header: Default::default(),
@@ -547,6 +554,7 @@ impl App {
                 self.reporting = false;
                 self.report()
             }
+            Message::Autocorrect(event) => crate::autocorrect::update(self, event),
             Message::Interface(sound) => {
                 self.interface_sound(sound);
                 Task::none()

@@ -700,7 +700,7 @@ pub fn edited(app: &mut App, which: Writing, text: String, caret: usize) {
     crate::suggest::caret_moved(app, which, &kept, caret);
     app.composer.spelling = (which == Writing::Draft
         && app.layout.prefs.word_suggestions.unwrap_or(true))
-    .then(|| crate::spelling::for_draft(&kept, caret))
+    .then(|| crate::autocorrect::for_draft(app, &kept, caret))
     .flatten();
 }
 
@@ -1073,7 +1073,9 @@ fn composer_box<'a>(ctx: crate::ctx::Ctx<'a>, look: &Look) -> Element<'a, Messag
         } else {
             theme.muted
         };
-        buttons = buttons.push(text(format!("{count}/2000")).size(11).color(ink));
+        buttons = buttons.push(lift(
+            text(format!("{count}/2000")).size(11).color(ink).into(),
+        ));
     }
     if look.discord && look.enabled {
         buttons = buttons.push(lift(composer_button(
