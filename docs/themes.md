@@ -366,7 +366,17 @@ theme's remote files, and `scan_with_imports` does so while walking folders;
 `scan` and `load` are the same without remote access. `theme_folders` names
 the common clients' folders. `Options` chooses the dark or light set, forces
 an accent, or overrides a custom property. The crate has no dependencies, so its parser can be tested
-on its own:
+on its own.
+
+A theme is data, never code. A damaged or hostile file is read as far as it
+makes sense and the rest is left out: unterminated blocks, strings and
+comments, NUL bytes, invalid numbers, reference loops and a variable that
+names itself twice at every level (which would be 2^n substitutions) all
+end without a panic, a stack overflow or a run that never returns. A value
+that would grow past 1 MiB or read more than 4096 variables is treated as
+missing. `crates/recore-css/tests/robust.rs` cuts every bundled theme at
+120 places and damages each with random fragments, and checks the hostile
+inputs by name.
 
 ```bash
 cargo test -p recore-css

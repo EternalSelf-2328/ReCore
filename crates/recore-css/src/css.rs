@@ -1193,6 +1193,14 @@ fn media_scheme(prelude: &str) -> Option<bool> {
     None
 }
 
+/// The largest a value may grow to while its `var()`s are filled in. A
+/// colour or a picture is far below this; a theme that reaches it is broken
+/// or hostile, and is read as if the value were missing.
+const MAX_RESOLVED: usize = 1 << 20;
+
+/// How many `var()`s one value may read, across all its levels.
+const SUBSTITUTIONS: usize = 4096;
+
 /// Resolves custom properties and the colours that use them.
 #[derive(Clone, Debug, Default)]
 pub struct Vars {
@@ -1285,7 +1293,8 @@ impl Vars {
     /// `value` with every `var()` replaced, or `None` when one has neither a
     /// value nor a fallback.
     pub fn resolve(&self, value: &str) -> Option<String> {
-        self.resolve_depth(value, 0)
+        let mut left = SUBSTITUTIONS;
+        self.resolve_depth(value, 0, &mut left)
     }
 
     /// The colour a declaration names, after its `var()`s are filled in.
@@ -1300,10 +1309,15 @@ impl Vars {
         names.iter().find_map(|name| self.color(name, light))
     }
 
-    fn resolve_depth(&self, value: &str, depth: usize) -> Option<String> {
-        if depth > 32 {
+    fn resolve_depth(&self, value: &str, depth: usize, left: &mut usize) -> Option<String> {
+        // A theme can name the same variable twice at every level, as
+        // `--a: var(--b) var(--b)`, which is 2^n substitutions for n levels.
+        // The depth alone doesn't bound that, so each read also spends from
+        // one budget for the whole value.
+        if depth > 32 || *left == 0 || value.len() > MAX_RESOLVED {
             return None;
         }
+        *left -= 1;
         let mut out = String::with_capacity(value.len());
         let mut rest = value;
         while let Some(start) = find_ignore_case(rest, "var(") {
@@ -1312,7 +1326,7 @@ impl Vars {
             let Some(end) = matching_paren(after) else {
                 // Not a `var()` we can read; keep it as text.
                 out.push_str(&rest[start..]);
-                return Some(out);
+                return (out.len() <= MAX_RESOLVED).then_some(out);
             };
             let inside = &after[..end];
             let arguments = crate::color::split_top(inside, ',');
@@ -1320,14 +1334,21 @@ impl Vars {
             let resolved = self
                 .values
                 .get(name)
-                .and_then(|value| self.resolve_depth(value, depth + 1))
+                .and_then(|value| self.resolve_depth(value, depth + 1, left))
                 .or_else(|| {
                     arguments
                         .get(1)
-                        .and_then(|fallback| self.resolve_depth(fallback, depth + 1))
+                        .and_then(|fallback| self.resolve_depth(fallback, depth + 1, left))
                 });
-            out.push_str(&resolved?);
+            let resolved = resolved?;
+            if out.len() + resolved.len() > MAX_RESOLVED {
+                return None;
+            }
+            out.push_str(&resolved);
             rest = &after[end + 1..];
+        }
+        if out.len() + rest.len() > MAX_RESOLVED {
+            return None;
         }
         out.push_str(rest);
         Some(out)
@@ -1702,6 +1723,34 @@ mod tests {
             Some("12px")
         );
         assert_eq!(vars.resolve("var(--missing)"), None);
+    }
+
+    #[test]
+    fn a_value_that_doubles_itself_stops_at_its_budget() {
+        // `--v63` is 2^63 leaves if every level copies its parent twice.
+        let mut vars = Vars::default();
+        vars.insert(&Declaration {
+            name: "--v0".into(),
+            value: "#111".into(),
+            important: false,
+        });
+        for step in 1..64 {
+            vars.insert(&Declaration {
+                name: format!("--v{step}"),
+                value: format!("var(--v{}) var(--v{})", step - 1, step - 1),
+                important: false,
+            });
+        }
+        let started = std::time::Instant::now();
+        assert_eq!(vars.resolve("var(--v63)"), None, "too large to fill in");
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+        // A reference loop also ends.
+        vars.insert(&Declaration {
+            name: "--loop".into(),
+            value: "var(--loop)".into(),
+            important: false,
+        });
+        assert_eq!(vars.resolve("var(--loop)"), None);
     }
 
     #[test]

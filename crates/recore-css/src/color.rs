@@ -131,6 +131,18 @@ impl Rgba {
 /// `light-dark()`'s two colours applies: its first in light mode, its second
 /// in dark mode.
 pub fn parse(text: &str, light: bool) -> Option<Rgba> {
+    parse_depth(text, light, 0)
+}
+
+/// How deep a colour expression may nest `color-mix()` or `light-dark()`.
+/// A damaged theme can repeat them thousands of times; the window reads it
+/// as a colour it can't use instead of running out of stack.
+const MAX_DEPTH: usize = 32;
+
+fn parse_depth(text: &str, light: bool, depth: usize) -> Option<Rgba> {
+    if depth > MAX_DEPTH {
+        return None;
+    }
     let text = text.trim();
     if text.is_empty() {
         return None;
@@ -179,13 +191,13 @@ pub fn parse(text: &str, light: bool) -> Option<Rgba> {
     }
     if lower.starts_with("color-mix(") {
         let inside = function_body(text)?;
-        return parse_color_mix(inside, light);
+        return parse_color_mix(inside, light, depth + 1);
     }
     if lower.starts_with("light-dark(") {
         let inside = function_body(text)?;
         let parts = split_top(inside, ',');
         let chosen = if light { parts.first() } else { parts.get(1) };
-        return chosen.and_then(|part| parse(part, light));
+        return chosen.and_then(|part| parse_depth(part, light, depth + 1));
     }
     if let Some(rgba) = parse_triplet(&lower) {
         return Some(rgba);
@@ -694,7 +706,7 @@ fn hsl_rgb(hue: f32, saturation: f32, lightness: f32) -> (f32, f32, f32) {
 /// linear light; other spaces (`oklab`, `oklch`, `hsl`) are read and mixed in
 /// sRGB, which keeps their colours usable without a full colour-management
 /// engine.
-fn parse_color_mix(inside: &str, light: bool) -> Option<Rgba> {
+fn parse_color_mix(inside: &str, light: bool, depth: usize) -> Option<Rgba> {
     let args = split_top(inside, ',');
     if args.len() < 3 {
         return None;
@@ -707,7 +719,7 @@ fn parse_color_mix(inside: &str, light: bool) -> Option<Rgba> {
     let mut colours: Vec<(Rgba, Option<f32>)> = Vec::new();
     for arg in &args[1..] {
         let (colour_text, percentage) = take_percentage(arg);
-        let colour = parse(colour_text, light)?;
+        let colour = parse_depth(colour_text, light, depth)?;
         colours.push((colour, percentage));
     }
     if colours.len() < 2 {

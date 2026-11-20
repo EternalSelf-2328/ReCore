@@ -25,14 +25,41 @@ use crate::{
 pub(crate) const DISCORD_EPOCH_MS: u64 = 1_420_070_400_000;
 
 const DEFAULT: u64 = 0;
+const RECIPIENT_ADD: u64 = 1;
+const RECIPIENT_REMOVE: u64 = 2;
 const CALL: u64 = 3;
+const CHANNEL_NAME_CHANGE: u64 = 4;
+const CHANNEL_ICON_CHANGE: u64 = 5;
 const PINNED: u64 = 6;
 const MEMBER_JOIN: u64 = 7;
+const BOOST: u64 = 8;
+const BOOST_TIER_1: u64 = 9;
+const BOOST_TIER_2: u64 = 10;
+const BOOST_TIER_3: u64 = 11;
+const CHANNEL_FOLLOW_ADD: u64 = 12;
+const DISCOVERY_DISQUALIFIED: u64 = 14;
+const DISCOVERY_REQUALIFIED: u64 = 15;
+const DISCOVERY_GRACE_INITIAL: u64 = 16;
+const DISCOVERY_GRACE_FINAL: u64 = 17;
 const THREAD_CREATED: u64 = 18;
 const REPLY: u64 = 19;
 const CHAT_INPUT_COMMAND: u64 = 20;
 const THREAD_STARTER_MESSAGE: u64 = 21;
+const INVITE_REMINDER: u64 = 22;
 const CONTEXT_MENU_COMMAND: u64 = 23;
+const AUTO_MODERATION_ACTION: u64 = 24;
+const ROLE_SUBSCRIPTION: u64 = 25;
+const PREMIUM_UPSELL: u64 = 26;
+const STAGE_START: u64 = 27;
+const STAGE_END: u64 = 28;
+const STAGE_SPEAKER: u64 = 29;
+const STAGE_TOPIC: u64 = 31;
+const APP_SUBSCRIPTION: u64 = 32;
+const INCIDENT_ENABLED: u64 = 36;
+const INCIDENT_DISABLED: u64 = 37;
+const INCIDENT_RAID: u64 = 38;
+const INCIDENT_RAID_ENDED: u64 = 39;
+const PURCHASE: u64 = 44;
 const POLL_RESULT: u64 = 46;
 
 /// The reference of a forward, which carries a copy of the message it
@@ -698,6 +725,19 @@ pub enum Notice {
     /// Its author pinned a message, by id, which the notice links to.
     Pinned(Option<String>),
     Joined,
+    AddedUser,
+    RemovedUser,
+    RenamedChannel,
+    ChangedIcon,
+    Boosted,
+    Followed,
+    Discovery,
+    InviteReminder,
+    AutoModeration,
+    Subscription,
+    Stage,
+    Incident,
+    Other,
     ThreadStarted,
     Call,
     PollResult,
@@ -727,11 +767,67 @@ pub fn parse(value: &Value) -> Option<Message> {
     }
     let system = match kind {
         kind if written(kind) => None,
+        RECIPIENT_ADD => Some(match added_user(value) {
+            Some(name) => format!("added {name} to the group."),
+            None => "added someone to the group.".to_owned(),
+        }),
+        RECIPIENT_REMOVE => Some(match added_user(value) {
+            Some(name) => format!("removed {name} from the group."),
+            None => "removed someone from the group.".to_owned(),
+        }),
+        CHANNEL_NAME_CHANGE => Some(format!(
+            "changed the channel name: {}.",
+            value["content"].as_str().unwrap_or_default()
+        )),
+        CHANNEL_ICON_CHANGE => Some("changed the channel icon.".to_owned()),
         THREAD_CREATED => Some(format!(
             "started a thread: {}.",
             value["content"].as_str().unwrap_or_default()
         )),
         MEMBER_JOIN => Some("joined the server.".to_owned()),
+        BOOST => Some("boosted the server!".to_owned()),
+        BOOST_TIER_1 => Some("reached Level 1!".to_owned()),
+        BOOST_TIER_2 => Some("reached Level 2!".to_owned()),
+        BOOST_TIER_3 => Some("reached Level 3!".to_owned()),
+        CHANNEL_FOLLOW_ADD => Some(match value["content"].as_str() {
+            Some(content) if !content.is_empty() => content.to_owned(),
+            _ => match value["mentions"].as_array().and_then(|all| all.first()) {
+                Some(user) => format!(
+                    "added {} to this channel.",
+                    ready::display_name(user).unwrap_or("someone")
+                ),
+                None => "added a channel to follow.".to_owned(),
+            },
+        }),
+        DISCOVERY_DISQUALIFIED => {
+            Some("This server no longer qualifies for Server Discovery.".to_owned())
+        }
+        DISCOVERY_REQUALIFIED => {
+            Some("This server qualifies for Server Discovery again.".to_owned())
+        }
+        DISCOVERY_GRACE_INITIAL => {
+            Some("This server may leave Server Discovery unless its rules are followed.".to_owned())
+        }
+        DISCOVERY_GRACE_FINAL => Some(
+            "This server leaves Server Discovery today unless its rules are followed.".to_owned(),
+        ),
+        INVITE_REMINDER => Some("was invited to join a server.".to_owned()),
+        AUTO_MODERATION_ACTION => Some(auto_moderation(value)),
+        ROLE_SUBSCRIPTION => Some("subscribed to role subscriptions.".to_owned()),
+        PREMIUM_UPSELL => Some("sent a premium upsell.".to_owned()),
+        STAGE_START => Some("started a Stage.".to_owned()),
+        STAGE_END => Some("ended the Stage.".to_owned()),
+        STAGE_SPEAKER => Some("became a speaker.".to_owned()),
+        STAGE_TOPIC => Some(match value["content"].as_str() {
+            Some(topic) if !topic.is_empty() => format!("set the Stage topic: {topic}."),
+            _ => "changed the Stage topic.".to_owned(),
+        }),
+        APP_SUBSCRIPTION => Some("subscribed to this app's premium.".to_owned()),
+        INCIDENT_ENABLED => Some("enabled an incident alert.".to_owned()),
+        INCIDENT_DISABLED => Some("disabled an incident alert.".to_owned()),
+        INCIDENT_RAID => Some("reported a raid.".to_owned()),
+        INCIDENT_RAID_ENDED => Some("the raid alert ended.".to_owned()),
+        PURCHASE => Some("made a purchase.".to_owned()),
         // Its author is the poll's.
         POLL_RESULT => Some(poll_result(&value["embeds"][0])),
         PINNED => Some("pinned a message.".to_owned()),
@@ -748,7 +844,12 @@ pub fn parse(value: &Value) -> Option<Message> {
                 None => "started a call.".to_owned(),
             },
         ),
-        _ => return None,
+        // A kind Discord adds after this build still shows rather than
+        // disappearing from the conversation.
+        _ => Some(match value["content"].as_str() {
+            Some(content) if !content.is_empty() => content.to_owned(),
+            _ => "sent a system message.".to_owned(),
+        }),
     };
     let author = &value["author"];
     // A forward's own content is empty: what it shows is the copy of the
@@ -898,17 +999,36 @@ pub fn parse(value: &Value) -> Option<Message> {
         author: author_name(value).into(),
         bot: author["bot"].as_bool().unwrap_or(false),
         content,
-        notice: system.as_ref().and_then(|_| match kind {
-            PINNED => Some(Notice::Pinned(
+        notice: system.as_ref().map(|_| match kind {
+            PINNED => Notice::Pinned(
                 value["message_reference"]["message_id"]
                     .as_str()
                     .map(str::to_owned),
-            )),
-            MEMBER_JOIN => Some(Notice::Joined),
-            THREAD_CREATED => Some(Notice::ThreadStarted),
-            CALL => Some(Notice::Call),
-            POLL_RESULT => Some(Notice::PollResult),
-            _ => None,
+            ),
+            MEMBER_JOIN => Notice::Joined,
+            RECIPIENT_ADD => Notice::AddedUser,
+            RECIPIENT_REMOVE => Notice::RemovedUser,
+            CHANNEL_NAME_CHANGE => Notice::RenamedChannel,
+            CHANNEL_ICON_CHANGE => Notice::ChangedIcon,
+            BOOST | BOOST_TIER_1 | BOOST_TIER_2 | BOOST_TIER_3 => Notice::Boosted,
+            CHANNEL_FOLLOW_ADD => Notice::Followed,
+            DISCOVERY_DISQUALIFIED
+            | DISCOVERY_REQUALIFIED
+            | DISCOVERY_GRACE_INITIAL
+            | DISCOVERY_GRACE_FINAL => Notice::Discovery,
+            INVITE_REMINDER => Notice::InviteReminder,
+            AUTO_MODERATION_ACTION => Notice::AutoModeration,
+            ROLE_SUBSCRIPTION | APP_SUBSCRIPTION | PURCHASE | PREMIUM_UPSELL => {
+                Notice::Subscription
+            }
+            STAGE_START | STAGE_END | STAGE_SPEAKER | STAGE_TOPIC => Notice::Stage,
+            INCIDENT_ENABLED | INCIDENT_DISABLED | INCIDENT_RAID | INCIDENT_RAID_ENDED => {
+                Notice::Incident
+            }
+            THREAD_CREATED => Notice::ThreadStarted,
+            CALL => Notice::Call,
+            POLL_RESULT => Notice::PollResult,
+            _ => Notice::Other,
         }),
         system,
         edited: value["edited_timestamp"].is_string(),
@@ -1172,6 +1292,28 @@ pub fn emoji(emoji: &Value) -> Option<(String, String)> {
 
 /// The name a message shows for its author: the server nickname it carries,
 /// else the display name or username.
+/// The person a group or follow notice names, from its mentions or its
+/// content.
+fn added_user(message: &Value) -> Option<String> {
+    if let Some(user) = message["mentions"].as_array().and_then(|all| all.first()) {
+        return Some(ready::display_name(user).unwrap_or("someone").to_owned());
+    }
+    let content = message["content"].as_str()?.trim();
+    (!content.is_empty()).then(|| content.to_owned())
+}
+
+/// What an AutoModeration notice says, from the embed Discord sends with it.
+fn auto_moderation(message: &Value) -> String {
+    let embed = &message["embeds"][0];
+    if let Some(description) = embed["description"]
+        .as_str()
+        .filter(|text| !text.is_empty())
+    {
+        return format!("was timed out: {description}");
+    }
+    "was timed out by AutoMod.".to_owned()
+}
+
 fn author_name(message: &Value) -> &str {
     message["member"]["nick"]
         .as_str()
@@ -2180,8 +2322,19 @@ impl Names {
             (digits(id) && !name.is_empty()).then(|| format!(":{name}:"))
         } else if let Some(time) = tag.strip_prefix("t:") {
             timestamp_tag(time)
+        } else if let Some(command) = tag.strip_prefix('/') {
+            // A slash command's name is shown as Discord shows it, without
+            // the id it carries.
+            let (name, id) = command.rsplit_once(':')?;
+            (digits(id) && !name.is_empty()).then(|| format!("/{name}"))
         } else {
-            None
+            match tag.strip_prefix("id:")? {
+                "customize" => Some("Customize".to_owned()),
+                "browse" => Some("Browse Channels".to_owned()),
+                "guide" => Some("Server Guide".to_owned()),
+                "linked-roles" => Some("Linked Roles".to_owned()),
+                _ => None,
+            }
         }
     }
 }
@@ -2712,7 +2865,14 @@ mod tests {
         message.react("👍", "👍", false, true);
         assert_eq!(message.reactions[0].count, 2);
 
-        assert!(parse(&json!({"id": "1", "type": 8, "author": {"id": "1"}})).is_none());
+        // A boost is a notice now, not a message it drops.
+        assert_eq!(
+            parse(&json!({"id": "1", "type": 8, "author": {"id": "1"}}))
+                .unwrap()
+                .system
+                .as_deref(),
+            Some("boosted the server!")
+        );
         let deleted = parse(
             &json!({"id": "1", "type": 19, "author": {"id": "1"}, "referenced_message": null}),
         );
@@ -3149,6 +3309,100 @@ mod tests {
         assert_eq!(
             snowflake_ms(&snowflake_at(1_791_295_500_000).to_string()),
             1_791_295_500_000
+        );
+    }
+
+    #[test]
+    fn shows_the_system_messages_that_used_to_disappear() {
+        let notice = |kind: u64, body: serde_json::Value| {
+            let mut value = json!({
+                "id": "5", "type": kind, "content": "",
+                "author": {"id": "1", "username": "me"},
+            });
+            if let (Some(target), Some(extra)) = (value.as_object_mut(), body.as_object()) {
+                target.extend(extra.clone());
+            }
+            parse(&value).expect("a notice")
+        };
+        let says = |kind, body| {
+            let message = notice(kind, body);
+            (message.system.unwrap(), message.notice.unwrap())
+        };
+        assert_eq!(
+            says(
+                1,
+                json!({"mentions": [{"id": "2", "username": "ann",
+                                          "global_name": "Ann"}]})
+            ),
+            ("added Ann to the group.".to_owned(), Notice::AddedUser)
+        );
+        assert_eq!(
+            says(2, json!({"mentions": [{"id": "2", "username": "ann"}]})),
+            (
+                "removed ann from the group.".to_owned(),
+                Notice::RemovedUser
+            )
+        );
+        assert_eq!(
+            says(4, json!({"content": "photos"})),
+            (
+                "changed the channel name: photos.".to_owned(),
+                Notice::RenamedChannel
+            )
+        );
+        assert_eq!(
+            says(5, json!({})),
+            ("changed the channel icon.".to_owned(), Notice::ChangedIcon)
+        );
+        assert_eq!(
+            says(8, json!({})),
+            ("boosted the server!".to_owned(), Notice::Boosted)
+        );
+        assert_eq!(
+            says(11, json!({})),
+            ("reached Level 3!".to_owned(), Notice::Boosted)
+        );
+        assert_eq!(
+            says(12, json!({"content": "ann added a channel"})),
+            ("ann added a channel".to_owned(), Notice::Followed)
+        );
+        assert_eq!(
+            says(27, json!({})),
+            ("started a Stage.".to_owned(), Notice::Stage)
+        );
+        assert_eq!(
+            says(31, json!({"content": "Q&A"})),
+            ("set the Stage topic: Q&A.".to_owned(), Notice::Stage)
+        );
+        assert_eq!(
+            says(24, json!({"embeds": [{"description": "spam"}]})),
+            ("was timed out: spam".to_owned(), Notice::AutoModeration)
+        );
+        // A kind this build doesn't know still shows its content.
+        assert_eq!(
+            says(200, json!({"content": "Something happened."})),
+            ("Something happened.".to_owned(), Notice::Other)
+        );
+        assert_eq!(
+            notice(200, json!({})).system.as_deref(),
+            Some("sent a system message.")
+        );
+    }
+
+    #[test]
+    fn shows_slash_commands_and_discords_own_tags() {
+        let names = Names::default();
+        assert_eq!(
+            names.render(
+                None,
+                "</config set:123> <id:customize> <id:browse> <id:guide> <id:linked-roles>"
+            ),
+            "/config set Customize Browse Channels Server Guide Linked Roles"
+        );
+        assert_eq!(
+            names.render(None, "</bad:not-a-number> <id:unknown>"),
+            "</bad:not-a-number> <id:unknown>",
+            "a tag it can't name stays as typed"
         );
     }
 

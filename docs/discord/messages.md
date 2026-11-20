@@ -228,6 +228,15 @@ ReCore is back, rather than showing an error.
   nicknames, as Discord's client shows them. A moderator removes someone's
   reaction with `DELETE …/reactions/{emoji}/0/{user}?location=Message&burst=false`.
   Super reactions aren't listed apart yet.
+- Notices take a message's place as Discord's do, each with its icon: joins,
+  pins, group additions and removals, channel name and icon changes, boosts
+  and the levels they reach, channel follows, Discovery warnings, Stage
+  starts and ends, speakers and topics, AutoMod timeouts, role and app
+  subscriptions, incident alerts, purchases, calls and closed polls. A
+  system kind this build doesn't know shows its content rather than
+  disappearing. Slash-command mentions (`</name:id>`) and Discord's own
+  `<id:customize>`, `<id:browse>`, `<id:guide>` and `<id:linked-roles>` tags
+  show the names Discord shows.
 - Messages support text, replies, edits, deletions, reactions, mentions and
   attachments. Up to ten files go with a message, uploaded to Discord's
   storage first and then named in the message. As in Discord's client,
