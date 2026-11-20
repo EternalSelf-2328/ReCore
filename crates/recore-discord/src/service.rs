@@ -1567,6 +1567,23 @@ impl Discord {
         channel: &str,
         files: Vec<(String, Vec<u8>)>,
     ) -> Result<Vec<crate::api::Upload>> {
+        let privacy = *self
+            .api
+            .attachment_privacy
+            .read()
+            .unwrap_or_else(|error| error.into_inner());
+        let files = if privacy.enabled() && !files.is_empty() {
+            // Finish the whole batch locally before starting any upload.
+            tokio::task::spawn_blocking(move || {
+                files
+                    .into_iter()
+                    .map(|(name, data)| privacy.prepare(name, data))
+                    .collect::<Result<Vec<_>>>()
+            })
+            .await?
+        } else {
+            Ok(files)
+        }?;
         let results = futures_util::future::join_all(
             files
                 .into_iter()
@@ -1588,6 +1605,14 @@ impl Discord {
             }
             None => Ok(uploads),
         }
+    }
+
+    pub fn set_attachment_privacy(&self, privacy: crate::attachment_privacy::AttachmentPrivacy) {
+        *self
+            .api
+            .attachment_privacy
+            .write()
+            .unwrap_or_else(|error| error.into_inner()) = privacy;
     }
 
     /// Throws away uploads no message took.

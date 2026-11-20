@@ -4,6 +4,60 @@ use super::*;
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "starts testing/fake_discord.ts with bun; run scripts/test-fake-discord"]
+async fn attachment_privacy_sanitizes_the_bytes_received_by_the_server() {
+    use recore_discord::attachment_privacy::AttachmentPrivacy;
+
+    let Fixture {
+        _fake,
+        discord,
+        guild,
+        general,
+        ..
+    } = Fixture::start("attachment_privacy").await;
+    let original = include_bytes!("../../../../testing/fixtures/gifs/cat.webp");
+    let mut tagged = original.to_vec();
+    let private = b"private location";
+    tagged[20] |= 0x04;
+    tagged.extend_from_slice(b"XMP ");
+    tagged.extend_from_slice(&(private.len() as u32).to_le_bytes());
+    tagged.extend_from_slice(private);
+    let size = (tagged.len() - 8) as u32;
+    tagged[4..8].copy_from_slice(&size.to_le_bytes());
+
+    discord.set_attachment_privacy(AttachmentPrivacy {
+        strip_image_metadata: true,
+        anonymize_names: true,
+    });
+    let nonce = recore_discord::message::nonce();
+    let sent = discord
+        .send(
+            &guild,
+            &general,
+            "",
+            sending(&nonce, None),
+            vec![("SPOILER_family-photo.webp".into(), tagged)],
+        )
+        .await
+        .unwrap();
+    let file = &sent.attachments[0];
+    assert!(file.name.starts_with("SPOILER_"));
+    assert!(file.name.ends_with(".webp"));
+    assert!(!file.name.contains("family-photo"));
+    let uploaded = discord.download(&file.url, 1 << 20).await.unwrap();
+    assert!(
+        !uploaded
+            .windows(private.len())
+            .any(|bytes| bytes == private)
+    );
+    assert_eq!(
+        uploaded.as_slice(),
+        original.as_slice(),
+        "animation and encoded frames stay intact"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "starts testing/fake_discord.ts with bun; run scripts/test-fake-discord"]
 async fn reads_history_and_member_lists() {
     let Fixture {
         _fake,

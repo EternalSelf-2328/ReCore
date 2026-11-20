@@ -75,7 +75,8 @@ recording. Each change is kept at once in
   Favorites, autocorrect and the optional word list for the language
   written in (downloaded on request and kept locally, with its
   FrequencyWords attribution), and the language Translate puts a message
-  in.
+  in. Discord uploads can have their names anonymized and JPEG, PNG and
+  WebP metadata removed before upload. See [Writing](writing.md).
 - Notifications, Sounds (the set, which plays a sound when chosen, the
   volume, and each sound's own with its play button) and Advanced.
   Advanced holds Start when you sign in, Open Discord

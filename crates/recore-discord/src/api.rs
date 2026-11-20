@@ -283,6 +283,7 @@ pub fn may_work_later(error: &anyhow::Error) -> bool {
 
 pub struct Api {
     http: Client,
+    pub(crate) attachment_privacy: RwLock<crate::attachment_privacy::AttachmentPrivacy>,
     /// Empty without a login; Discord may refresh it in READY.
     token: RwLock<String>,
     /// The API's base URL: Discord's, or the test server's.
@@ -320,6 +321,7 @@ impl Api {
         };
         Ok(Self {
             http,
+            attachment_privacy: RwLock::default(),
             token: RwLock::new(token),
             base,
             limits: Limits::default(),
