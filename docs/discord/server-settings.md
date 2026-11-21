@@ -8,9 +8,9 @@ pages this account may change and the open page beside it. Discord's
 client offers its settings to anyone with Manage Server, Manage Roles,
 Administrator, Ban Members, Manage Nicknames, either expressions
 permission, Manage Webhooks, View Audit Log or View Server Insights
-(`canAccessGuildSettings`); ReCore offers them once at least one page it
-has is open to this account. Each page shows only with its own
-permission:
+(`canAccessGuildSettings`), and its Privacy page to every member; ReCore
+offers the settings to every member too, since Privacy is theirs to change.
+Each page shows only with its own permission:
 
 - Server Profile, with Manage Server: the server's name (2 to 100
   characters), icon and description (up to 300).
@@ -30,6 +30,20 @@ permission:
   and each role's name, colour, icon, permissions and members.
 - [Invites](#invites), with Manage Server, under People: the server's
   invites, and pausing invites and DMs.
+- [Soundboard](#soundboard), under Expression, with Manage Expressions or
+  Create Expressions: the server's sounds, adding one from a sound file,
+  renaming and deleting one.
+- [Webhooks](#webhooks), under Apps, with Manage Webhooks: the server's
+  webhooks, creating one, copying its URL and deleting one.
+- [Integrations](#integrations), under Apps, with Manage Server: the
+  server's apps and services, and removing one.
+- [AutoMod](#automod), under Moderation, with Manage Server: the server's
+  rules, switching one on or off, making a keyword rule and deleting one.
+- [Privacy](#privacy), under Privacy, for every member: whether this
+  account takes DMs from the server's members, filters them into message
+  requests, and shows its activity there.
+- [Discovery](#discovery), under Community, with Manage Server: whether the
+  server is listed, what it still needs, and, for its owner, listing it.
 - [Safety Setup](#safety-setup), with Manage Server, under Moderation: the
   verification level, whether moderators need two-factor authentication,
   and the sensitive content filter.
@@ -48,8 +62,10 @@ purpose; the plan is kept outside the repository.
 
 Only the open page's settings are held, from when it opens to when it
 closes: opening a page asks Discord for it, and leaving it drops it. Each
-page but Members, Invites, Safety Setup, Audit Log and Bans, which act at
-once as Discord's do, edits a draft against what Discord sent. Once the draft differs,
+page but Members, Invites, Emoji, Stickers, Soundboard, Webhooks,
+Integrations, AutoMod, Privacy, Discovery, Safety Setup, Audit Log and
+Bans, which act at once as Discord's do, edits a draft against what
+Discord sent. Once the draft differs,
 Discord's bar shows over the bottom of the page, "Careful — you have
 unsaved changes!", with Reset and Save Changes; until one is chosen,
 choosing another page, Escape and the close button shake the bar red
@@ -217,6 +233,94 @@ file". Upload sends `POST` as multipart form data with `name`, `tags`,
 Discord's refusal shows in the form, in its words. GUILD_STICKERS_UPDATE
 keeps the open page current, keeping who uploaded each sticker, which it
 doesn't say.
+
+## Soundboard
+
+Soundboard lists the server's sounds from `GET
+/guilds/{id}/soundboard-sounds`, each with its emoji, who added it and how
+many of the server's slots they fill: 8 without boosts, then 24, 36 and 48
+by boost level, or 96 with `MORE_SOUNDBOARD`. Manage Expressions changes
+any sound, Create Expressions only those its account added, as Discord's
+page decides. Add Sound chooses an MP3 or Ogg file of at most 512 KiB,
+opens a dialog with its name, the file's name and Save, and sends `POST
+{name, sound}` with the file as a data URI; a file Discord refuses shows
+in the dialog. A sound's Rename dialog sends `PATCH {name}` and its X
+`DELETE`, both at once without asking. The page takes the list Discord
+answers with after each change. The fake has Bob's laugh and Carol's
+applause, records when the window sent
+`GET /_control/soundboard-changes`, and `scripts/ui-session do 'pick ...'`
+chooses a sound as the file chooser would.
+
+## Webhooks
+
+Webhooks lists the server's webhooks from `GET /guilds/{id}/webhooks`, each
+with its name, the channel it posts to, who made it and its kind: Incoming,
+Channel Follower or Application. It takes Manage Webhooks. Copy URL puts an
+incoming webhook's address on the clipboard, the one Discord sends or the
+one its id and token make. Create Webhook asks for a name of up to 80
+characters and a channel, then sends `POST /channels/{id}/webhooks {name}`;
+the X sends `DELETE /webhooks/{id}`. Both show before Discord answers, and
+the list Discord then gives is taken; opening the page again asks Discord,
+as with the other pages that act at once. The fake has Bob's bot
+and a channel follower, and `GET /_control/webhook-changes` lists what the
+window asked.
+
+## Integrations
+
+Integrations lists the server's integrations from `GET
+/guilds/{id}/integrations` with Manage Server, as Discord's client lists
+them and does little else with them: each app's or service's name, its
+account or application, its subscribers and whether it's enabled. The X
+sends `DELETE /guilds/{id}/integrations/{id}` at once and takes the row
+away; a change made elsewhere shows on opening the page again. The fake
+has a Discord app and a Twitch channel, and
+`GET /_control/integration-changes` lists what the window removed.
+
+## AutoMod
+
+AutoMod lists the server's rules from `GET
+/guilds/{id}/auto-moderation/rules` with Manage Server, each with its
+name, its trigger — a keyword list, spam, preset words, mention spam or a
+member's profile — its actions, and a switch. The switch sends `PATCH
+{enabled}`; the X sends `DELETE`; both show at once. Add Rule makes a
+keyword rule: a name, words split at commas or new lines, and Block
+message, Send an alert with a channel, or Time out for an hour. Save sends
+`POST` with `event_type` 1, `trigger_type` 1, `trigger_metadata.
+keyword_filter`, `enabled: true` and the chosen actions, each with Discord's
+metadata; a refusal shows in the dialog. The fake has a keyword rule with
+an alert and Discord's spam filter, and `GET /_control/rule-changes` lists
+what the window asked.
+
+## Privacy
+
+Privacy is each member's own, so every member may open it, as Discord's
+client lets them. Its three switches are Discord's `PreloadedUserSettings.
+privacy` lists: Direct Messages, which adds the server to
+`restricted_guild_ids` when off; Message Requests, which adds it to
+`message_request_restricted_guild_ids`; and Activity Status, which adds it
+to `activity_restricted_guild_ids`. Each saves at once with `PATCH
+/users/@me/settings-proto/1`, and shows while Discord takes it; a refusal
+puts it back. The write keeps every other top-level field and every privacy
+field the page doesn't show, so a status or a list ReCore doesn't render
+survives. `GET /users/@me/settings-proto/1` reads the lists, and the fake's
+`GET /_control/privacy` shows them as it holds them.
+
+## Discovery
+
+Discovery reads `GET /guilds/{id}/discovery-requirements` and `GET
+/guilds/{id}/discovery-metadata` with Manage Server, and the server's
+`DISCOVERABLE` feature: the switch, Discord's requirements, each true or
+false with what it asks — members, age, retention, weekly visitors,
+two-factor authentication and a rules channel — and the keywords,
+description and whether the landing page is published. Only the server's
+owner moves the switch, and only when Discovery isn't permanently disabled
+and the server either meets the requirements or is already listed.
+Enabling or disabling is `PATCH /guilds/{id}` with the server's `features`
+and `DISCOVERABLE` added or left out, as Discord's client does; GUILD_UPDATE
+follows, and the page asks Discord again. The fake reports requirements
+the server meets and unpublished metadata; `POST /_control/guild` makes
+the server Alice's, and `GET /_control/discovery-changes` lists each
+change.
 
 ## Members
 
