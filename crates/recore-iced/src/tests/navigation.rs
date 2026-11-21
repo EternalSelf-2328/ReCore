@@ -168,7 +168,8 @@ fn a_server_on_the_rail_opens_its_channels() {
 fn a_servers_top_counts_who_is_in_voice_and_who_streams() {
     use recore_core::chat::VoicePerson;
     let (mut app, _folder) = preview();
-    assert_eq!((app.sidebar.header.voice, app.sidebar.header.live), (0, 0));
+    // The preview starts with three sample people in the Lounge.
+    assert_eq!((app.sidebar.header.voice, app.sidebar.header.live), (3, 0));
     let in_lounge = |streaming| {
         move |state: &mut recore_core::application::AppState| {
             let room = state

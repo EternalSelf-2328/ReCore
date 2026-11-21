@@ -938,6 +938,42 @@ fn remote_offline() -> bool {
         .is_some_and(|until| std::time::Instant::now() < until)
 }
 
+/// Files that answered 404 or were too large, so a theme that names one does
+/// not ask the web for it again on every reload.
+const REMOTE_FAILED_TTL: Duration = Duration::from_secs(300);
+
+fn remote_failed() -> &'static std::sync::Mutex<BTreeMap<String, std::time::Instant>> {
+    static FAILED: std::sync::OnceLock<std::sync::Mutex<BTreeMap<String, std::time::Instant>>> =
+        std::sync::OnceLock::new();
+    FAILED.get_or_init(|| std::sync::Mutex::new(BTreeMap::new()))
+}
+
+fn remote_failed_recently(url: &str) -> bool {
+    remote_failed()
+        .lock()
+        .map(|failed| {
+            failed
+                .get(url)
+                .is_some_and(|at| at.elapsed() < REMOTE_FAILED_TTL)
+        })
+        .unwrap_or(false)
+}
+
+fn note_remote_failure(url: &str) {
+    if let Ok(mut failed) = remote_failed().lock() {
+        if failed.len() >= REMOTE_KEEP {
+            failed.clear();
+        }
+        failed.insert(url.to_owned(), std::time::Instant::now());
+    }
+}
+
+fn note_remote_success(url: &str) {
+    if let Ok(mut failed) = remote_failed().lock() {
+        failed.remove(url);
+    }
+}
+
 /// Forgets the remote theme files downloaded so far, so Reload CSS sees a
 /// changed base theme at once.
 pub fn clear_remote_cache() {
@@ -946,6 +982,9 @@ pub fn clear_remote_cache() {
     }
     if let Ok(mut until) = offline_until().lock() {
         *until = None;
+    }
+    if let Ok(mut failed) = remote_failed().lock() {
+        failed.clear();
     }
     if let Ok(dir) = remote_cache_dir().lock()
         && let Some(dir) = dir.as_ref()
@@ -981,7 +1020,7 @@ fn fetch_remote(url: &str) -> Option<Vec<u8>> {
     {
         cache.insert(url.to_owned(), (std::time::Instant::now(), bytes.clone()));
     }
-    if remote_offline() {
+    if remote_offline() || remote_failed_recently(url) {
         return fallback;
     }
     let url_owned = url.to_owned();
@@ -998,6 +1037,7 @@ fn fetch_remote(url: &str) -> Option<Vec<u8>> {
                 Ok(response) => response,
                 Err(error) => {
                     tracing::warn!(url = %url_owned, error = %error, "a theme's remote file did not connect");
+                    note_remote_failure(&url_owned);
                     if let Ok(mut until) = offline_until().lock() {
                         *until = Some(std::time::Instant::now() + REMOTE_RETRY);
                     }
@@ -1006,6 +1046,7 @@ fn fetch_remote(url: &str) -> Option<Vec<u8>> {
             };
             if !response.status().is_success() {
                 tracing::warn!(url = %url_owned, status = %response.status(), "a theme's remote file did not download");
+                note_remote_failure(&url_owned);
                 return None;
             }
             if response
@@ -1013,6 +1054,7 @@ fn fetch_remote(url: &str) -> Option<Vec<u8>> {
                 .is_some_and(|length| length > REMOTE_LIMIT as u64)
             {
                 tracing::warn!(url = %url_owned, "a theme's remote file is too large");
+                note_remote_failure(&url_owned);
                 return None;
             }
             let bytes = response.bytes().ok()?;
@@ -1021,8 +1063,10 @@ fn fetch_remote(url: &str) -> Option<Vec<u8>> {
             }
             if bytes.len() > REMOTE_LIMIT {
                 tracing::warn!(url = %url_owned, "a theme's remote file is too large");
+                note_remote_failure(&url_owned);
                 return None;
             }
+            note_remote_success(&url_owned);
             Some(bytes.to_vec())
         })
         .ok()?;
@@ -1619,6 +1663,15 @@ mod tests {
                 .accent,
             crate::style::hex(0x4fb8c9)
         );
+    }
+
+    #[test]
+    fn a_remote_file_that_failed_is_not_asked_again_at_once() {
+        let url = "https://preview.invalid/a-file-that-is-not-there.css";
+        note_remote_failure(url);
+        assert!(remote_failed_recently(url));
+        note_remote_success(url);
+        assert!(!remote_failed_recently(url));
     }
 
     #[test]

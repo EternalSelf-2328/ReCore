@@ -108,6 +108,47 @@ fn members_belong_to_the_selected_text_room() {
 }
 
 #[test]
+fn the_preview_draws_faces_for_its_people() {
+    let mut app = Application::default();
+    app.dispatch(Action::Preview);
+    let illustrated = |url: &Option<String>| {
+        url.as_deref()
+            .is_some_and(|url| app.state.pictures.contains_key(url))
+    };
+    let sam = app
+        .state
+        .rooms
+        .iter()
+        .find(|room| room.id == "sam")
+        .unwrap();
+    assert!(illustrated(&sam.avatar), "a DM avatar");
+    assert!(
+        app.state
+            .messages
+            .iter()
+            .find(|message| message.author == "Sam")
+            .is_some_and(|message| illustrated(&message.avatar)),
+        "a message avatar"
+    );
+    let Some(Ok(members)) = &app.state.members else {
+        panic!("the preview lists members");
+    };
+    assert!(members.iter().all(|member| illustrated(&member.avatar)));
+    let lounge = app
+        .state
+        .rooms
+        .iter()
+        .find(|room| room.id == "lounge")
+        .unwrap();
+    assert!(
+        lounge
+            .people
+            .iter()
+            .all(|person| illustrated(&person.avatar))
+    );
+}
+
+#[test]
 fn frequent_reactions_follow_use_and_fill_with_defaults() {
     let mut app = Application::default();
     app.dispatch(Action::Preview);

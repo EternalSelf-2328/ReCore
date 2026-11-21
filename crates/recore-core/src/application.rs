@@ -3350,9 +3350,15 @@ impl Application {
             }
             self.pictured_aside = aside.messages.clone();
         }
-        (!wanted.is_empty()).then_some(Effect::Backend(Command::Discord(DiscordCommand::Pictures(
-            wanted,
-        ))))
+        if wanted.is_empty() || self.state.preview {
+            // The preview's own pictures are already in memory; there is no
+            // backend to fetch anything from.
+            None
+        } else {
+            Some(Effect::Backend(Command::Discord(DiscordCommand::Pictures(
+                wanted,
+            ))))
+        }
     }
 
     /// Lets go of the custom emoji pictures in memory, but those the messages

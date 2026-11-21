@@ -16,7 +16,9 @@ From the repository folder:
 nix develop path:./nix --command cargo run --locked --profile fast -- --preview
 ```
 
-The preview has two sample servers, DMs and a group DM. The upper-left button
+The preview has two sample servers, DMs and a group DM, with sample people in
+voice. Its avatars and server icons are drawn locally, so faces show without
+an account or a network. The upper-left button
 opens DMs; buttons beneath it select servers. The sidebar shows only that server's
 channels, or only DMs when the DM button is selected. Filter the current list and
 send messages locally. The gear in the account panel opens settings, where "Back

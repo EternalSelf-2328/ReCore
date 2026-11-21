@@ -8,6 +8,14 @@ impl Application {
             return vec![];
         }
         self.state.preview = true;
+        // Sample avatars are drawn here, so the preview shows faces without
+        // a network or an account.
+        for name in ["You", "Sam", "Riley", "Morgan", "Friday crew"] {
+            self.state.pictures.insert(
+                preview_avatar_url(name),
+                std::sync::Arc::new(preview_avatar(name)),
+            );
+        }
         self.state.servers = [
             ChatServer {
                 id: "friends".into(),
@@ -59,10 +67,12 @@ impl Application {
             preview_room("looking-for-group", "looking-for-group", false, 3),
             ChatRoom {
                 voice: true,
+                people: preview_voice_people(&["Sam", "Riley", "Morgan"]),
                 ..preview_room("lounge", "Lounge", false, 4)
             },
             ChatRoom {
                 voice: true,
+                people: preview_voice_people(&["Riley", "Sam"]),
                 ..preview_room("party-voice", "Party", false, 3)
             },
             preview_room("sam", "Sam", true, 2),
@@ -140,6 +150,7 @@ impl Application {
                             own: author == "You",
                             can_edit: author == "You",
                             can_delete: author == "You",
+                            avatar: Some(preview_avatar_url(author)),
                             ..sample_actions()
                         })
                     })
@@ -206,7 +217,7 @@ pub(super) fn preview_room(id: &str, name: &str, direct: bool, members: u64) -> 
         people: vec![],
         ringing: vec![],
         incoming: false,
-        avatar: None,
+        avatar: direct.then(|| preview_avatar_url(name)),
         decoration: None,
         nameplate: None,
         style: None,
@@ -252,7 +263,7 @@ pub(super) fn preview_members(room: &str) -> Vec<ChatMember> {
             name: name.into(),
             username: None,
             role,
-            avatar: None,
+            avatar: Some(preview_avatar_url(name)),
             decoration: None,
             nameplate: None,
             style: None,
@@ -271,6 +282,100 @@ pub(super) fn preview_members(room: &str) -> Vec<ChatMember> {
         .collect();
     chat::sort_members(&mut members);
     members
+}
+
+fn preview_voice_people(names: &[&str]) -> Vec<chat::VoicePerson> {
+    names
+        .iter()
+        .map(|name| chat::VoicePerson {
+            id: format!("@{}:preview.local", name.to_ascii_lowercase()),
+            name: (*name).into(),
+            avatar: Some(preview_avatar_url(name)),
+            ..Default::default()
+        })
+        .collect()
+}
+
+fn preview_avatar_url(name: &str) -> String {
+    format!("preview:{}", name.to_ascii_lowercase().replace(' ', "-"))
+}
+
+/// A locally drawn sample face: a soft two-colour gradient with a mirrored
+/// five-by-five mark, so every preview person has a different picture.
+fn preview_avatar(name: &str) -> crate::chat::Picture {
+    const SIZE: u32 = 96;
+    let hash = name.bytes().fold(0x811c_9dc5_u32, |hash, byte| {
+        (hash ^ u32::from(byte)).wrapping_mul(0x0100_0193)
+    });
+    // Eight evenly spaced hues keep neighbouring sample people apart,
+    // where a raw hash can land two of them on nearly the same green.
+    let hue = ((hash % 8) * 45) as f32;
+    let top = preview_hsv(hue, 0.62, 0.88);
+    let bottom = preview_hsv((hue + 28.0) % 360.0, 0.68, 0.62);
+    let mut rgba = vec![0; (SIZE * SIZE * 4) as usize];
+    for y in 0..SIZE {
+        let mix = y as f32 / (SIZE - 1) as f32;
+        for x in 0..SIZE {
+            let at = ((y * SIZE + x) * 4) as usize;
+            let (r, g, b) = preview_mix(top, bottom, mix);
+            rgba[at..at + 4].copy_from_slice(&[r, g, b, 255]);
+        }
+    }
+    let cell = 12;
+    let origin = (SIZE - 5 * cell) / 2;
+    for row in 0..5 {
+        for column in 0..3 {
+            if hash >> (row * 3 + column) & 1 == 0 {
+                continue;
+            }
+            for x in [column, 4 - column] {
+                let left = origin + x * cell + 2;
+                let top = origin + row * cell + 2;
+                for y in top..top + cell - 4 {
+                    for x in left..left + cell - 4 {
+                        let at = ((y * SIZE + x) * 4) as usize;
+                        rgba[at..at + 4].copy_from_slice(&[242, 238, 232, 255]);
+                    }
+                }
+            }
+        }
+    }
+    crate::chat::Picture {
+        width: SIZE,
+        height: SIZE,
+        rgba: crate::chat::Pixels::new(SIZE, SIZE, rgba),
+        animation: None,
+    }
+}
+
+fn preview_hsv(hue: f32, saturation: f32, value: f32) -> (u8, u8, u8) {
+    let sector = (hue / 60.0) % 6.0;
+    let chroma = value * saturation;
+    let x = chroma * (1.0 - (sector % 2.0 - 1.0).abs());
+    let (r, g, b) = match sector as u32 {
+        0 => (chroma, x, 0.0),
+        1 => (x, chroma, 0.0),
+        2 => (0.0, chroma, x),
+        3 => (0.0, x, chroma),
+        4 => (x, 0.0, chroma),
+        _ => (chroma, 0.0, x),
+    };
+    let m = value - chroma;
+    let channel = |channel: f32| ((channel + m) * 255.0).round().clamp(0.0, 255.0) as u8;
+    (channel(r), channel(g), channel(b))
+}
+
+fn preview_mix(from: (u8, u8, u8), to: (u8, u8, u8), amount: f32) -> (u8, u8, u8) {
+    let channel = |a: u8, b: u8| {
+        (f32::from(a) + (f32::from(b) - f32::from(a)) * amount)
+            .round()
+            .clamp(0.0, 255.0) as u8
+    };
+    (
+        channel(from.0, to.0),
+        channel(from.1, to.1),
+        channel(from.2, to.2),
+    )
 }
 
 /// Preview messages support every local action; sent ones are also editable.
