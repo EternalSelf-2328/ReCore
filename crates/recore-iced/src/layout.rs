@@ -106,6 +106,10 @@ pub struct Layout {
     #[serde(skip)]
     pub theme_sidebar_width: Option<f32>,
     pub members_width: Option<f32>,
+    /// The member list's width a CSS theme names. Not kept, as its
+    /// `theme_sidebar_width` is not.
+    #[serde(skip)]
+    pub theme_members_width: Option<f32>,
     /// How wide the thread beside the channel was dragged.
     pub aside_width: Option<f32>,
     /// How wide the expression picker's edge was dragged.

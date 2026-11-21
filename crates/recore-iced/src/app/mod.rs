@@ -304,6 +304,7 @@ impl App {
         let themes = Themes::read(client.root(), &layout);
         let theme = themes.shown();
         layout.theme_sidebar_width = theme.sidebar_width;
+        layout.theme_members_width = theme.members_width;
         let (fitter, fitted) = crate::pictures::Fitter::new();
         let mut client = client;
         for action in layout.actions() {

@@ -1345,6 +1345,10 @@ fn from_css(file: &ThemeFile) -> Theme {
         .page_layout
         .map(|layout| layout.sidebar)
         .filter(|width| *width > 0.0);
+    shown.members_width = file
+        .page_layout
+        .map(|layout| layout.members)
+        .filter(|width| *width > 0.0);
     macro_rules! assign {
         ($($name:ident,)*) => {
             $(shown.$name = css_color(theme.$name);)*
@@ -1788,12 +1792,14 @@ mod tests {
             body { display: flex; }
             [class*="guilds_"] { width: 64px; }
             [class*="sidebar_"] { width: 260px; }
+            [class*="members_"] { width: 240px; }
             [class*="chat_"] { flex: 1; }"#,
         )
         .unwrap();
         let themes = Themes::read(folder.path(), &Layout::read(folder.path()));
         let shown = themes.find("css:flexed").expect("its colours");
         assert_eq!(shown.sidebar_width, Some(260.0));
+        assert_eq!(shown.members_width, Some(240.0));
     }
 
     #[test]

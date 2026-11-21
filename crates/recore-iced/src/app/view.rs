@@ -736,6 +736,7 @@ impl App {
     /// editor shows what's edited.
     pub fn show_theme(&mut self, theme: Theme) {
         self.layout.theme_sidebar_width = theme.sidebar_width;
+        self.layout.theme_members_width = theme.members_width;
         self.win.pictures.clear_filtered();
         if theme == self.theme {
             return;

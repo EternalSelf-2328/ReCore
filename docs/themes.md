@@ -120,8 +120,9 @@ theme carries:
 
 - The window's panel layout: a theme that names `--gap` or `--spacing`, or a
   `gap` on the page's flex/grid container, gets that space between its
-  panels; a flex or grid page can also name the channel list's width, which
-  lasts until its edge is dragged. `--roundness` or `--radius-lg` rounds
+  panels; a flex or grid page can also name the channel list's and the
+  member list's widths, which last until their edges are dragged.
+  `--roundness` or `--radius-lg` rounds
   their corners, and `--app-frame-background` colours the ground between
   them. Ryoku and Midnight are read this way. A `body { background: transparent }`
   means the panels show through, not that the chat has no ground.
