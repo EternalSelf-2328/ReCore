@@ -2751,6 +2751,8 @@ function resetGuild() {
   webhookChanges.length = 0;
   serverIntegrations.splice(0, serverIntegrations.length, ...SERVER_INTEGRATIONS());
   integrationChanges.length = 0;
+  serverRules.splice(0, serverRules.length, ...SERVER_RULES());
+  ruleChanges.length = 0;
   revokedInvites.clear();
   Object.assign(mfa, { on: false, methods: ["totp"], code: "123456" });
   mfa.tickets.clear();
@@ -4136,6 +4138,39 @@ const SERVER_INTEGRATIONS = (): ServerIntegration[] => [
 const serverIntegrations = SERVER_INTEGRATIONS();
 /** What Alice removed from "Server"'s integrations. */
 const integrationChanges: unknown[] = [];
+
+// --- AutoMod -----------------------------------------------------------------
+
+type AutoModRule = {
+  id: string; guild_id: string; name: string; creator_id: string;
+  event_type: number; trigger_type: number; trigger_metadata: Record<string, unknown>;
+  actions: { type: number; metadata?: Record<string, unknown> }[];
+  enabled: boolean; exempt_roles: string[]; exempt_channels: string[];
+};
+const RULE_SPOILERS = "1400000000000000800";
+const RULE_SPAM = "1400000000000000801";
+/** "Server"'s AutoMod rules: a keyword rule with an alert, and Discord's
+ *  spam filter, switched off. */
+const SERVER_RULES = (): AutoModRule[] => [
+  {
+    id: RULE_SPOILERS, guild_id: GUILD, name: "No spoilers", creator_id: users.bob.id,
+    event_type: 1, trigger_type: 1,
+    trigger_metadata: { keyword_filter: ["spoiler", "leak"] },
+    actions: [
+      { type: 1, metadata: { custom_message: "Keep spoilers out of chat." } },
+      { type: 2, metadata: { channel_id: "1400000000000000102" } },
+    ],
+    enabled: true, exempt_roles: [], exempt_channels: [],
+  },
+  {
+    id: RULE_SPAM, guild_id: GUILD, name: "Spam", creator_id: users.bob.id,
+    event_type: 1, trigger_type: 3, trigger_metadata: {},
+    actions: [{ type: 1 }], enabled: false, exempt_roles: [], exempt_channels: [],
+  },
+];
+const serverRules = SERVER_RULES();
+/** What Alice asked of "Server"'s AutoMod, as she sent it. */
+const ruleChanges: unknown[] = [];
 /** What the CDN serves for a sound: Discord's as MP3, the server's as Ogg. */
 const soundFiles = {
   mp3: readFileSync(new URL("soundboard-tone.mp3", fixtures)),
@@ -6391,6 +6426,63 @@ async function api(req: Request, path: string, origin: string): Promise<Response
       logAudit(90, sticker.id, { changes: [{ key: "name", new_value: name }] });
       changed();
       return json(wireSticker(sticker, true), 201);
+    }
+    return json({ message: "405: Method Not Allowed", code: 0 }, 405);
+  }
+
+  // AutoMod in Server Settings. GET /guilds/{id}/auto-moderation/rules
+  // lists "Server"'s keyword rule and spam filter, POST makes a keyword
+  // rule from `{name, trigger_metadata, actions, enabled}`, PATCH switches
+  // one on or off, and DELETE removes one, all with Manage Server. Each
+  // sends AUTO_MODERATION_RULE_CREATE, _UPDATE or _DELETE, and
+  // GET /_control/rule-changes lists what Alice asked.
+  if ((m = path.match(/^\/guilds\/(\d+)\/auto-moderation\/rules(?:\/(\d+))?$/))) {
+    if (m[1] !== GUILD) return notFound("Unknown Guild", 10004);
+    if (!aliceMay(5)) return json({ message: "Missing Permissions", code: 50013 }, 403);
+    const id = m[2];
+    const found = id ? serverRules.find((rule) => rule.id === id) : undefined;
+    if (id && !found) return notFound("Unknown AutoMod Rule", 10100);
+    if (method === "GET" && !id) return json(serverRules);
+    if (method === "POST" && !id) {
+      const body: any = await req.json().catch(() => ({}));
+      const name = body.name;
+      if (typeof name !== "string" || name.length < 1 || name.length > 100) {
+        return json({ message: "Invalid Form Body", code: 50035, errors: { name: { _errors: [{ code: "BASE_TYPE_BAD_LENGTH", message: "Must be between 1 and 100 in length." }] } } }, 400);
+      }
+      const words = body.trigger_metadata?.keyword_filter;
+      if (!Array.isArray(words) || words.length === 0) {
+        return json({ message: "Invalid Form Body", code: 50035, errors: { trigger_metadata: { keyword_filter: { _errors: [{ code: "BASE_TYPE_REQUIRED", message: "This field is required" }] } } } }, 400);
+      }
+      const rule: AutoModRule = {
+        id: snowflake(Date.now(), 3800 + (ruleChanges.length % 200)),
+        guild_id: GUILD, name, creator_id: ALICE,
+        event_type: Number(body.event_type ?? 1), trigger_type: Number(body.trigger_type ?? 1),
+        trigger_metadata: { keyword_filter: words.map(String) },
+        actions: Array.isArray(body.actions) ? body.actions : [{ type: 1 }],
+        enabled: body.enabled !== false, exempt_roles: [], exempt_channels: [],
+      };
+      serverRules.push(rule);
+      ruleChanges.push({ action: "create", name: rule.name, keywords: rule.trigger_metadata.keyword_filter, actions: rule.actions.map((action) => action.type) });
+      logAudit(101, rule.id, { changes: [{ key: "name", new_value: rule.name }] });
+      dispatch("AUTO_MODERATION_RULE_CREATE", rule);
+      return json(rule, 201);
+    }
+    if (method === "PATCH" && found) {
+      const body: any = await req.json().catch(() => ({}));
+      if ("enabled" in body) {
+        found.enabled = body.enabled === true;
+        ruleChanges.push({ action: "enabled", id: found.id, enabled: found.enabled });
+      }
+      logAudit(102, found.id);
+      dispatch("AUTO_MODERATION_RULE_UPDATE", found);
+      return json(found);
+    }
+    if (method === "DELETE" && found) {
+      serverRules.splice(serverRules.indexOf(found), 1);
+      ruleChanges.push({ action: "delete", id: found.id });
+      logAudit(103, found.id);
+      dispatch("AUTO_MODERATION_RULE_DELETE", { guild_id: GUILD, rule: found });
+      return new Response(null, { status: 204 });
     }
     return json({ message: "405: Method Not Allowed", code: 0 }, 405);
   }
@@ -9709,6 +9801,7 @@ const server = Bun.serve<SocketData>({
     if (path === "/_control/soundboard-changes") return Response.json(soundboardChanges);
     if (path === "/_control/webhook-changes") return Response.json(webhookChanges);
     if (path === "/_control/integration-changes") return Response.json(integrationChanges);
+    if (path === "/_control/rule-changes") return Response.json(ruleChanges);
     if (path === "/_control/custom-call-sounds") return Response.json(customCallSounds);
     if (req.method === "POST" && path === "/_control/soundboard-play") {
       const who = url.searchParams.get("user") ?? "bob";

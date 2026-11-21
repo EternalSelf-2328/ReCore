@@ -16,6 +16,7 @@ use crate::{
 };
 
 mod audit_log;
+mod automod;
 mod bans;
 mod boost;
 mod engagement;
@@ -38,6 +39,7 @@ pub use audit_log::{
     AUDIT_ACTIONS, AUDIT_PAGE, AuditInput, AuditKind, AuditLine, AuditLogPage, AuditRow,
     Span as AuditSpan, Words as AuditWords,
 };
+pub use automod::{AutoModInput, AutoModPage};
 pub use bans::{BANS_BATCH, BANS_PER_PAGE, BanInput, BansPage};
 pub use boost::BoostPage;
 pub use engagement::{AFK_TIMEOUTS, BOOSTED, EngagementPage, SETUP_TIPS, WELCOME, WELCOME_STICKER};
@@ -101,6 +103,7 @@ pub enum Page {
     Soundboard(Box<SoundboardPage>),
     Webhooks(Box<WebhooksPage>),
     Integrations(Box<IntegrationsPage>),
+    AutoMod(Box<AutoModPage>),
 }
 
 /// A switch of a settings page: one of Engagement's system messages, by
@@ -154,7 +157,8 @@ impl ServerSettings {
             | Page::Bans(_)
             | Page::Soundboard(_)
             | Page::Webhooks(_)
-            | Page::Integrations(_) => None,
+            | Page::Integrations(_)
+            | Page::AutoMod(_) => None,
         }
     }
 
@@ -172,6 +176,7 @@ impl ServerSettings {
                 | SettingsSection::Soundboard
                 | SettingsSection::Webhooks
                 | SettingsSection::Integrations
+                | SettingsSection::AutoMod
         )
     }
 
@@ -191,7 +196,8 @@ impl ServerSettings {
             | Page::Bans(_)
             | Page::Soundboard(_)
             | Page::Webhooks(_)
-            | Page::Integrations(_) => None,
+            | Page::Integrations(_)
+            | Page::AutoMod(_) => None,
         }
     }
 
@@ -250,6 +256,9 @@ impl Application {
         }
         if self.may(server, Permission::ManageServer) {
             sections.push(SettingsSection::Integrations);
+        }
+        if self.may(server, Permission::ManageServer) {
+            sections.push(SettingsSection::AutoMod);
         }
         // Discord's Moderation.
         if self.may(server, Permission::ManageServer) {
@@ -585,9 +594,15 @@ impl Application {
                 };
                 self.integrations_changed(server, result, integrations);
             }
-            ServerSettingsAction::AutoMod(_)
-            | ServerSettingsAction::Privacy(_)
-            | ServerSettingsAction::Discovery(_) => {
+            ServerSettingsAction::AutoMod(done) => {
+                let (result, rules) = match result {
+                    Ok(ServerSettingsPage::AutoMod(rules)) => (Ok(()), Some(rules)),
+                    Ok(_) => (Ok(()), None),
+                    Err(error) => (Err(error), None),
+                };
+                self.automod_changed(server, done, result, rules);
+            }
+            ServerSettingsAction::Privacy(_) | ServerSettingsAction::Discovery(_) => {
                 if let Some(settings) = self
                     .state
                     .server_settings
@@ -963,7 +978,8 @@ impl Application {
                 | Page::Bans(_)
                 | Page::Soundboard(_)
                 | Page::Webhooks(_)
-                | Page::Integrations(_),
+                | Page::Integrations(_)
+                | Page::AutoMod(_),
             )
             | None => {}
         }
@@ -1053,7 +1069,8 @@ impl Application {
                 | Page::Bans(_)
                 | Page::Soundboard(_)
                 | Page::Webhooks(_)
-                | Page::Integrations(_),
+                | Page::Integrations(_)
+                | Page::AutoMod(_),
             )
             | None => {}
         }
@@ -1144,6 +1161,9 @@ impl Page {
             }
             (SettingsSection::Integrations, ServerSettingsPage::Integrations(integrations)) => {
                 Self::Integrations(Box::new(IntegrationsPage::new(integrations)))
+            }
+            (SettingsSection::AutoMod, ServerSettingsPage::AutoMod(rules)) => {
+                Self::AutoMod(Box::new(AutoModPage::new(rules)))
             }
             (SettingsSection::Roles, ServerSettingsPage::Roles(roles)) => {
                 Self::Roles(Box::new(RolesPage::new(roles)))

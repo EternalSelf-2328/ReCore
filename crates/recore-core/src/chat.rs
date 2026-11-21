@@ -3796,7 +3796,8 @@ pub struct AutoModDraft {
     /// Block the message, telling the member why.
     pub block: bool,
     /// Alert a channel, by its Discord id.
-    pub alert: Option<String>,
+    pub alert: bool,
+    pub alert_channel: Option<String>,
     /// Time the member out for an hour.
     pub timeout: bool,
 }

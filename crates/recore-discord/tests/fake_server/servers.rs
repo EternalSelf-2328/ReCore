@@ -1473,3 +1473,58 @@ async fn removes_server_integrations_as_discords_client_does() {
         serde_json::json!([{"action": "delete", "id": integrations[1].id, "name": "alice_tv"}])
     );
 }
+
+/// AutoMod in Server Settings: listing "Server"'s rules, switching one on,
+/// adding a keyword rule with block and alert actions, and deleting it;
+/// part of [`talks_to_the_fake_server`], whose session it shares.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "starts testing/fake_discord.ts with bun; run scripts/test-fake-discord"]
+async fn keeps_automod_rules_as_discords_client_does() {
+    let fixture = Fixture::start("keeps_automod_rules_as_discords_client_does").await;
+    let discord = &fixture.discord;
+    let server = fixture.server;
+    let guild = fixture.guild.as_str();
+    let rules = discord.auto_moderation_rules(guild).await.unwrap();
+    assert_eq!(rules.len(), 2);
+    assert_eq!(rules[0].name, "No spoilers");
+    assert_eq!(rules[0].keywords, ["spoiler", "leak"]);
+    assert_eq!(rules[0].actions, [1, 2]);
+    assert!(!rules[1].enabled);
+
+    discord
+        .set_rule_enabled(guild, &rules[1].id, true)
+        .await
+        .unwrap();
+    assert!(discord.auto_moderation_rules(guild).await.unwrap()[1].enabled);
+
+    let body = serde_json::json!({
+        "name": "No links",
+        "event_type": 1,
+        "trigger_type": 1,
+        "trigger_metadata": {"keyword_filter": ["http://", "https://"]},
+        "actions": [
+            {"type": 1},
+            {"type": 2, "metadata": {"channel_id": "1400000000000000102"}},
+        ],
+        "enabled": true,
+    });
+    let rule = discord.create_rule(guild, &body).await.unwrap();
+    assert_eq!(rule.name, "No links");
+    assert_eq!(rule.keywords, ["http://", "https://"]);
+    assert_eq!(rule.actions, [1, 2]);
+    assert_eq!(rule.alert_channel.as_deref(), Some("1400000000000000102"));
+    assert_eq!(discord.auto_moderation_rules(guild).await.unwrap().len(), 3);
+
+    discord.delete_rule(guild, &rule.id).await.unwrap();
+    assert_eq!(discord.auto_moderation_rules(guild).await.unwrap().len(), 2);
+    let changes: serde_json::Value =
+        serde_json::from_str(&control(server, "GET", "/_control/rule-changes", "")).unwrap();
+    assert_eq!(
+        changes,
+        serde_json::json!([
+            {"action": "enabled", "id": rules[1].id, "enabled": true},
+            {"action": "create", "name": "No links", "keywords": ["http://", "https://"], "actions": [1, 2]},
+            {"action": "delete", "id": rule.id},
+        ])
+    );
+}

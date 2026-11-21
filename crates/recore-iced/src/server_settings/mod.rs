@@ -12,6 +12,7 @@
 //! the pages' pictures, when the settings close. Each page's view and
 //! controls are in its module.
 
+mod automod;
 mod expressions;
 mod integrations;
 mod moderation;
@@ -30,9 +31,9 @@ use iced::{
 };
 use recore_core::{
     application::{
-        Action, AppState, AuditInput, BanInput, EmojiInput, IntegrationInput, InviteInput,
-        MemberInput, OwnershipInput, RoleInput, ServerSettings, SettingsChoice, SettingsPage,
-        SettingsText, SettingsToggle, SoundboardInput, StickerInput, WebhookInput,
+        Action, AppState, AuditInput, AutoModInput, BanInput, EmojiInput, IntegrationInput,
+        InviteInput, MemberInput, OwnershipInput, RoleInput, ServerSettings, SettingsChoice,
+        SettingsPage, SettingsText, SettingsToggle, SoundboardInput, StickerInput, WebhookInput,
     },
     chat::{ServerPicture, SettingsSection},
 };
@@ -64,6 +65,7 @@ pub enum Drop {
     InviteUses,
     PauseHours,
     WebhookChannel,
+    AutoModChannel,
 }
 
 /// The settings' own state while they're open.
@@ -124,6 +126,7 @@ pub enum Event {
     /// Copy a webhook's URL.
     CopyWebhook(String),
     Integrations(IntegrationInput),
+    AutoMod(AutoModInput),
     Ownership(OwnershipInput),
 }
 
@@ -160,6 +163,7 @@ impl Screen {
                 Some(SettingsPage::Emoji(page)) => expressions::dialog_field(page),
                 Some(SettingsPage::Soundboard(page)) => soundboard::dialog_field(page),
                 Some(SettingsPage::Webhooks(page)) => webhooks::dialog_field(page),
+                Some(SettingsPage::AutoMod(page)) => automod::dialog_field(page),
                 _ => None,
             });
         let mut tasks = vec![];
@@ -286,6 +290,10 @@ impl Screen {
             }
             Event::CopyWebhook(url) => return iced::clipboard::write(url),
             Event::Integrations(input) => Action::Integrations(input),
+            Event::AutoMod(input) => {
+                self.open = None;
+                Action::AutoMod(input)
+            }
             Event::Ownership(input) => Action::Ownership(input),
         };
         cx.dispatch(action);
@@ -363,6 +371,9 @@ fn dialog_cancel(core: Option<&ServerSettings>) -> Option<Event> {
         SettingsPage::Webhooks(page) if page.draft.is_some() => {
             Some(Event::Webhooks(WebhookInput::Cancel))
         }
+        SettingsPage::AutoMod(page) if page.draft.is_some() => {
+            Some(Event::AutoMod(AutoModInput::Cancel))
+        }
         _ => None,
     }
 }
@@ -410,6 +421,7 @@ impl<'a> View<'a> {
                 SettingsPage::Integrations(page) => {
                     (self.integrations_page(core, page, screen), false)
                 }
+                SettingsPage::AutoMod(page) => (self.automod_page(core, page, screen), false),
             };
             fill = fills;
             page = page.push(view);
@@ -466,6 +478,7 @@ impl<'a> View<'a> {
                 dialogs.extend(self.soundboard_dialog(page, screen))
             }
             Some(SettingsPage::Webhooks(page)) => dialogs.extend(self.webhook_dialog(page, screen)),
+            Some(SettingsPage::AutoMod(page)) => dialogs.extend(self.automod_dialog(page, screen)),
             _ => {}
         }
         if let Some(ownership) = &core.ownership {
@@ -499,9 +512,10 @@ impl<'a> View<'a> {
                     "PEOPLE"
                 }
                 SettingsSection::Webhooks | SettingsSection::Integrations => "APPS",
-                SettingsSection::Safety | SettingsSection::AuditLog | SettingsSection::Bans => {
-                    "MODERATION"
-                }
+                SettingsSection::Safety
+                | SettingsSection::AuditLog
+                | SettingsSection::Bans
+                | SettingsSection::AutoMod => "MODERATION",
                 _ => "",
             };
             if heading != group {

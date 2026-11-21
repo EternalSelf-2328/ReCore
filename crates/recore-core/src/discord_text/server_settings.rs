@@ -7,7 +7,8 @@ use recore_discord::{
     mfa,
     server_settings::{
         Ban as DiscordBan, GuildSettings as DiscordSettings, Integration as DiscordIntegration,
-        ServerProfile as DiscordProfile, Sound as DiscordSound, Webhook as DiscordWebhook,
+        ModerationRule as DiscordRule, ServerProfile as DiscordProfile, Sound as DiscordSound,
+        Webhook as DiscordWebhook,
     },
 };
 use serde_json::{Map, Value};
@@ -18,9 +19,9 @@ use super::{
     *,
 };
 use crate::chat::{
-    Ban, BansAction, GuildSettings, MfaMethod, PickedSound, RoleMember, ServerIntegration,
-    ServerPicture, ServerProfile, ServerSettingsAction, ServerSettingsChange, ServerSettingsPage,
-    ServerSound, ServerWebhook, SettingsSection,
+    AutoModRule, Ban, BansAction, GuildSettings, MfaMethod, PickedSound, RoleMember,
+    ServerIntegration, ServerPicture, ServerProfile, ServerSettingsAction, ServerSettingsChange,
+    ServerSettingsPage, ServerSound, ServerWebhook, SettingsSection,
 };
 
 /// A server icon as Discord's client crops it, and its preview at the
@@ -206,9 +207,12 @@ pub(super) fn command(
                                 )
                             })
                     }
-                    SettingsSection::AutoMod
-                    | SettingsSection::Privacy
-                    | SettingsSection::Discovery => {
+                    SettingsSection::AutoMod => {
+                        discord.auto_moderation_rules(&guild).await.map(|rules| {
+                            ServerSettingsPage::AutoMod(rules.into_iter().map(rule).collect())
+                        })
+                    }
+                    SettingsSection::Privacy | SettingsSection::Discovery => {
                         Err(anyhow::anyhow!("ReCore can't show that page yet"))
                     }
                 };
@@ -421,6 +425,56 @@ async fn settings_action(
                 integrations.into_iter().map(integration).collect(),
             ))
         }
+        ServerSettingsAction::AutoMod(action) => {
+            use crate::chat::AutoModAction;
+            match action {
+                AutoModAction::SetEnabled { id, enabled } => {
+                    discord
+                        .stepping_up(|| discord.set_rule_enabled(guild, &id, enabled))
+                        .await?;
+                }
+                AutoModAction::Delete(id) => {
+                    discord
+                        .stepping_up(|| discord.delete_rule(guild, &id))
+                        .await?;
+                }
+                AutoModAction::Create(form) => {
+                    let mut actions = vec![serde_json::json!({"type": 1})];
+                    if form.alert {
+                        if let Some(channel) = form.alert_channel {
+                            actions.push(serde_json::json!({
+                                "type": 2, "metadata": {"channel_id": channel}
+                            }));
+                        }
+                    }
+                    if form.timeout {
+                        actions.push(serde_json::json!({
+                            "type": 3, "metadata": {"duration_seconds": 3600}
+                        }));
+                    }
+                    let body = serde_json::json!({
+                        "name": form.name,
+                        "event_type": 1,
+                        "trigger_type": 1,
+                        "trigger_metadata": {
+                            "keyword_filter": form.keywords.split(',')
+                                .map(str::trim)
+                                .filter(|word| !word.is_empty())
+                                .collect::<Vec<_>>(),
+                        },
+                        "actions": actions,
+                        "enabled": true,
+                    });
+                    discord
+                        .stepping_up(|| discord.create_rule(guild, &body))
+                        .await?;
+                }
+            }
+            let rules = discord.auto_moderation_rules(guild).await?;
+            Ok(ServerSettingsPage::AutoMod(
+                rules.into_iter().map(rule).collect(),
+            ))
+        }
         _ => anyhow::bail!("ReCore can't change that yet"),
     }
 }
@@ -463,6 +517,24 @@ fn integration(integration: DiscordIntegration) -> ServerIntegration {
         account: integration.account,
         subscriber_count: integration.subscriber_count,
         synced: integration.synced,
+    }
+}
+
+/// An AutoMod rule as AutoMod shows it.
+fn rule(rule: DiscordRule) -> AutoModRule {
+    AutoModRule {
+        id: rule.id,
+        name: rule.name,
+        enabled: rule.enabled,
+        trigger: rule.trigger,
+        event: rule.event,
+        creator: rule.creator,
+        keywords: rule.keywords,
+        regexes: rule.regexes,
+        presets: rule.presets,
+        actions: rule.actions,
+        alert_channel: rule.alert_channel,
+        timeout: rule.timeout,
     }
 }
 
