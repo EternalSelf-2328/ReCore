@@ -1273,6 +1273,7 @@ macro_rules! from_palette {
             shown.bonfire = theme.bonfire();
             $(shown.$name = color(theme.$name);)*
             shown.mention = color(theme.mention());
+            shown.frame = shown.rail;
             shown.worked_out()
         }
     };
@@ -1285,6 +1286,8 @@ fn from_css(file: &ThemeFile) -> Theme {
     let theme = &file.palette;
     let mut shown = Theme::new(&file.id, theme.dark);
     shown.square = file.look.radius.unwrap_or(8.0) < 2.0;
+    shown.panel_gap = file.look.panel_gap.unwrap_or(0.0);
+    shown.panel_radius = file.look.panel_radius.unwrap_or(0.0);
     macro_rules! assign {
         ($($name:ident,)*) => {
             $(shown.$name = css_color(theme.$name);)*
@@ -1292,6 +1295,7 @@ fn from_css(file: &ThemeFile) -> Theme {
     }
     recore_iced_kit::for_theme_colours!(assign);
     shown.mention = css_color(theme.link);
+    shown.frame = file.look.frame.map(css_color).unwrap_or(shown.rail);
     apply_kit_native(&mut shown, &file.native);
     apply_kit_type(&mut shown, &file.native);
     let mut shown = shown.worked_out();
@@ -1713,6 +1717,26 @@ mod tests {
         let shown = themes.find("css:gradient").expect("its colours");
         assert!(shown.navigation_gradient.is_some());
         assert!(shown.chat_gradient.is_some());
+    }
+
+    #[test]
+    fn a_panelled_css_theme_reaches_the_window_layout() {
+        let folder = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(folder.path().join("themes")).unwrap();
+        std::fs::write(
+            folder.path().join("themes/panelled.theme.css"),
+            r#"/** @name Panelled */
+            :root { --background-base-lower: #0a0a0a; --app-frame-background: #111111;
+                --gap: 7px; --roundness: 6px; }
+            body { background: transparent; }"#,
+        )
+        .unwrap();
+        let themes = Themes::read(folder.path(), &Layout::read(folder.path()));
+        let shown = themes.find("css:panelled").expect("its colours");
+        assert_eq!(shown.chat, crate::style::hex(0x0a0a0a));
+        assert_eq!(shown.frame, crate::style::hex(0x111111));
+        assert_eq!(shown.panel_gap, 7.0);
+        assert_eq!(shown.panel_radius, 6.0);
     }
 
     #[test]

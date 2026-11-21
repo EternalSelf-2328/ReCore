@@ -4,7 +4,7 @@
 //! the theme it's drawn in.
 
 use iced::{
-    ContentFit, Element, Length, Point, Rectangle, Size,
+    Background, Border, ContentFit, Element, Length, Point, Rectangle, Size,
     widget::{Space, column, container, image, row, stack, text},
 };
 
@@ -80,21 +80,54 @@ impl App {
         ];
         let chat = self.theme.chat;
         let chat_gradient = self.theme.chat_gradient;
-        let base: Element<'_, Message> = container(
-            row![navigation, crate::conversation::conversation(self)]
+        let conversation = crate::conversation::conversation(self);
+        // Ryoku, Midnight and their kin separate the rail, the chat and the
+        // member list into rounded panels with a gap between them. A theme
+        // that names no gap or radius keeps ReCore's full-bleed layout.
+        let panel_gap = self.theme.panel_gap;
+        let panel_radius = self.theme.panel_radius;
+        let base: Element<'_, Message> = if panel_gap > 0.0 || panel_radius > 0.0 {
+            let frame = self.theme.frame;
+            let line = self.theme.line;
+            let navigation = container(navigation)
+                .clip(true)
+                .style(move |_| Self::panel_style(None, line, panel_radius));
+            let conversation = container(conversation).clip(true).style(move |_| {
+                let mut ground = crate::style::fill(chat);
+                if let Some(gradient) = chat_gradient {
+                    ground.background = Some(gradient.into());
+                }
+                ground.border = Border {
+                    color: line,
+                    width: 1.0,
+                    radius: panel_radius.into(),
+                };
+                ground
+            });
+            container(
+                row![navigation, conversation]
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .spacing(panel_gap),
+            )
+            .padding(panel_gap)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(move |_| crate::style::fill(frame))
+            .into()
+        } else {
+            container(row![navigation, conversation])
                 .width(Length::Fill)
-                .height(Length::Fill),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .style(move |_| {
-            let mut ground = crate::style::fill(chat);
-            if let Some(gradient) = chat_gradient {
-                ground.background = Some(gradient.into());
-            }
-            ground
-        })
-        .into();
+                .height(Length::Fill)
+                .style(move |_| {
+                    let mut ground = crate::style::fill(chat);
+                    if let Some(gradient) = chat_gradient {
+                        ground.background = Some(gradient.into());
+                    }
+                    ground
+                })
+                .into()
+        };
         // A background picture sits under the panels; a GIF, APNG, WebP or
         // video plays through the window's picture players, its first frame
         // standing in until the first one falls due. A theme that keeps the
@@ -588,6 +621,24 @@ impl App {
             .style(move |_| crate::style::fill(theme.chat))
             .into(),
         )
+    }
+
+    /// A rounded panel with no ground of its own, so its child's rail or
+    /// chat colour shows through, clipped to the theme's corners.
+    fn panel_style(
+        background: Option<Background>,
+        line: iced::Color,
+        radius: f32,
+    ) -> iced::widget::container::Style {
+        iced::widget::container::Style {
+            background,
+            border: Border {
+                color: line,
+                width: 1.0,
+                radius: radius.into(),
+            },
+            ..Default::default()
+        }
     }
 
     /// The screen-in after the boot signal: black over the window, stepping

@@ -202,6 +202,12 @@ pub struct Look {
     pub font_size: Option<f32>,
     pub letter_spacing: Option<f32>,
     pub radius: Option<f32>,
+    /// The window's ground behind the gaps between panels.
+    pub frame: Option<Rgba>,
+    /// The space between the window's panels, and their corner radius, as
+    /// themes like Ryoku and Midnight lay them out.
+    pub panel_gap: Option<f32>,
+    pub panel_radius: Option<f32>,
     pub motion: Motion,
     pub pixel_icons: bool,
     pub effects: Effects,
@@ -1286,10 +1292,12 @@ fn direct_vars(sheet: &Stylesheet, vars: &mut css::Vars, dark: bool) {
                 || value.contains("url(")
                 || value.contains("gradient(")
                 || value.eq_ignore_ascii_case("none")
+                || value.eq_ignore_ascii_case("transparent")
             {
                 continue;
             }
-            if name == "--background-size" || color::parse(value, !dark).is_some() {
+            let color = color::parse(value, !dark);
+            if name == "--background-size" || color.is_some_and(|color| color.a > 0) {
                 found.insert(name, value.to_owned());
             }
         }
@@ -1983,6 +1991,25 @@ fn look(
         font_size: length(vars, &["--font-size", "--text-size"]),
         letter_spacing: length(vars, &["--rl-tracking", "--letter-spacing"]),
         radius: length(vars, &["--rl-radius", "--radius-md", "--radius-sm"]),
+        frame: vars.first_color(
+            &[
+                "--app-frame-background",
+                "--background-primary",
+                "--background-base-lower",
+            ],
+            !palette.dark,
+        ),
+        panel_gap: length(vars, &["--gap", "--spacing", "--rl-gap"]),
+        panel_radius: length(
+            vars,
+            &[
+                "--roundness",
+                "--roundness-l",
+                "--radius-lg",
+                "--radius-md",
+                "--rl-radius",
+            ],
+        ),
         motion,
         pixel_icons: vars
             .resolve(vars.get("--rl-icons").unwrap_or("off"))
@@ -3298,6 +3325,22 @@ html.theme-light:not([data-rl-mode="dark"]) {
         assert_eq!(gradient.kind, GradientKind::Linear(90.0));
         // Past the last stop the last colour stays, not the one before it.
         assert_eq!(gradient.at(0.75), Rgba::rgb(0xff, 0xff, 0xff));
+    }
+
+    #[test]
+    fn a_panelled_theme_keeps_its_frame_gap_and_radius() {
+        let theme = load_str(
+            ":root { --background-base-lower: #0a0a0a; --app-frame-background: #111111; \
+             --gap: 7px; --roundness: 6px; } body { background: transparent; }",
+            None,
+            &Options::with_mode(Mode::Dark),
+        )
+        .unwrap();
+        // A transparent body means the panels show, not an empty chat.
+        assert_eq!(theme.palette.chat, Rgba::rgb(0x0a, 0x0a, 0x0a));
+        assert_eq!(theme.look.frame, Some(Rgba::rgb(0x11, 0x11, 0x11)));
+        assert_eq!(theme.look.panel_gap, Some(7.0));
+        assert_eq!(theme.look.panel_radius, Some(6.0));
     }
 
     #[test]

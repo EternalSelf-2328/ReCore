@@ -127,6 +127,12 @@ macro_rules! declare_theme {
             /// Whether panels, menus and buttons use square corners, as
             /// ReCord's terminal theme does.
             pub square: bool,
+            /// The ground behind the gaps between panels, and how wide those
+            /// gaps and the panels' corners are. Zero keeps ReCore's own
+            /// full-bleed layout.
+            pub frame: Color,
+            pub panel_gap: f32,
+            pub panel_radius: f32,
             /// A channel list's category heading, a member list's group
             /// heading and the conversation's title: their size and case, as
             /// a CSS theme's rules on those regions name them.
@@ -175,6 +181,9 @@ macro_rules! declare_theme {
                     selection: Color::TRANSPARENT,
                     mention: Color::TRANSPARENT,
                     square: false,
+                    frame: Color::TRANSPARENT,
+                    panel_gap: 0.0,
+                    panel_radius: 0.0,
                     category_size: 14.0,
                     category_transform: Transform::None,
                     member_heading_size: 14.0,

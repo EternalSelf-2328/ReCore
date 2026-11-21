@@ -118,6 +118,11 @@ The **Theme URL** field downloads a theme into ReCore's folder, and the tile
 turns up ready to choose. Each theme appears as a tile with the CSS badge. A
 theme carries:
 
+- The window's panel layout: a theme that names `--gap` or `--spacing` gets
+  that space between its panels, `--roundness` or `--radius-lg` rounds their
+  corners, and `--app-frame-background` colours the ground between them.
+  Ryoku and Midnight are read this way. A `body { background: transparent }`
+  means the panels show through, not that the chat has no ground.
 - The colours of Discord's tokens: `--background-primary`, `--background-secondary`,
   `--background-floating`, `--channeltextarea-background`, `--text-normal`,
   `--text-muted`, `--header-primary`, `--brand-experiment`, `--status-danger`,
