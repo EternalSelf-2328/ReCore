@@ -245,7 +245,8 @@ pub fn notes_of(body: &str) -> String {
             let title = line.trim_start_matches('#').trim();
             if level <= 2 {
                 // The page names its own sections: "What's new" is its title.
-                install = title.eq_ignore_ascii_case("install");
+                install = title.eq_ignore_ascii_case("install")
+                    || title.eq_ignore_ascii_case("downloads");
                 continue;
             }
             if !install && !title.is_empty() {
@@ -553,6 +554,13 @@ mod tests {
         let long = format!("- {}\n", "word ".repeat(50)).repeat(40);
         assert!(notes_of(&long).chars().count() <= NOTES_LIMIT);
         assert!(!notes_of(&long).ends_with(' '));
+    }
+
+    #[test]
+    fn a_releases_downloads_are_not_part_of_its_notes() {
+        let body = "## Downloads\n\n- Windows: the ZIP.\n- Linux: the AppImage.\n\n\
+            ## What's new\n\n### Themes\n\n- Colours follow the theme.\n";
+        assert_eq!(notes_of(body), "Themes\n\u{2022} Colours follow the theme.");
     }
 
     #[test]

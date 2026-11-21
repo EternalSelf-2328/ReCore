@@ -249,8 +249,9 @@ to its base stable version's section; the release page uses the commits since
 the previous nightly.
 
 The text from an available release still comes from the release's own
-description on GitHub. `update::notes_of` leaves out the Install section, the
-folded commit list, the link to the full comparison and the footer, and it
+description on GitHub. `update::notes_of` leaves out the Install and Downloads
+sections, the folded commit list, the link to the full comparison and the
+footer, and it
 takes the `feat(scope):` before a commit line and the `by @name in <sha>`
 after it off. Only the newest stable release and the newest nightly keep their
 text in memory. The release's page has the rest.
