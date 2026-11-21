@@ -281,6 +281,73 @@ while the server's `incidents_data` says so, or it has `INVITES_DISABLED`;
 their rows dim. GUILD_UPDATE keeps it current. The questions Discord's
 client asks after resuming go only to its analytics, and are left out.
 
+## Soundboard
+
+Soundboard lists the server's sounds with who added each, their volume and
+the emoji they show. `GET /guilds/{server}/soundboard-sounds` fills it, and
+`GUILD_SOUNDBOARD_SOUND_CREATE`, `UPDATE` and `DELETE` keep it current.
+Create Sound reads a sound file of at most 512 KiB, names it and sends it to
+`POST /guilds/{server}/soundboard-sounds`; the pencil renames one with `PATCH
+/guilds/{server}/soundboard-sounds/{sound}`, and the bin deletes it with
+`DELETE` to the same address. Those with Manage Expressions change every
+sound; those with Create Expressions change only their own, as Discord's
+permissions say. The page counts the server's slots by its boost level, 96
+with Discord's MORE_SOUNDBOARD feature.
+
+## Webhooks
+
+Webhooks lists the server's webhooks with their name, channel and address.
+`GET /guilds/{server}/webhooks` fills it. Create Webhook takes a name of up
+to 80 characters and one of the server's text channels, and sends `POST
+/channels/{channel}/webhooks`; the X deletes one with `DELETE
+/webhooks/{id}` and the address copies as text. It takes Manage Webhooks.
+Discord sends a webhook's token only to those who may manage it, so its
+address is built from the id and token when Discord gives no `url`.
+
+## Integrations
+
+Integrations lists the server's bots and services with their type and
+account. `GET /guilds/{server}/integrations` fills it, and the X deletes one
+with `DELETE /guilds/{server}/integrations/{id}` after asking. It takes
+Manage Server. Discord's client only lists and removes them too.
+
+## AutoMod
+
+AutoMod lists the server's rules, each with its trigger and actions, and a
+switch that enables or disables it. `GET
+/guilds/{server}/auto-moderation/rules` fills it; the switch sends `PATCH
+/guilds/{server}/auto-moderation/rules/{rule}` with `{"enabled": ...}`.
+Add Rule makes a keyword rule with a name, words separated by commas or new
+lines, and any of three actions: block the message with a reason, alert a
+channel, or time the member out for an hour. It sends `POST
+/guilds/{server}/auto-moderation/rules` with `trigger_type` 1,
+`keyword_filter` and `trigger_metadata`, and the bin deletes a rule. It takes
+Manage Server.
+
+## Privacy
+
+Privacy shows the three switches Discord gives every member for a server:
+Direct Messages, Message Requests and Activity Status. They are this
+account's own settings for that server, so any member may change them.
+`GET /users/@me/guilds/{server}/settings` gives them through the
+`restricted_guild_ids`, `message_request_restricted_guild_ids` and
+`activity_restricted_guild_ids` lists; turning one off adds the server's id
+to its list and on takes it out, with `PATCH` to the same address. Each saves
+as it moves, as in Discord's client.
+
+## Discovery
+
+Discovery shows whether the server is listed in Discord's directory, each
+requirement Discord checks (safe environment, health, size, rules channel,
+retention, engagement, age), the grace period it has left, and the
+keywords and description its listing uses. `GET /guilds/{server}/discovery`
+fills it, and Discord sends GUILD_UPDATE and its Discovery events when it
+changes elsewhere. Only the owner may move the switch, and only while
+Discovery isn't permanently disabled and the server meets its requirements
+or is already listed; it sends `PATCH /guilds/{server}/discovery` with
+`{"discoverable": true}` or false. A refusal puts the switch back and shows
+Discord's words.
+
 ## Safety Setup
 
 Safety Setup is Discord's page of that name for a server that isn't a
