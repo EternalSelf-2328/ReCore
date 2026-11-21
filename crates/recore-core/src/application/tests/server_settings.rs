@@ -179,27 +179,95 @@ fn soundboard_adds_a_sound_from_a_file_and_lists_it() {
 }
 
 #[test]
+fn privacy_saves_each_switch_at_once_and_puts_back_a_refusal() {
+    let mut app = discord_server();
+    app.state.discord_online = true;
+    app.dispatch(Action::OpenServerSettings("discord:10".into()));
+    app.dispatch(Action::ServerSettingsSection(SettingsSection::Privacy));
+    app.apply(Event::ServerSettingsLoaded {
+        server: "discord:10".into(),
+        section: SettingsSection::Privacy,
+        result: Ok(ServerSettingsPage::Privacy(
+            crate::chat::PrivacySettings::default(),
+        )),
+    });
+    // The switch saves at once, and shows its new state while Discord takes
+    // it.
+    let effects = app.dispatch(Action::Privacy(PrivacyInput::Set(
+        crate::chat::PrivacyToggle::Dms,
+        false,
+    )));
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::Backend(Command::Discord(
+            DiscordCommand::SettingsAction {
+                action: ServerSettingsAction::Privacy(crate::chat::PrivacyChange::Dms(false)),
+                ..
+            }
+        ))]
+    ));
+    let page = match app
+        .state
+        .server_settings
+        .as_ref()
+        .unwrap()
+        .page
+        .as_ref()
+        .unwrap()
+    {
+        crate::application::SettingsPage::Privacy(page) => page,
+        _ => panic!("not Privacy"),
+    };
+    assert!(!page.settings.dms && page.saving);
+
+    // A refusal puts back what Discord has.
+    app.apply(Event::ServerSettingsActionDone {
+        server: "discord:10".into(),
+        action: ServerSettingsAction::Privacy(crate::chat::PrivacyChange::Dms(false)),
+        result: Err("Discord said no".into()),
+    });
+    let page = match app
+        .state
+        .server_settings
+        .as_ref()
+        .unwrap()
+        .page
+        .as_ref()
+        .unwrap()
+    {
+        crate::application::SettingsPage::Privacy(page) => page,
+        _ => panic!("not Privacy"),
+    };
+    assert!(page.settings.dms && !page.saving);
+}
+
+#[test]
 fn server_settings_open_only_with_a_page_she_may_change() {
     use MenuChoice::*;
     let mut app = discord_server();
     app.state.discord_online = true;
-    // Kick Members alone opens none of them.
+    // Kick Members alone opens Privacy, which each member may change, and
+    // no page that takes a moderator's permission.
     change_server(&mut app, |server| {
         server.put_role(
             &serde_json::json!({"id": "20", "name": "Mods", "position": 2,
             "permissions": recore_discord::ready::permission::KICK_MEMBERS.to_string()}),
         );
     });
-    assert!(!app.menu_choices("discord:10").contains(&ServerSettings));
-    assert!(
-        app.dispatch(Action::OpenServerSettings("discord:10".into()))
-            .is_empty()
+    assert!(app.menu_choices("discord:10").contains(&ServerSettings));
+    assert_eq!(
+        app.settings_sections("discord:10"),
+        [SettingsSection::Privacy]
     );
     // Manage Roles opens Roles, and Members with Kick Members.
     grant_mods(&mut app, 0);
     assert_eq!(
         app.settings_sections("discord:10"),
-        [SettingsSection::Members, SettingsSection::Roles]
+        [
+            SettingsSection::Members,
+            SettingsSection::Roles,
+            SettingsSection::Privacy
+        ]
     );
 
     grant_mods(&mut app, recore_discord::ready::permission::MANAGE_GUILD);
@@ -222,7 +290,8 @@ fn server_settings_open_only_with_a_page_she_may_change() {
             SettingsSection::Invites,
             SettingsSection::Integrations,
             SettingsSection::AutoMod,
-            SettingsSection::Safety
+            SettingsSection::Safety,
+            SettingsSection::Privacy
         ]
     );
 

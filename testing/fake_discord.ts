@@ -9802,6 +9802,21 @@ const server = Bun.serve<SocketData>({
     if (path === "/_control/webhook-changes") return Response.json(webhookChanges);
     if (path === "/_control/integration-changes") return Response.json(integrationChanges);
     if (path === "/_control/rule-changes") return Response.json(ruleChanges);
+    if (path === "/_control/privacy") {
+      // The three privacy lists, as her settings keep them.
+      const found = protoFields(Buffer.from(settings, "base64")).find(([number]) => number === 8);
+      const lists = (number: number) => {
+        if (!found || typeof found[1] === "bigint") return [];
+        const ids: string[] = [];
+        for (const [field, value] of protoFields(found[1])) {
+          if (field !== number) continue;
+          if (typeof value === "bigint") ids.push(String(value));
+          else for (let at = 0; at + 8 <= value.length; at += 8) ids.push(String(fixed64(value.slice(at, at + 8))));
+        }
+        return ids;
+      };
+      return Response.json({ restricted: lists(3), message_requests: lists(14), activity: lists(11) });
+    }
     if (path === "/_control/custom-call-sounds") return Response.json(customCallSounds);
     if (req.method === "POST" && path === "/_control/soundboard-play") {
       const who = url.searchParams.get("user") ?? "bob";

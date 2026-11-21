@@ -140,7 +140,12 @@ fn expression_pages_follow_the_servers_pages_for_expression_managers() {
     let app = granting(permission::CREATE_GUILD_EXPRESSIONS);
     assert_eq!(
         app.settings_sections(SERVER),
-        [SettingsSection::Emoji, SettingsSection::Stickers, SettingsSection::Soundboard]
+        [
+            SettingsSection::Emoji,
+            SettingsSection::Stickers,
+            SettingsSection::Soundboard,
+            SettingsSection::Privacy
+        ]
     );
     let app = granting(permission::MANAGE_GUILD | permission::MANAGE_GUILD_EXPRESSIONS);
     let sections = app.settings_sections(SERVER);

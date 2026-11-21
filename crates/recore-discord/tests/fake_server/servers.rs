@@ -1528,3 +1528,62 @@ async fn keeps_automod_rules_as_discords_client_does() {
         ])
     );
 }
+
+/// Privacy in Server Settings: the three lists that say whether "Server"'s
+/// members may DM her, whether their DMs are message requests, and whether
+/// her activity shows there, each changed alone and kept as the rest are.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "starts testing/fake_discord.ts with bun; run scripts/test-fake-discord"]
+async fn keeps_server_privacy_as_discords_client_does() {
+    use recore_discord::server_settings::Privacy;
+    let fixture = Fixture::start("keeps_server_privacy_as_discords_client_does").await;
+    let discord = &fixture.discord;
+    let server = fixture.server;
+    let guild = fixture.guild.as_str();
+    let privacy = discord.server_privacy(guild).await.unwrap();
+    assert_eq!(
+        privacy,
+        Privacy {
+            dms: true,
+            message_requests: true,
+            activity: true
+        }
+    );
+
+    let off = Privacy {
+        dms: false,
+        message_requests: false,
+        activity: false,
+    };
+    discord.set_server_privacy(guild, off).await.unwrap();
+    let lists: serde_json::Value =
+        serde_json::from_str(&control(server, "GET", "/_control/privacy", "")).unwrap();
+    assert_eq!(
+        lists,
+        serde_json::json!({
+            "restricted": [guild],
+            "message_requests": [guild],
+            "activity": [guild],
+        })
+    );
+
+    // One switch on leaves the other two as they were.
+    let dms = Privacy { dms: true, ..off };
+    discord.set_server_privacy(guild, dms).await.unwrap();
+    assert_eq!(discord.server_privacy(guild).await.unwrap(), dms);
+    let lists: serde_json::Value =
+        serde_json::from_str(&control(server, "GET", "/_control/privacy", "")).unwrap();
+    assert_eq!(
+        lists,
+        serde_json::json!({
+            "restricted": [],
+            "message_requests": [guild],
+            "activity": [guild],
+        })
+    );
+
+    // The rest of her settings stay: the custom status is still there.
+    let settings: serde_json::Value =
+        serde_json::from_str(&control(server, "GET", "/_control/settings", "")).unwrap();
+    assert!(settings["settings"].as_str().unwrap().len() > 10);
+}

@@ -19,9 +19,9 @@ use super::{
     *,
 };
 use crate::chat::{
-    AutoModRule, Ban, BansAction, GuildSettings, MfaMethod, PickedSound, RoleMember,
-    ServerIntegration, ServerPicture, ServerProfile, ServerSettingsAction, ServerSettingsChange,
-    ServerSettingsPage, ServerSound, ServerWebhook, SettingsSection,
+    AutoModRule, Ban, BansAction, GuildSettings, MfaMethod, PickedSound, PrivacySettings,
+    RoleMember, ServerIntegration, ServerPicture, ServerProfile, ServerSettingsAction,
+    ServerSettingsChange, ServerSettingsPage, ServerSound, ServerWebhook, SettingsSection,
 };
 
 /// A server icon as Discord's client crops it, and its preview at the
@@ -212,7 +212,11 @@ pub(super) fn command(
                             ServerSettingsPage::AutoMod(rules.into_iter().map(rule).collect())
                         })
                     }
-                    SettingsSection::Privacy | SettingsSection::Discovery => {
+                    SettingsSection::Privacy => discord
+                        .server_privacy(&guild)
+                        .await
+                        .map(|privacy| ServerSettingsPage::Privacy(privacy_settings(privacy))),
+                    SettingsSection::Discovery => {
                         Err(anyhow::anyhow!("ReCore can't show that page yet"))
                     }
                 };
@@ -475,6 +479,28 @@ async fn settings_action(
                 rules.into_iter().map(rule).collect(),
             ))
         }
+        ServerSettingsAction::Privacy(change) => {
+            let current = discord.server_privacy(guild).await?;
+            let desired = match change {
+                crate::chat::PrivacyChange::Dms(on) => {
+                    recore_discord::server_settings::Privacy { dms: on, ..current }
+                }
+                crate::chat::PrivacyChange::MessageRequests(on) => {
+                    recore_discord::server_settings::Privacy {
+                        message_requests: on,
+                        ..current
+                    }
+                }
+                crate::chat::PrivacyChange::Activity(on) => {
+                    recore_discord::server_settings::Privacy {
+                        activity: on,
+                        ..current
+                    }
+                }
+            };
+            let saved = discord.set_server_privacy(guild, desired).await?;
+            Ok(ServerSettingsPage::Privacy(privacy_settings(saved)))
+        }
         _ => anyhow::bail!("ReCore can't change that yet"),
     }
 }
@@ -535,6 +561,15 @@ fn rule(rule: DiscordRule) -> AutoModRule {
         actions: rule.actions,
         alert_channel: rule.alert_channel,
         timeout: rule.timeout,
+    }
+}
+
+/// What Privacy shows of this account's server settings.
+fn privacy_settings(privacy: recore_discord::server_settings::Privacy) -> PrivacySettings {
+    PrivacySettings {
+        dms: privacy.dms,
+        message_requests: privacy.message_requests,
+        activity: privacy.activity,
     }
 }
 

@@ -106,10 +106,17 @@ fn members_shows_for_moderators_and_invites_for_manage_server() {
     let app = discord_server();
     assert_eq!(
         app.settings_sections(SERVER),
-        [SettingsSection::Members, SettingsSection::Roles]
+        [
+            SettingsSection::Members,
+            SettingsSection::Roles,
+            SettingsSection::Privacy
+        ]
     );
     let app = granting(permission::MANAGE_NICKNAMES);
-    assert_eq!(app.settings_sections(SERVER), [SettingsSection::Members]);
+    assert_eq!(
+        app.settings_sections(SERVER),
+        [SettingsSection::Members, SettingsSection::Privacy]
+    );
     let app = granting(permission::MANAGE_GUILD);
     let sections = app.settings_sections(SERVER);
     let at = |section| sections.iter().position(|&known| known == section).unwrap();

@@ -18,6 +18,7 @@ mod integrations;
 mod moderation;
 mod ownership;
 pub(crate) mod people;
+mod privacy;
 mod profile;
 pub(crate) mod roles;
 mod soundboard;
@@ -32,8 +33,9 @@ use iced::{
 use recore_core::{
     application::{
         Action, AppState, AuditInput, AutoModInput, BanInput, EmojiInput, IntegrationInput,
-        InviteInput, MemberInput, OwnershipInput, RoleInput, ServerSettings, SettingsChoice,
-        SettingsPage, SettingsText, SettingsToggle, SoundboardInput, StickerInput, WebhookInput,
+        InviteInput, MemberInput, OwnershipInput, PrivacyInput, RoleInput, ServerSettings,
+        SettingsChoice, SettingsPage, SettingsText, SettingsToggle, SoundboardInput, StickerInput,
+        WebhookInput,
     },
     chat::{ServerPicture, SettingsSection},
 };
@@ -127,6 +129,7 @@ pub enum Event {
     CopyWebhook(String),
     Integrations(IntegrationInput),
     AutoMod(AutoModInput),
+    Privacy(PrivacyInput),
     Ownership(OwnershipInput),
 }
 
@@ -294,6 +297,7 @@ impl Screen {
                 self.open = None;
                 Action::AutoMod(input)
             }
+            Event::Privacy(input) => Action::Privacy(input),
             Event::Ownership(input) => Action::Ownership(input),
         };
         cx.dispatch(action);
@@ -422,6 +426,7 @@ impl<'a> View<'a> {
                     (self.integrations_page(core, page, screen), false)
                 }
                 SettingsPage::AutoMod(page) => (self.automod_page(core, page, screen), false),
+                SettingsPage::Privacy(page) => (self.privacy_page(core, page, screen), false),
             };
             fill = fills;
             page = page.push(view);

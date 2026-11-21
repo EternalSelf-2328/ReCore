@@ -897,4 +897,62 @@ mod tests {
         let update = parse_guild(&json!({"id": "1", "premium_tier": 1, "afk_timeout": 60}));
         assert_eq!((update.premium_tier, update.afk_timeout), (1, 60));
     }
+
+    #[test]
+    fn privacy_reads_and_writes_the_three_lists_and_keeps_the_rest() {
+        // A status, so a write can show it stays, and a privacy with the
+        // guild in all three lists, one packed as proto3 writes them, and
+        // a field ReCore doesn't know.
+        let mut privacy = Vec::new();
+        put_fixed64(&mut privacy, RESTRICTED_GUILDS, 10);
+        let mut packed = Vec::new();
+        packed.extend_from_slice(&10_u64.to_le_bytes());
+        put_bytes(&mut privacy, MESSAGE_REQUEST_RESTRICTED_GUILDS, &packed);
+        put_fixed64(&mut privacy, ACTIVITY_RESTRICTED_GUILDS, 10);
+        put_fixed64(&mut privacy, 9, 7);
+        let mut settings = Vec::new();
+        put_bytes(&mut settings, 11, &[1, 2, 3]);
+        put_bytes(&mut settings, PRIVACY, &privacy);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(&settings);
+
+        assert_eq!(
+            parse_privacy(&encoded, "10"),
+            Privacy {
+                dms: false,
+                message_requests: false,
+                activity: false
+            }
+        );
+        assert_eq!(
+            parse_privacy(&encoded, "11"),
+            Privacy {
+                dms: true,
+                message_requests: true,
+                activity: true
+            }
+        );
+
+        let changed = privacy_settings(
+            &encoded,
+            "10",
+            Privacy {
+                dms: true,
+                message_requests: false,
+                activity: false,
+            },
+        )
+        .unwrap();
+        let written = base64::engine::general_purpose::STANDARD
+            .decode(changed)
+            .unwrap();
+        assert!(message(&written, 11).is_some(), "the status stays");
+        let kept = message(&written, PRIVACY).unwrap();
+        assert_eq!(guild_ids_has(kept, RESTRICTED_GUILDS, "10"), false);
+        assert!(guild_ids_has(kept, MESSAGE_REQUEST_RESTRICTED_GUILDS, "10"));
+        assert!(guild_ids_has(kept, ACTIVITY_RESTRICTED_GUILDS, "10"));
+        assert!(
+            fields(kept).any(|(number, value)| number == 9 && matches!(value, Field::Fixed64(7))),
+            "a privacy field ReCore doesn't show stays"
+        );
+    }
 }

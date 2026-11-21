@@ -104,7 +104,11 @@ fn audit_log_opens_with_view_audit_log_before_bans() {
     let mut app = open();
     assert_eq!(
         app.settings_sections(SERVER),
-        [SettingsSection::AuditLog, SettingsSection::Bans]
+        [
+            SettingsSection::AuditLog,
+            SettingsSection::Bans,
+            SettingsSection::Privacy
+        ]
     );
     assert!(app.state.server_settings.as_ref().unwrap().immediate());
     // The first page comes as the section's.

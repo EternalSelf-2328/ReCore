@@ -27,6 +27,7 @@ mod members;
 mod ownership;
 mod people_input;
 mod permissions;
+mod privacy;
 mod profile;
 mod role_input;
 mod roles;
@@ -53,6 +54,7 @@ pub use invites::{InviteInput, InvitesPage, PAUSE_HOURS, SecurityDraft};
 pub use members::{MEMBER_PAGE_SIZES, MEMBER_SORTS, MEMBERS_CHUNK, MemberInput, MembersPage};
 pub use ownership::{DeleteAsk, Ownership, OwnershipInput, TransferAsk};
 pub use permissions::{PermissionGroup, PermissionInfo, ROLE_PERMISSIONS};
+pub use privacy::{PrivacyInput, PrivacyPage};
 pub use profile::{DESCRIPTION_LIMIT, ProfilePage, SettingsText};
 pub use role_input::RoleInput;
 pub use roles::{
@@ -104,6 +106,7 @@ pub enum Page {
     Webhooks(Box<WebhooksPage>),
     Integrations(Box<IntegrationsPage>),
     AutoMod(Box<AutoModPage>),
+    Privacy(PrivacyPage),
 }
 
 /// A switch of a settings page: one of Engagement's system messages, by
@@ -158,7 +161,8 @@ impl ServerSettings {
             | Page::Soundboard(_)
             | Page::Webhooks(_)
             | Page::Integrations(_)
-            | Page::AutoMod(_) => None,
+            | Page::AutoMod(_)
+            | Page::Privacy(_) => None,
         }
     }
 
@@ -177,6 +181,7 @@ impl ServerSettings {
                 | SettingsSection::Webhooks
                 | SettingsSection::Integrations
                 | SettingsSection::AutoMod
+                | SettingsSection::Privacy
         )
     }
 
@@ -197,7 +202,8 @@ impl ServerSettings {
             | Page::Soundboard(_)
             | Page::Webhooks(_)
             | Page::Integrations(_)
-            | Page::AutoMod(_) => None,
+            | Page::AutoMod(_)
+            | Page::Privacy(_) => None,
         }
     }
 
@@ -213,9 +219,18 @@ impl Application {
     /// the order the sidebar lists them.
     pub fn settings_sections(&self, server: &str) -> Vec<SettingsSection> {
         let mut sections = vec![];
-        if !self.may(server, Permission::Settings) {
-            return sections;
+        if self.may(server, Permission::Settings) {
+            self.managed_sections(server, &mut sections);
         }
+        // Privacy is each member's own, so every member may open it, as
+        // Discord's client lets them.
+        sections.push(SettingsSection::Privacy);
+        sections
+    }
+
+    /// The pages this account may change as a server's moderator, in the
+    /// sidebar's order.
+    fn managed_sections(&self, server: &str, sections: &mut Vec<SettingsSection>) {
         if self.may(server, Permission::ManageServer) {
             sections.extend([
                 SettingsSection::Profile,
@@ -270,7 +285,6 @@ impl Application {
         if self.may(server, Permission::Ban) || self.may(server, Permission::ViewAuditLog) {
             sections.push(SettingsSection::Bans);
         }
-        sections
     }
 
     /// Opens a Discord server's settings, by its server id or one of its
@@ -602,7 +616,15 @@ impl Application {
                 };
                 self.automod_changed(server, done, result, rules);
             }
-            ServerSettingsAction::Privacy(_) | ServerSettingsAction::Discovery(_) => {
+            ServerSettingsAction::Privacy(change) => {
+                let result = match result {
+                    Ok(ServerSettingsPage::Privacy(settings)) => Ok(settings),
+                    Ok(_) => Ok(crate::chat::PrivacySettings::default()),
+                    Err(error) => Err(error),
+                };
+                self.privacy_saved(server, change, result);
+            }
+            ServerSettingsAction::Discovery(_) => {
                 if let Some(settings) = self
                     .state
                     .server_settings
@@ -979,7 +1001,8 @@ impl Application {
                 | Page::Soundboard(_)
                 | Page::Webhooks(_)
                 | Page::Integrations(_)
-                | Page::AutoMod(_),
+                | Page::AutoMod(_)
+                | Page::Privacy(_),
             )
             | None => {}
         }
@@ -1070,7 +1093,8 @@ impl Application {
                 | Page::Soundboard(_)
                 | Page::Webhooks(_)
                 | Page::Integrations(_)
-                | Page::AutoMod(_),
+                | Page::AutoMod(_)
+                | Page::Privacy(_),
             )
             | None => {}
         }
@@ -1164,6 +1188,9 @@ impl Page {
             }
             (SettingsSection::AutoMod, ServerSettingsPage::AutoMod(rules)) => {
                 Self::AutoMod(Box::new(AutoModPage::new(rules)))
+            }
+            (SettingsSection::Privacy, ServerSettingsPage::Privacy(settings)) => {
+                Self::Privacy(PrivacyPage::new(settings))
             }
             (SettingsSection::Roles, ServerSettingsPage::Roles(roles)) => {
                 Self::Roles(Box::new(RolesPage::new(roles)))

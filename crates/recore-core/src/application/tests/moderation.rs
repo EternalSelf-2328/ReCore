@@ -73,12 +73,20 @@ fn moderation_lists_safety_setup_with_manage_server_the_log_with_its_permission_
     let app = granting(permission::BAN_MEMBERS);
     assert_eq!(
         app.settings_sections(SERVER),
-        [SettingsSection::Members, SettingsSection::Bans]
+        [
+            SettingsSection::Members,
+            SettingsSection::Bans,
+            SettingsSection::Privacy
+        ]
     );
     let app = granting(permission::VIEW_AUDIT_LOG);
     assert_eq!(
         app.settings_sections(SERVER),
-        [SettingsSection::AuditLog, SettingsSection::Bans]
+        [
+            SettingsSection::AuditLog,
+            SettingsSection::Bans,
+            SettingsSection::Privacy
+        ]
     );
     let app = granting(permission::MANAGE_GUILD);
     assert_eq!(
@@ -91,7 +99,8 @@ fn moderation_lists_safety_setup_with_manage_server_the_log_with_its_permission_
             SettingsSection::Invites,
             SettingsSection::Integrations,
             SettingsSection::AutoMod,
-            SettingsSection::Safety
+            SettingsSection::Safety,
+            SettingsSection::Privacy
         ]
     );
 }
