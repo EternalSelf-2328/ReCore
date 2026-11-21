@@ -484,9 +484,9 @@ fn email_form<'a>(cx: Ctx<'a>) -> Element<'a, Message> {
     }
     column![
         row![
-            bar(theme.line, 1, Length::Fill),
+            bar(theme.line, Length::Fill, 1),
             text("OR").size(12).color(theme.muted),
-            bar(theme.line, 1, Length::Fill)
+            bar(theme.line, Length::Fill, 1)
         ]
         .spacing(12)
         .align_y(Alignment::Center),
