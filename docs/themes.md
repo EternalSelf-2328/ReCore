@@ -120,9 +120,10 @@ theme carries:
 
 - The window's panel layout: a theme that names `--gap` or `--spacing`, or a
   `gap` on the page's flex/grid container, gets that space between its
-  panels; `--roundness` or `--radius-lg` rounds their corners, and
-  `--app-frame-background` colours the ground between them. Ryoku and
-  Midnight are read this way. A `body { background: transparent }`
+  panels; a flex or grid page can also name the channel list's width, which
+  lasts until its edge is dragged. `--roundness` or `--radius-lg` rounds
+  their corners, and `--app-frame-background` colours the ground between
+  them. Ryoku and Midnight are read this way. A `body { background: transparent }`
   means the panels show through, not that the chat has no ground.
 - The colours of Discord's tokens: `--background-primary`, `--background-secondary`,
   `--background-floating`, `--channeltextarea-background`, `--text-normal`,
@@ -315,8 +316,9 @@ are not painted: ReCore colours the box it would draw, not the glyph in it.
 ### What CSS cannot do here
 
 A Discord CSS theme is still written for Discord's web window. ReCore matches
-the selectors that name its regions, but it cannot reproduce arbitrary DOM
-structure, flexbox or grid layout, generated class hashes without a usable
+the selectors that name its regions and can use a page-level flex or grid to
+name the panel widths, but it cannot reproduce arbitrary DOM structure, the
+flex or grid layout inside a region, generated class hashes without a usable
 substring, element-level keyframe animations, or filters such as `blur()`,
 `brightness()` and `backdrop-filter()`. `letter-spacing` is read into the
 theme's look, but iced's text widget has no tracking setting, so it is not
@@ -450,9 +452,12 @@ synthetic regions. The computed values become the window's `Palette`,
 `::after` decorations. Root variables are seeded from the reader's winning
 values because style-engine 1.0.0 does not carry `!important` on custom
 properties; colour functions it does not evaluate are reduced to sRGB first.
-This runs once per theme, not per frame. The window still paints with iced;
-style-engine's taffy/parley features will be enabled when the window paints a
-CSS layout, and are not on the theme-load path yet.
+A page whose `display` is flex or grid runs style-engine's taffy pass once
+to name the panel widths; a normal page skips it. The chosen theme's page
+paint list is drawn once by the window's own software canvas and shown under
+the native panels, so CSS gradients, shadows and `::before` decorations
+reach the window without a GPU pass of its own. Fonts and text still come
+from iced's cosmic-text; style-engine's parley feature is not on this path.
 
 `scan` reads every local file once, hashes it to skip copies, and parses up
 to four at once; the parsed themes are kept by path and content, so the

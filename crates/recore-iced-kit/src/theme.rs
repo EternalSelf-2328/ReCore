@@ -133,6 +133,9 @@ macro_rules! declare_theme {
             pub frame: Color,
             pub panel_gap: f32,
             pub panel_radius: f32,
+            /// The channel list's width a CSS page-level flex or grid names,
+            /// until the person drags its edge.
+            pub sidebar_width: Option<f32>,
             /// A channel list's category heading, a member list's group
             /// heading and the conversation's title: their size and case, as
             /// a CSS theme's rules on those regions name them.
@@ -184,6 +187,7 @@ macro_rules! declare_theme {
                     frame: Color::TRANSPARENT,
                     panel_gap: 0.0,
                     panel_radius: 0.0,
+                    sidebar_width: None,
                     category_size: 14.0,
                     category_transform: Transform::None,
                     member_heading_size: 14.0,

@@ -101,6 +101,10 @@ pub struct Layout {
     /// How wide the sidebar and the member list were dragged; unset, each
     /// has its own width.
     pub sidebar_width: Option<f32>,
+    /// The width a CSS theme's page-level flex or grid names. Not kept: a
+    /// person's drag wins, and choosing another theme asks again.
+    #[serde(skip)]
+    pub theme_sidebar_width: Option<f32>,
     pub members_width: Option<f32>,
     /// How wide the thread beside the channel was dragged.
     pub aside_width: Option<f32>,

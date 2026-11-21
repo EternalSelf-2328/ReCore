@@ -198,6 +198,17 @@ pub enum BackgroundFit {
     Fill,
 }
 
+/// The panel widths a theme's page-level flex or grid settles at, in CSS
+/// pixels. The window lets the person drag the sidebar; this is the width a
+/// theme asks for when nobody has.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PageLayout {
+    pub rail: f32,
+    pub sidebar: f32,
+    pub chat: f32,
+    pub members: f32,
+}
+
 /// What a theme asks of the window besides its colours.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Look {
@@ -396,6 +407,10 @@ pub struct ThemeFile {
     /// Colours and shape values won by selectors that name the native
     /// sidebar, chat, member list and so on.
     pub native: crate::NativeStyle,
+    /// The panel widths a page-level flex or grid names.
+    pub page_layout: Option<PageLayout>,
+    /// The page's paint list from style-engine, when paint was asked for.
+    pub paint: Option<crate::Paint>,
     pub fonts: Vec<Font>,
     /// The custom properties Appearance can change, with their labels.
     pub options: Vec<crate::ThemeOption>,
@@ -437,6 +452,9 @@ pub struct Options {
     pub overrides: Vec<(String, String)>,
     /// Whether to read the fonts the theme carries.
     pub fonts: bool,
+    /// Read the chosen page's style-engine paint list. `false` keeps the
+    /// scan to the semantic values only.
+    pub paint: bool,
 }
 
 impl Default for Options {
@@ -446,6 +464,7 @@ impl Default for Options {
             accent: None,
             overrides: Vec::new(),
             fonts: true,
+            paint: false,
         }
     }
 }
@@ -639,18 +658,28 @@ pub fn load_str_with_imports(
         });
     }
     let semantic = crate::semantic::compute(&sheet, &vars, dark);
-    let (palette, native, page_gap) = match semantic {
-        Some(computed) => (computed.palette, computed.native, computed.gap),
+    let (palette, native, page_layout, page_gap) = match semantic {
+        Some(computed) => (
+            computed.palette,
+            computed.native,
+            computed.page_layout,
+            computed.gap,
+        ),
         // A theme the engine cannot settle still gets the lightweight
         // reader's colours, never a blank window.
         None => (
             palette(&vars, dark),
             crate::NativeStyle::compute(&sheet.rules, &vars, dark),
             None,
+            None,
         ),
     };
     let animations = animations(&sheet, &collected, dark, &vars);
     let direct_background = direct_background(&sheet, &vars, directory, dark);
+    let paint = options
+        .paint
+        .then(|| crate::semantic::paint(&sheet, &vars, dark))
+        .flatten();
     warnings.extend(sheet.warnings);
     let mut look = look(
         &vars,
@@ -692,6 +721,8 @@ pub fn load_str_with_imports(
         palette,
         look,
         native,
+        page_layout,
+        paint,
         fonts,
         options: specs,
         warnings,
@@ -3474,6 +3505,31 @@ html.theme-light:not([data-rl-mode="dark"]) {
         )
         .unwrap();
         assert_eq!(theme.palette.button_default, Rgba::rgb(0x12, 0x34, 0x56));
+    }
+
+    #[test]
+    fn a_chosen_theme_can_paint_its_page() {
+        let mut options = Options::with_mode(Mode::Dark);
+        options.paint = true;
+        let theme = load_str("body { background: #123456; }", None, &options).unwrap();
+        let paint = theme.paint.expect("the page paint");
+        assert!(!paint.ops.is_empty());
+    }
+
+    #[test]
+    fn a_flex_page_names_its_panel_widths() {
+        let theme = load_str(
+            "body { display: flex; } \
+             [class*=\"guilds_\"] { width: 72px; } \
+             [class*=\"sidebar_\"] { width: 280px; } \
+             [class*=\"chat_\"] { flex: 1; }",
+            None,
+            &Options::with_mode(Mode::Dark),
+        )
+        .unwrap();
+        let layout = theme.page_layout.expect("the flex page's boxes");
+        assert_eq!(layout.rail, 72.0);
+        assert_eq!(layout.sidebar, 280.0);
     }
 
     #[test]

@@ -158,6 +158,8 @@ pub struct Themes {
     /// window's animation players.
     pub background: Option<iced::widget::image::Handle>,
     pub background_picture: Option<std::sync::Arc<recore_core::chat::Picture>>,
+    /// The chosen CSS page's paint list, drawn once at the reference size.
+    pub paint: Option<iced::widget::image::Handle>,
     pub background_dim: f32,
     /// The theme files' fingerprint when they were last read.
     fingerprint: u64,
@@ -189,6 +191,7 @@ impl Themes {
             overrides,
             background: None,
             background_picture: None,
+            paint: None,
             background_dim: 0.0,
             fingerprint: 0,
         };
@@ -241,11 +244,13 @@ impl Themes {
                     return;
                 }
             }
+            self.load_paint();
             self.apply_font(&chosen);
             self.load_background();
             return;
         }
         let chosen = self.chosen_id().to_owned();
+        self.load_paint();
         self.apply_font(&chosen);
         self.load_background();
     }
@@ -375,6 +380,7 @@ impl Themes {
         let Some(path) = self.css[index].path.clone() else {
             return;
         };
+        let paint = self.chosen_id() == id && self.css[index].look.background.is_none();
         let options = recore_css::Options {
             overrides: self
                 .overrides
@@ -386,6 +392,7 @@ impl Themes {
                         .collect()
                 })
                 .unwrap_or_default(),
+            paint,
             ..recore_css::Options::default()
         };
         if let Ok(reloaded) =
@@ -447,7 +454,7 @@ impl Themes {
     /// A CSS theme's surface opacity, when it keeps a background picture
     /// behind the panels. Both Ambxst and ReCord name this in their files.
     fn paint_css(&self, css: &ThemeFile, shown: &mut Theme) {
-        if self.background_picture.is_none() || css.look.background.is_none() {
+        if css.look.background.is_none() && css.paint.is_none() {
             return;
         }
         let opacity = css.look.panel_opacity.unwrap_or(1.0).clamp(0.0, 1.0);
@@ -666,14 +673,60 @@ impl Themes {
         if self.css.iter().any(|css| css.id == id) {
             self.reload_one(id);
         } else {
+            self.load_paint();
             self.apply_font(id);
             self.load_background();
+        }
+    }
+
+    /// Reads the chosen theme's page paint list if the local scan left it
+    /// out. The scan never paints, so a folder full of themes stays cheap.
+    fn load_paint(&mut self) {
+        let id = self.chosen_id().to_owned();
+        let Some(index) = self.css.iter().position(|css| css.id == id) else {
+            return;
+        };
+        if self.css[index].paint.is_some() || self.css[index].look.background.is_some() {
+            return;
+        }
+        let Some(path) = self.css[index].path.clone() else {
+            return;
+        };
+        let paint = true;
+        let options = recore_css::Options {
+            overrides: self
+                .overrides
+                .get(&id)
+                .map(|changed| {
+                    changed
+                        .iter()
+                        .map(|(name, value)| (name.clone(), value.clone()))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            paint,
+            ..recore_css::Options::default()
+        };
+        if let Ok(reloaded) =
+            recore_css::load_with_imports(path, &options, &mut |url| fetch_remote(url))
+        {
+            self.css[index] = reloaded;
+            self.css[index].id = id;
         }
     }
 
     /// Decodes the chosen CSS theme's background picture, if it names one
     /// ReCore can read, and keeps how far it is dimmed.
     fn load_background(&mut self) {
+        let paint = self.chosen_css().and_then(|css| {
+            if css.look.background.is_some() {
+                return None;
+            }
+            css.paint
+                .as_ref()
+                .map(|paint| crate::css_paint::handle(paint, 960, 540))
+        });
+        self.paint = paint;
         if self.chosen_css().is_none() {
             self.set_background_picture(
                 self.recore
@@ -1288,6 +1341,10 @@ fn from_css(file: &ThemeFile) -> Theme {
     shown.square = file.look.radius.unwrap_or(8.0) < 2.0;
     shown.panel_gap = file.look.panel_gap.unwrap_or(0.0);
     shown.panel_radius = file.look.panel_radius.unwrap_or(0.0);
+    shown.sidebar_width = file
+        .page_layout
+        .map(|layout| layout.sidebar)
+        .filter(|width| *width > 0.0);
     macro_rules! assign {
         ($($name:ident,)*) => {
             $(shown.$name = css_color(theme.$name);)*
@@ -1614,6 +1671,7 @@ mod tests {
             overrides: BTreeMap::new(),
             background: None,
             background_picture: None,
+            paint: None,
             background_dim: 0.0,
             fingerprint: 0,
         }
@@ -1635,6 +1693,7 @@ mod tests {
                 overrides: BTreeMap::new(),
                 background: None,
                 background_picture: None,
+                paint: None,
                 background_dim: 0.0,
                 fingerprint: 0,
             }
@@ -1717,6 +1776,24 @@ mod tests {
         let shown = themes.find("css:gradient").expect("its colours");
         assert!(shown.navigation_gradient.is_some());
         assert!(shown.chat_gradient.is_some());
+    }
+
+    #[test]
+    fn a_flex_css_page_names_the_sidebar_width() {
+        let folder = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(folder.path().join("themes")).unwrap();
+        std::fs::write(
+            folder.path().join("themes/flexed.theme.css"),
+            r#"/** @name Flexed */
+            body { display: flex; }
+            [class*="guilds_"] { width: 64px; }
+            [class*="sidebar_"] { width: 260px; }
+            [class*="chat_"] { flex: 1; }"#,
+        )
+        .unwrap();
+        let themes = Themes::read(folder.path(), &Layout::read(folder.path()));
+        let shown = themes.find("css:flexed").expect("its colours");
+        assert_eq!(shown.sidebar_width, Some(260.0));
     }
 
     #[test]

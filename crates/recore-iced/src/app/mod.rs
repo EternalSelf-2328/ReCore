@@ -300,9 +300,10 @@ impl App {
         #[cfg(test)]
         recore_core::silence_audio();
         let (width, height) = (size.0 as f32, size.1 as f32);
-        let layout = crate::layout::Layout::open(client.root(), &crate::build().version);
+        let mut layout = crate::layout::Layout::open(client.root(), &crate::build().version);
         let themes = Themes::read(client.root(), &layout);
         let theme = themes.shown();
+        layout.theme_sidebar_width = theme.sidebar_width;
         let (fitter, fitted) = crate::pictures::Fitter::new();
         let mut client = client;
         for action in layout.actions() {

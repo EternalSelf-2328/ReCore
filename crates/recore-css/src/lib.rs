@@ -15,7 +15,8 @@
 //! popup pacing that win the cascade there. The pseudo-elements a native
 //! window can paint are read too: a region's `::before` or `::after`
 //! decoration, `::selection`, `::placeholder` and a scrollbar's thumb. CSS
-//! for Discord's web DOM has no exact nodes in a native window; layout,
+//! for Discord's web DOM has no exact nodes in a native window; a page-level
+//! flex or grid names the panel widths, but a region's internal layout,
 //! `:nth-child` structure, masks and per-element keyframe animations are read
 //! without error but are not painted. A root/body colour or opacity animation
 //! is painted as a moving ground, and CSS gradients become background
@@ -45,11 +46,14 @@ pub use color::Rgba;
 pub use css::{Keyframe, Keyframes, Meta, MetaVar, Note, ParseError, PropertySpec, Stylesheet};
 pub use native::{NativeStyle, Shadow, TextTransform};
 pub use options::{OptionKind, ThemeOption};
+pub use style_engine;
+pub use style_engine as paint_engine;
+pub use style_engine::{DisplayList as Paint, PaintOp};
 pub use theme::{
     Animation, AnimationDirection, AnimationFrame, BackgroundFit, Effects, Font, Gradient,
-    GradientKind, GradientStop, Image, Look, Mode, Motion, Options, Palette, Problem, Scan,
-    ThemeFile, load, load_str, load_str_with_imports, load_with, load_with_imports, palette, scan,
-    scan_with_imports, theme_files_fingerprint, theme_folders,
+    GradientKind, GradientStop, Image, Look, Mode, Motion, Options, PageLayout, Palette, Problem,
+    Scan, ThemeFile, load, load_str, load_str_with_imports, load_with, load_with_imports, palette,
+    scan, scan_with_imports, theme_files_fingerprint, theme_folders,
 };
 
 /// The version of the interpreter, shown beside a loaded theme.

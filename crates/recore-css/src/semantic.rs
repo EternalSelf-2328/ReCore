@@ -20,11 +20,11 @@ use std::{
 };
 
 use style_engine::{
-    ComputedStyle, compute_node,
+    ComputedStyle, StyleEngine, compute_node,
     css::{
         property::{
-            BackgroundImage, BorderStyle, DeclValue, FamilyName, Gradient as EngineGradient,
-            PropertyId, TextTransformKind,
+            BackgroundImage, BorderStyle, DeclValue, Display, FamilyName,
+            Gradient as EngineGradient, PropertyId, TextTransformKind,
         },
         stylesheet::{MediaEnv, parse_stylesheet},
         value::{ColorValue, LengthPercentage, ResolveCtx},
@@ -33,7 +33,7 @@ use style_engine::{
 };
 
 use crate::{
-    Gradient, GradientKind, GradientStop, Palette, Rgba,
+    Gradient, GradientKind, GradientStop, PageLayout, Palette, Rgba,
     css::{self, Stylesheet, Variables},
     native::{self, NODES, NativeStyle, Role, Shadow, TextTransform},
 };
@@ -46,6 +46,8 @@ pub(crate) const VIEWPORT: (f32, f32) = (1280.0, 720.0);
 pub(crate) struct Computed {
     pub palette: Palette,
     pub native: NativeStyle,
+    /// The panel widths a page-level flex or grid settles at.
+    pub page_layout: Option<PageLayout>,
     /// The gap a flex or grid page names, which the window uses between its
     /// panels when no `--gap`-style variable does.
     pub gap: Option<f32>,
@@ -102,9 +104,14 @@ pub(crate) fn compute(sheet: &Stylesheet, vars: &css::Vars, dark: bool) -> Optio
         .or(Some(root))
         .and_then(page_gap)
         .filter(|gap| *gap > 0.0);
+    let page_layout = page
+        .or(Some(root))
+        .filter(|style| matches!(style.display(), Display::Flex | Display::Grid))
+        .and_then(|_| layout(&css, vars, dark, &active));
     Some(Computed {
         palette,
         native,
+        page_layout,
         gap,
     })
 }
@@ -1224,6 +1231,117 @@ fn motion(style: &mut NativeStyle, computed: &ComputedStyle) {
             _ => style.motion_steps = Some(0),
         }
     }
+}
+
+/// Runs style-engine's taffy layout for a page that turns its regions into
+/// flex or grid items. Only themes whose page asks for a layout pay for it.
+fn layout(css: &str, vars: &css::Vars, dark: bool, active: &BTreeSet<Role>) -> Option<PageLayout> {
+    let mut engine = StyleEngine::<Key>::new();
+    engine.set_environment(MediaEnv {
+        viewport_w: VIEWPORT.0,
+        viewport_h: VIEWPORT.1,
+        dark,
+        ..MediaEnv::default()
+    });
+    let _ = engine.set_stylesheet(css);
+    let mut html = node("html", &root_classes(), NODES[0].id, None, dark);
+    html.declarations = inline_vars(vars, dark, &used_vars_from_css(css));
+    engine.insert(None, Key::Html, html).ok()?;
+    engine
+        .insert(
+            Some(Key::Html),
+            Key::Body,
+            node("body", &root_classes(), NODES[0].id, None, dark),
+        )
+        .ok()?;
+    for node_spec in NODES
+        .iter()
+        .filter(|node| node.role != Role::Root && active.contains(&node.role))
+    {
+        let parent = match node_spec.parent {
+            Some(index)
+                if NODES[index].role != Role::Root && active.contains(&NODES[index].role) =>
+            {
+                Key::Region(NODES[index].role)
+            }
+            _ => Key::Body,
+        };
+        let tag = node_spec.tags.first().copied().unwrap_or("div");
+        engine
+            .insert(
+                Some(parent),
+                Key::Region(node_spec.role),
+                node(
+                    tag,
+                    node_spec.classes,
+                    node_spec.id,
+                    node_spec.aria_role,
+                    dark,
+                ),
+            )
+            .ok()?;
+    }
+    let frame = engine.frame(VIEWPORT, 1.0, 0.0);
+    let width = |role: Role| {
+        frame
+            .find(Key::Region(role))
+            .map(|entry| entry.width)
+            .filter(|width| *width > 0.0)
+    };
+    Some(PageLayout {
+        rail: width(Role::Rail)?,
+        sidebar: width(Role::Sidebar).unwrap_or(0.0),
+        chat: width(Role::Chat).unwrap_or(0.0),
+        members: width(Role::Members).unwrap_or(0.0),
+    })
+}
+
+/// The chosen page's paint list, settled at [`VIEWPORT`]. The window scales
+/// it to its own size; iced paints the operations it can.
+pub(crate) fn paint(
+    sheet: &Stylesheet,
+    vars: &css::Vars,
+    dark: bool,
+) -> Option<style_engine::DisplayList> {
+    let used = used_vars(sheet, vars, dark);
+    let css = to_css(sheet, vars, dark, &used);
+    let mut engine = StyleEngine::<Key>::new();
+    engine.set_environment(MediaEnv {
+        viewport_w: VIEWPORT.0,
+        viewport_h: VIEWPORT.1,
+        dark,
+        ..MediaEnv::default()
+    });
+    let _ = engine.set_stylesheet(&css);
+    let (extra, _) =
+        style_engine::css::decl::parse_inline_declarations("margin:0;width:100vw;height:100vh;");
+    let mut html = node("html", &root_classes(), NODES[0].id, None, dark);
+    html.declarations = inline_vars(vars, dark, &used);
+    html.declarations.decls.extend(extra.decls.iter().cloned());
+    let mut body = node("body", &root_classes(), NODES[0].id, None, dark);
+    body.declarations = html.declarations.clone();
+    engine.insert(None, Key::Html, html).ok()?;
+    engine.insert(Some(Key::Html), Key::Body, body).ok()?;
+    let frame = engine.frame(VIEWPORT, 1.0, 0.0);
+    (!frame.paint.ops.is_empty()).then_some(frame.paint)
+}
+
+fn root_classes() -> Vec<&'static str> {
+    NODES[0]
+        .classes
+        .iter()
+        .copied()
+        .filter(|class| !class.starts_with("theme-"))
+        .collect()
+}
+
+/// The custom properties a serialized sheet names. The layout pass has the
+/// sheet text, not the reader's `Stylesheet`, and only needs the variables
+/// that text actually references plus the palette names.
+fn used_vars_from_css(css: &str) -> BTreeSet<String> {
+    let mut used = BTreeSet::new();
+    collect_vars(css, &mut used);
+    used
 }
 
 fn page_gap(style: &ComputedStyle) -> Option<f32> {
