@@ -41,6 +41,7 @@ impl App {
         // The rail and the sidebar on the rail's ground, the account's card
         // across the foot of both.
         let rail = self.theme.rail;
+        let navigation_gradient = self.theme.navigation_gradient;
         let mut foot = column![];
         if let Some(dock) = crate::call::dock::view(self.ctx()) {
             foot = foot.push(dock);
@@ -55,7 +56,13 @@ impl App {
         ])
         .width(crate::conversation::navigation(&self.layout))
         .height(Length::Fill)
-        .style(move |_| crate::style::fill(rail));
+        .style(move |_| {
+            let mut ground = crate::style::fill(rail);
+            if let Some(gradient) = navigation_gradient {
+                ground.background = Some(gradient.into());
+            }
+            ground
+        });
         // The sidebar's edge drags it wider or narrower.
         let splitter = crate::widgets::Splitter::new(
             iced::Color::TRANSPARENT,
@@ -71,10 +78,23 @@ impl App {
                 .width(crate::conversation::navigation(&self.layout))
                 .align_x(iced::Alignment::End)
         ];
-        let base: Element<'_, Message> = row![navigation, crate::conversation::conversation(self)]
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into();
+        let chat = self.theme.chat;
+        let chat_gradient = self.theme.chat_gradient;
+        let base: Element<'_, Message> = container(
+            row![navigation, crate::conversation::conversation(self)]
+                .width(Length::Fill)
+                .height(Length::Fill),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(move |_| {
+            let mut ground = crate::style::fill(chat);
+            if let Some(gradient) = chat_gradient {
+                ground.background = Some(gradient.into());
+            }
+            ground
+        })
+        .into();
         // A background picture sits under the panels; a GIF, APNG, WebP or
         // video plays through the window's picture players, its first frame
         // standing in until the first one falls due. A theme that keeps the

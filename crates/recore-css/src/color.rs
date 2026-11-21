@@ -98,6 +98,25 @@ impl Rgba {
     /// mixes in sRGB with premultiplied alpha.
     pub fn mix(self, other: Self, amount: f32) -> Self {
         let amount = amount.clamp(0.0, 1.0);
+        if amount <= 0.0 {
+            return self;
+        }
+        if amount >= 1.0 {
+            return other;
+        }
+        // Opaque colours, as most gradients are, skip the alpha weighting
+        // and the division per channel.
+        if self.a == 255 && other.a == 255 {
+            let channel = |a: u8, b: u8| {
+                (f32::from(a) + (f32::from(b) - f32::from(a)) * amount).round() as u8
+            };
+            return Self {
+                r: channel(self.r, other.r),
+                g: channel(self.g, other.g),
+                b: channel(self.b, other.b),
+                a: 255,
+            };
+        }
         let first = f32::from(self.a) / 255.0 * (1.0 - amount);
         let second = f32::from(other.a) / 255.0 * amount;
         let total = first + second;

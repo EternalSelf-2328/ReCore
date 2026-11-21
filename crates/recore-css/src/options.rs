@@ -144,7 +144,10 @@ pub fn detect_with_notes(
             | OptionKind::Number { .. }
             | OptionKind::Range { .. }
             | OptionKind::Toggle { .. }
-            | OptionKind::Choice { .. } => vars.resolve(raw).unwrap_or_else(|| raw.to_owned()),
+            | OptionKind::Choice { .. } => vars
+                .resolve(raw)
+                .map(|value| value.into_owned())
+                .unwrap_or_else(|| raw.to_owned()),
             _ => raw.to_owned(),
         };
         let alias = raw.trim_start().starts_with("var(");

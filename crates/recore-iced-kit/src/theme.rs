@@ -141,6 +141,10 @@ macro_rules! declare_theme {
             /// popouts). Other themes keep ReCore's own.
             pub raised_shadow: iced::Shadow,
             pub card_shadow: iced::Shadow,
+            /// A CSS theme's linear gradient behind the rail and sidebar, and
+            /// behind the chat; the matching colour is the fallback.
+            pub navigation_gradient: Option<iced::Gradient>,
+            pub chat_gradient: Option<iced::Gradient>,
             /// A scrollbar's thumb at rest and under the pointer. Transparent
             /// keeps ReCore's own shades.
             pub scrollbar_rest: Color,
@@ -179,6 +183,8 @@ macro_rules! declare_theme {
                     header_transform: Transform::None,
                     raised_shadow: crate::style::default_raised_shadow(),
                     card_shadow: crate::style::default_card_shadow(),
+                    navigation_gradient: None,
+                    chat_gradient: None,
                     scrollbar_rest: Color::TRANSPARENT,
                     scrollbar_pointed: Color::TRANSPARENT,
                     iced: iced::Theme::Dark,

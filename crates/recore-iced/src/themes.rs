@@ -228,12 +228,21 @@ impl Themes {
         self.apply_overrides();
         if !remote_all {
             let chosen = self.chosen_id().to_owned();
-            if self.chosen_css().is_some() {
-                self.reload_one(&chosen);
-            } else {
-                self.apply_font(&chosen);
-                self.load_background();
+            if let Some(css) = self.chosen_css() {
+                // A local theme without changed options is complete from the
+                // scan; only one naming remote files, which the local scan
+                // leaves for the chosen theme to fetch, is read again.
+                let overridden = self
+                    .overrides
+                    .get(&chosen)
+                    .is_some_and(|changed| !changed.is_empty());
+                if css.remote && !overridden {
+                    self.reload_one(&chosen);
+                    return;
+                }
             }
+            self.apply_font(&chosen);
+            self.load_background();
             return;
         }
         let chosen = self.chosen_id().to_owned();
@@ -1299,6 +1308,12 @@ fn apply_kit_native(theme: &mut Theme, native: &NativeStyle) {
         tooltip,
         tooltip_opacity,
     );
+    theme.navigation_gradient = native
+        .sidebar_gradient
+        .as_ref()
+        .or(native.rail_gradient.as_ref())
+        .and_then(css_gradient);
+    theme.chat_gradient = native.chat_gradient.as_ref().and_then(css_gradient);
 }
 
 /// The type a CSS theme gives the window's own headings, before its colours
@@ -1403,6 +1418,19 @@ fn transform(transform: recore_css::TextTransform) -> crate::theme::Transform {
 }
 
 /// A CSS `box-shadow` as iced's.
+/// A CSS linear gradient as iced paints it; radial and conic ones keep the
+/// solid colour their region falls back to.
+fn css_gradient(gradient: &recore_css::Gradient) -> Option<iced::Gradient> {
+    let recore_css::GradientKind::Linear(angle) = gradient.kind else {
+        return None;
+    };
+    let mut linear = iced::gradient::Linear::new(iced::Radians(angle.to_radians()));
+    for (offset, color) in gradient.resolved() {
+        linear = linear.add_stop(offset, css_color(color));
+    }
+    Some(linear.into())
+}
+
 fn css_shadow(shadow: recore_css::Shadow) -> iced::Shadow {
     iced::Shadow {
         color: css_color(shadow.color),
@@ -1614,6 +1642,24 @@ mod tests {
         let shown = themes.find("css:plum").expect("its colours");
         assert_eq!(shown.chat, crate::style::hex(0x201020));
         assert_eq!(shown.accent, crate::style::hex(0xc04080));
+    }
+
+    #[test]
+    fn a_css_themes_gradients_reach_the_rail_and_chat() {
+        let folder = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(folder.path().join("themes")).unwrap();
+        std::fs::write(
+            folder.path().join("themes/gradient.theme.css"),
+            r#"/** @name Gradient */
+            :root { --background-primary: #101010; }
+            [class*="sidebarList_"] { background: linear-gradient(180deg, #111111, #222222); }
+            [class*="chat_"] { background: linear-gradient(90deg, #010101, #020202); }"#,
+        )
+        .unwrap();
+        let themes = Themes::read(folder.path(), &Layout::read(folder.path()));
+        let shown = themes.find("css:gradient").expect("its colours");
+        assert!(shown.navigation_gradient.is_some());
+        assert!(shown.chat_gradient.is_some());
     }
 
     #[test]

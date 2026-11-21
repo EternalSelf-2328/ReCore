@@ -26,6 +26,11 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
+    sync::{
+        Mutex, OnceLock,
+        atomic::{AtomicUsize, Ordering},
+        mpsc,
+    },
 };
 
 pub use crate::color::Rgba;
@@ -158,7 +163,6 @@ impl Gradient {
             return stops[0].1;
         }
         let position = position.clamp(0.0, 1.0);
-        let mut before = stops[0];
         for pair in stops.windows(2) {
             let (start, start_color) = pair[0];
             let (end, end_color) = pair[1];
@@ -166,9 +170,10 @@ impl Gradient {
                 let span = (end - start).max(f32::EPSILON);
                 return start_color.mix(end_color, ((position - start) / span).clamp(0.0, 1.0));
             }
-            before = (start, start_color);
         }
-        before.1
+        // Past the last stop, a gradient keeps its last colour, even when
+        // that stop sits before 1.
+        stops[stops.len() - 1].1
     }
 }
 
@@ -386,6 +391,9 @@ pub struct ThemeFile {
     /// The custom properties Appearance can change, with their labels.
     pub options: Vec<crate::ThemeOption>,
     pub warnings: Vec<String>,
+    /// Whether it names a remote import, font or picture, which a local scan
+    /// leaves for the window to fetch when the theme is chosen.
+    pub remote: bool,
 }
 
 impl ThemeFile {
@@ -458,8 +466,24 @@ pub fn load_with_imports(
     let path = path.as_ref();
     let css = fs::read_to_string(path)
         .map_err(|error| format!("could not read {}: {error}", path.display()))?;
+    load_css_with_imports(path, &css, options, fetch)
+}
+
+/// [`load_with_imports`] from CSS already read.
+fn load_css_with_imports(
+    path: &Path,
+    css: &str,
+    options: &Options,
+    fetch: &mut dyn FnMut(&str) -> Option<Vec<u8>>,
+) -> Result<ThemeFile, String> {
     let directory = path.parent().map(Path::to_path_buf);
-    let mut theme = load_str_with_imports(&css, directory.as_deref(), options, fetch)?;
+    let theme = load_str_with_imports(css, directory.as_deref(), options, fetch)?;
+    Ok(named(theme, path))
+}
+
+/// A theme parsed from `path`, named and numbered after the file when the
+/// CSS itself names neither.
+fn named(mut theme: ThemeFile, path: &Path) -> ThemeFile {
     theme.path = Some(path.to_path_buf());
     if theme.name == "CSS theme"
         && let Some(stem) = path.file_stem().and_then(|stem| stem.to_str())
@@ -467,7 +491,7 @@ pub fn load_with_imports(
         stem.trim_end_matches(".theme").clone_into(&mut theme.name);
     }
     theme.id = format!("css:{}", slug(theme.name.as_str()));
-    Ok(theme)
+    theme
 }
 
 /// Reads a theme file with `options`.
@@ -494,8 +518,10 @@ pub fn load_str_with_imports(
 ) -> Result<ThemeFile, String> {
     let meta = Meta::read(css);
     let mut warnings = Vec::new();
+    let mut remote = false;
     let sheet = css::parse_in(css, directory, &mut |base, path| {
         if is_remote(path) || base.is_some_and(remote_path) {
+            remote = true;
             let url = remote_target(base, path);
             match fetch(&url) {
                 Some(bytes) => match String::from_utf8(bytes) {
@@ -517,6 +543,7 @@ pub fn load_str_with_imports(
             let mut bytes = face.data.clone();
             if bytes.is_none() {
                 if let Some(url) = remote_source(&face.source, face.origin.as_deref()) {
+                    remote = true;
                     bytes = fetch(&url);
                     if bytes.is_none() {
                         warnings.push(format!("could not download the font {url}"));
@@ -611,6 +638,7 @@ pub fn load_str_with_imports(
     look.font_family = native.font_family.clone().or(look.font_family);
     look.font_size = native.font_size.or(look.font_size);
     look.letter_spacing = native.letter_spacing.or(look.letter_spacing);
+    remote |= matches!(look.background, Some(Image::Url(_)));
     let mut specs = crate::options::merge(
         crate::options::detect_with_notes(&vars, dark, &sheet.notes, &sheet.properties),
         crate::options::detect_with_notes(
@@ -638,6 +666,7 @@ pub fn load_str_with_imports(
         fonts,
         options: specs,
         warnings,
+        remote,
     })
 }
 
@@ -911,13 +940,12 @@ impl Collected {
 fn appearance_of(vars: &css::Vars, light: bool) -> Option<bool> {
     if let Some(scheme) = vars.get("color-scheme") {
         let lower = scheme.to_ascii_lowercase();
-        for word in lower.split_whitespace() {
-            if word == "dark" {
-                return Some(true);
-            }
-            if word == "light" {
-                return Some(false);
-            }
+        let words: Vec<&str> = lower.split_whitespace().collect();
+        // `light dark` lets the client choose; the ground's brightness does.
+        match (words.contains(&"dark"), words.contains(&"light")) {
+            (true, false) => return Some(true),
+            (false, true) => return Some(false),
+            _ => {}
         }
     }
     let background = vars.first_color(
@@ -1098,17 +1126,22 @@ fn image_value(value: &str, origin: Option<&str>, directory: Option<&Path>) -> O
 
 /// Reads a CSS gradient in a `background`/`background-image` value. ReCore
 /// paints the common three kinds; repeating variants use the same stops.
-fn gradient(value: &str) -> Option<Gradient> {
+pub(crate) fn gradient(value: &str) -> Option<Gradient> {
     let lower = value.to_ascii_lowercase();
-    let (kind, at) = if let Some(at) = css::find_ignore_case(value, "linear-gradient(") {
+    // The repeating name contains the plain one, so it is matched first.
+    let (kind, at) = if let Some(at) = css::find_ignore_case(value, "repeating-linear-gradient(") {
+        (GradientKind::Linear(180.0), at)
+    } else if let Some(at) = css::find_ignore_case(value, "repeating-radial-gradient(") {
+        (GradientKind::Radial, at)
+    } else if let Some(at) = css::find_ignore_case(value, "repeating-conic-gradient(") {
+        (GradientKind::Conic, at)
+    } else if let Some(at) = css::find_ignore_case(value, "linear-gradient(") {
         (GradientKind::Linear(180.0), at)
     } else if let Some(at) = css::find_ignore_case(value, "radial-gradient(") {
         (GradientKind::Radial, at)
-    } else if let Some(at) = css::find_ignore_case(value, "conic-gradient(") {
-        (GradientKind::Conic, at)
     } else {
-        let at = css::find_ignore_case(value, "repeating-linear-gradient(")?;
-        (GradientKind::Linear(180.0), at)
+        let at = css::find_ignore_case(value, "conic-gradient(")?;
+        (GradientKind::Conic, at)
     };
     let open = lower[at..].find('(')? + at;
     let close = matching_paren(value, open)?;
@@ -1238,23 +1271,24 @@ fn direct_vars(sheet: &Stylesheet, vars: &mut css::Vars, dark: bool) {
             continue;
         }
         for declaration in &rule.declarations {
-            let Some(value) = vars.resolve(&declaration.value) else {
-                continue;
-            };
-            let value = value.trim();
-            if value.is_empty()
-                || value.contains("url(")
-                || value.contains("gradient(")
-                || value.eq_ignore_ascii_case("none")
-            {
-                continue;
-            }
             let name = match declaration.name.trim().to_ascii_lowercase().as_str() {
                 "background" | "background-color" => "--background-primary",
                 "color" => "--text-normal",
                 "background-size" => "--background-size",
                 _ => continue,
             };
+            let Some(value) = vars.resolve(&declaration.value) else {
+                continue;
+            };
+            let value = value.trim();
+            if value.is_empty()
+                || value.len() > 4096
+                || value.contains("url(")
+                || value.contains("gradient(")
+                || value.eq_ignore_ascii_case("none")
+            {
+                continue;
+            }
             if name == "--background-size" || color::parse(value, !dark).is_some() {
                 found.insert(name, value.to_owned());
             }
@@ -1899,7 +1933,7 @@ fn look(
         .or_else(|| vars.get("--rl-font"))
         .or_else(|| vars.get("--font"))
         .and_then(|value| vars.resolve(value))
-        .and_then(|value| first_family(&value));
+        .and_then(|value| first_family(value.as_ref()));
     if let Some(family) = &font_family
         && options.fonts
         && !fonts
@@ -1930,6 +1964,7 @@ fn look(
         frame: fraction(vars, &["--rl-frame-opacity"]).unwrap_or(0.0),
         avatar_filter: vars
             .resolve(vars.get("--rl-avatar-filter").unwrap_or("none"))
+            .map(|value| value.into_owned())
             .filter(|value| !value.eq_ignore_ascii_case("none")),
         avatar_scanline: fraction(vars, &["--rl-avatar-scanline"]).unwrap_or(0.0),
     };
@@ -1989,7 +2024,17 @@ fn animations(
         delay: f32,
         iterations: Option<f32>,
         direction: AnimationDirection,
+        /// Whether the theme named a count, including `infinite`.
+        count_seen: bool,
     }
+    const TIMING_PROPERTIES: &[&str] = &[
+        "animation-name",
+        "animation",
+        "animation-duration",
+        "animation-delay",
+        "animation-iteration-count",
+        "animation-direction",
+    ];
     let mut timings: BTreeMap<String, Timing> = BTreeMap::new();
     for rule in &sheet.rules {
         if rule
@@ -2008,6 +2053,12 @@ fn animations(
         let mut names = Vec::new();
         let mut shorthand = Vec::new();
         for declaration in &rule.declarations {
+            if !TIMING_PROPERTIES
+                .iter()
+                .any(|name| declaration.name.trim().eq_ignore_ascii_case(name))
+            {
+                continue;
+            }
             let Some(value) = vars.resolve(&declaration.value) else {
                 continue;
             };
@@ -2043,6 +2094,12 @@ fn animations(
             let mut duration_seen = 0;
             let mut delay_seen = 0;
             for declaration in &rule.declarations {
+                if !TIMING_PROPERTIES
+                    .iter()
+                    .any(|name| declaration.name.trim().eq_ignore_ascii_case(name))
+                {
+                    continue;
+                }
                 let Some(value) = vars.resolve(&declaration.value) else {
                     continue;
                 };
@@ -2061,6 +2118,7 @@ fn animations(
                     "animation-iteration-count" => {
                         if let Some(part) = nth_split_top(value, ',', index) {
                             timing.iterations = iterations(part);
+                            timing.count_seen = true;
                         }
                     }
                     "animation-direction" => {
@@ -2082,8 +2140,12 @@ fn animations(
                                 }
                                 continue;
                             }
-                            if let Some(count) = iterations(token) {
+                            if token.eq_ignore_ascii_case("infinite") {
+                                timing.iterations = None;
+                                timing.count_seen = true;
+                            } else if let Some(count) = iterations(token) {
                                 timing.iterations = Some(count);
+                                timing.count_seen = true;
                             }
                             if matches!(
                                 token.to_ascii_lowercase().as_str(),
@@ -2159,11 +2221,20 @@ fn animations(
         if frames.len() < 2 {
             continue;
         }
+        // CSS's defaults are 0 s and one iteration. A name alone is not a
+        // moving wash; only a duration the theme named makes one.
+        let Some(duration) = timing.duration.filter(|duration| *duration > 0.0) else {
+            continue;
+        };
         found.push(Animation {
             name,
-            duration: timing.duration.unwrap_or(8.0).max(0.05),
+            duration: duration.max(0.05),
             delay: timing.delay.max(0.0),
-            iterations: timing.iterations,
+            iterations: if timing.count_seen {
+                timing.iterations
+            } else {
+                Some(1.0)
+            },
             direction: timing.direction,
             frames,
         });
@@ -2310,8 +2381,142 @@ pub fn theme_files_fingerprint(directories: &[PathBuf]) -> u64 {
 
 /// Reads every `.css` theme in `directories`, in name order, skipping the ones
 /// already read and the ones that fail (kept in [`Scan::problems`]).
+///
+/// Reading the local files is one pass; parsing them is spread over up to
+/// four threads, since a folder of large themes is the window's first frame.
 pub fn scan(directories: &[PathBuf]) -> Scan {
-    scan_with_imports(directories, &mut |_| None)
+    let mut scan = Scan::default();
+    let mut seen = BTreeSet::new();
+    let mut seen_content = BTreeSet::new();
+    let mut files = Vec::new();
+    for directory in directories {
+        if !directory.exists() {
+            continue;
+        }
+        let mut found = Vec::new();
+        if let Err(error) = collect_css_files(directory, 0, &mut found) {
+            scan.problems.push(Problem {
+                path: directory.clone(),
+                message: format!("could not read the themes folder: {error}"),
+            });
+            continue;
+        }
+        found.sort();
+        for path in found {
+            let canonical = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            if !seen.insert(canonical) {
+                continue;
+            }
+            let bytes = match fs::read(&path) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    let message = format!("could not read {}: {error}", path.display());
+                    scan.problems.push(Problem { path, message });
+                    continue;
+                }
+            };
+            let content = fingerprint(&bytes);
+            if !seen_content.insert(content) {
+                continue;
+            }
+            match String::from_utf8(bytes) {
+                Ok(css) => files.push((path, css, content)),
+                Err(_) => scan.problems.push(Problem {
+                    path,
+                    message: "the theme is not UTF-8 CSS".into(),
+                }),
+            }
+        }
+    }
+    let mut ids = BTreeSet::new();
+    for (path, result) in parse_all(files) {
+        match result {
+            Ok(mut theme) => {
+                let base = theme.id.clone();
+                let mut number = 2;
+                while !ids.insert(theme.id.clone()) {
+                    theme.id = format!("{base}-{number}");
+                    number += 1;
+                }
+                scan.themes.push(theme);
+            }
+            Err(message) => scan.problems.push(Problem { path, message }),
+        }
+    }
+    scan
+}
+
+/// Parses the files' CSS in parallel, returning the results in file order.
+fn parse_all(files: Vec<(PathBuf, String, u64)>) -> Vec<(PathBuf, Result<ThemeFile, String>)> {
+    let count = files.len();
+    // Two or three small files parse before the threads have started; a
+    // folder of themes is where the parallel pass pays.
+    if count < 4 {
+        return files
+            .into_iter()
+            .map(|(path, css, fingerprint)| {
+                let result = parse_one(&path, &css, fingerprint);
+                (path, result)
+            })
+            .collect();
+    }
+    let threads = std::thread::available_parallelism().map_or(1, |cores| cores.get().min(4));
+    let next = AtomicUsize::new(0);
+    let (send, receive) = mpsc::channel();
+    std::thread::scope(|scope| {
+        for _ in 0..threads.min(count) {
+            let send = send.clone();
+            let files = &files;
+            let next = &next;
+            scope.spawn(move || {
+                loop {
+                    let index = next.fetch_add(1, Ordering::Relaxed);
+                    let Some((path, css, fingerprint)) = files.get(index) else {
+                        break;
+                    };
+                    let result = parse_one(path, css, *fingerprint);
+                    if send.send((index, path.clone(), result)).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+    });
+    drop(send);
+    let mut parsed: Vec<_> = receive.into_iter().collect();
+    parsed.sort_by_key(|(index, ..)| *index);
+    parsed
+        .into_iter()
+        .map(|(_, path, result)| (path, result))
+        .collect()
+}
+
+/// A parsed theme from before, while its file has the same bytes. Starting
+/// the window reads the themes once for the chosen font and again for the
+/// window; this keeps the second read to a clone.
+fn parse_one(path: &Path, css: &str, fingerprint: u64) -> Result<ThemeFile, String> {
+    let key = (path.to_path_buf(), fingerprint);
+    if let Some(theme) = cache()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get(&key)
+    {
+        return Ok(theme.clone());
+    }
+    let theme = named(load_str(css, path.parent(), &Options::default())?, path);
+    let mut cache = cache()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if cache.len() >= 32 {
+        cache.clear();
+    }
+    cache.insert(key, theme.clone());
+    Ok(theme)
+}
+
+fn cache() -> &'static Mutex<BTreeMap<(PathBuf, u64), ThemeFile>> {
+    static CACHE: OnceLock<Mutex<BTreeMap<(PathBuf, u64), ThemeFile>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(BTreeMap::new()))
 }
 
 /// Finds `.css` files in the folder and in its own subfolders, which theme
@@ -2356,14 +2561,13 @@ fn collect_css_files(
 
 /// A cheap content fingerprint, so the same theme copied into Vesktop's and
 /// ReCore's folders appears once.
-fn theme_fingerprint(path: &Path) -> Option<u64> {
-    let bytes = fs::read(path).ok()?;
+fn fingerprint(bytes: &[u8]) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325u64;
-    for byte in &bytes {
+    for byte in bytes {
         hash ^= u64::from(*byte);
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
-    Some(hash ^ (bytes.len() as u64))
+    hash ^ (bytes.len() as u64)
 }
 
 /// [`scan`], downloading each theme's remote imports and fonts through
@@ -2396,12 +2600,28 @@ pub fn scan_with_imports(
             if !seen.insert(canonical) {
                 continue;
             }
-            if let Some(fingerprint) = theme_fingerprint(&path)
-                && !seen_content.insert(fingerprint)
-            {
+            let bytes = match fs::read(&path) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    let message = format!("could not read {}: {error}", path.display());
+                    scan.problems.push(Problem { path, message });
+                    continue;
+                }
+            };
+            if !seen_content.insert(fingerprint(&bytes)) {
                 continue;
             }
-            match load_with_imports(&path, &Options::default(), fetch) {
+            let css = match String::from_utf8(bytes) {
+                Ok(css) => css,
+                Err(_) => {
+                    scan.problems.push(Problem {
+                        path,
+                        message: "the theme is not UTF-8 CSS".into(),
+                    });
+                    continue;
+                }
+            };
+            match load_css_with_imports(&path, &css, &Options::default(), fetch) {
                 Ok(mut theme) => {
                     let base = theme.id.clone();
                     let mut number = 2;
@@ -2679,6 +2899,17 @@ html.theme-light:not([data-rl-mode="dark"]) {
         let light = load_str(css, None, &Options::with_mode(Mode::Light)).unwrap();
         assert_eq!(light.palette.chat, Rgba::rgb(0xff, 0xf8, 0xf7));
         assert_eq!(light.palette.text, Rgba::rgb(0x22, 0x1a, 0x19));
+    }
+
+    #[test]
+    fn a_light_dark_scheme_follows_the_ground() {
+        let theme = load_str(
+            ":root { color-scheme: light dark; --background-primary: #1a1111; }",
+            None,
+            &Options::default(),
+        )
+        .unwrap();
+        assert!(theme.palette.dark);
     }
 
     #[test]
@@ -3051,6 +3282,25 @@ html.theme-light:not([data-rl-mode="dark"]) {
     }
 
     #[test]
+    fn a_gradient_keeps_its_last_stop_and_reads_repeating_ones() {
+        let theme = load_str(
+            ":root { --background-image: repeating-linear-gradient(90deg, #000 0%, #fff 50%); }",
+            None,
+            &Options::with_mode(Mode::Dark),
+        )
+        .unwrap();
+        let Some(Image::Gradient(gradient)) = theme.look.background else {
+            panic!(
+                "expected a gradient background: {:?}",
+                theme.look.background
+            );
+        };
+        assert_eq!(gradient.kind, GradientKind::Linear(90.0));
+        // Past the last stop the last colour stays, not the one before it.
+        assert_eq!(gradient.at(0.75), Rgba::rgb(0xff, 0xff, 0xff));
+    }
+
+    #[test]
     fn a_body_background_and_text_colour_reach_the_palette() {
         let theme = load_str(
             "body { background: #202124; color: #e8eaed; }",
@@ -3094,6 +3344,36 @@ html.theme-light:not([data-rl-mode="dark"]) {
         assert!(middle.background.is_some());
         let opacity = middle.opacity.unwrap();
         assert!((opacity - 0.4).abs() < 0.02, "{opacity}");
+    }
+
+    #[test]
+    fn an_animation_without_a_duration_uses_css_defaults() {
+        let keyframes = "@keyframes drift { from { background-color: #101014; } to { background-color: #e94221; } }";
+        // A name alone is 0 s, so it never moves.
+        let still = load_str(
+            &format!("{keyframes} body {{ animation-name: drift; }}"),
+            None,
+            &Options::with_mode(Mode::Dark),
+        )
+        .unwrap();
+        assert!(still.look.animations.is_empty());
+        // A duration without a count runs once, and `infinite` still means
+        // forever.
+        let once = load_str(
+            &format!("{keyframes} body {{ animation: drift 2s; }}"),
+            None,
+            &Options::with_mode(Mode::Dark),
+        )
+        .unwrap();
+        let animation = &once.look.animations[0];
+        assert_eq!((animation.duration, animation.iterations), (2.0, Some(1.0)));
+        let forever = load_str(
+            &format!("{keyframes} body {{ animation: drift 2s infinite; }}"),
+            None,
+            &Options::with_mode(Mode::Dark),
+        )
+        .unwrap();
+        assert_eq!(forever.look.animations[0].iterations, None);
     }
 
     #[test]

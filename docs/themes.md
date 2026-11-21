@@ -135,8 +135,10 @@ theme carries:
   order across the root, theme-class and media-query blocks, so a later
   `:root` declaration can win over an earlier `.theme-dark` one, as in a
   browser. `@supports` conditions and the media/supports condition after an
-  `@import` are applied, and `@property` gives a variable its syntax and
-  initial value.
+  `@import` are applied, and a feature the native window cannot paint — a
+  `backdrop-filter`, a mask, a container query or a view transition — takes
+  its `not (...)` branch instead. `@property` gives a variable its syntax
+  and initial value.
   An `http:` or `https:` `@import` is downloaded, with its own relative
   imports; so are a remote font in `@font-face` and a remote picture in
   `--background-image`. Downloads are kept for ten minutes in memory and on
@@ -162,8 +164,9 @@ theme carries:
   the client draws. A `@keyframes` animation on `:root` or `body` whose steps
   change `background`, `background-color`, `color` or `opacity` is sampled by
   the window and painted as a quiet moving ground; finite animations stop,
-  infinite ones repeat, and `alternate`/`reverse` are understood. Other
-  animations remain in the file.
+  infinite ones repeat, and `alternate`/`reverse` are understood. CSS's
+  defaults hold: a name with no duration stays still, and one with no count
+  runs once. Other animations remain in the file.
 
 ReCord's own `--rl-*` palette is mapped exactly, so dropping
 [`themes/ReCord.theme.css`](../themes/ReCord.theme.css) in gives the built-in
@@ -255,8 +258,9 @@ the whole window's shape.
 The mapped properties are:
 
 - `background`, `background-color` and `background-image` as the region's
-  ground. A gradient's first opaque stop is used where the native window
-  cannot paint the full gradient.
+  ground. A `linear-gradient` on the rail, sidebar or chat is painted as a
+  gradient; elsewhere, and for radial or conic gradients, its first opaque
+  stop stands in.
 - `color` as its text: the sidebar's is its secondary ink, the member list's
   and a category's its muted ink, and every other region's the window's text.
 - `border-radius` on the page, rail, sidebar, chat or member list as the
@@ -428,6 +432,16 @@ theme's remote files, and `scan_with_imports` does so while walking folders;
 the common clients' folders. `Options` chooses the dark or light set, forces
 an accent, or overrides a custom property. The crate has no dependencies, so its parser can be tested
 on its own.
+
+`scan` reads every local file once, hashes it to skip copies, and parses up
+to four at once; the parsed themes are kept by path and content, so the
+second read a start makes for the window reuses them instead of parsing the
+folder again. Twenty 437 KB themes take about 0.5 s the first time and 15 ms
+from that cache here. A chosen theme with no changed options and no remote
+files is not read again; one naming remote imports, fonts or pictures is,
+to fetch them. `NativeStyle` filters the declarations to the properties a
+native region actually paints before resolving values or sorting the
+cascade, and `Vars::resolve` borrows a value that names no `var()`.
 
 A theme is data, never code. A damaged or hostile file is read as far as it
 makes sense and the rest is left out: unterminated blocks, strings and

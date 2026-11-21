@@ -12,7 +12,7 @@
 //! or DOM animations. The window applies the result on top of the palette it
 //! already reads from the theme's root variables.
 
-use std::borrow::Cow;
+use std::{borrow::Cow, collections::BTreeMap};
 
 use crate::{
     Rgba,
@@ -66,7 +66,7 @@ pub struct Shadow {
 
 /// The parts of a Discord window a theme can address. A node may match more
 /// than one selector fragment (for example `sidebar` and `sidebarList_`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Role {
     Root,
     Rail,
@@ -492,6 +492,12 @@ pub struct NativeStyle {
     pub rail: Option<Rgba>,
     pub sidebar: Option<Rgba>,
     pub chat: Option<Rgba>,
+    /// A linear gradient on the rail, the sidebar or the chat, which the
+    /// window paints instead of the solid colour those fields keep as a
+    /// fallback.
+    pub rail_gradient: Option<crate::Gradient>,
+    pub sidebar_gradient: Option<crate::Gradient>,
+    pub chat_gradient: Option<crate::Gradient>,
     pub panel: Option<Rgba>,
     pub raised: Option<Rgba>,
     pub field: Option<Rgba>,
@@ -548,7 +554,14 @@ impl NativeStyle {
     /// win the cascade. `vars` are the root custom properties, already
     /// resolved for `dark`.
     pub fn compute(rules: &[Rule], vars: &Vars, dark: bool) -> Self {
-        let mut writes = Vec::new();
+        // The same region and property can be named by hundreds of rules.
+        // Keep the winning declaration of each, and resolve only those
+        // values: a theme's thousands of custom properties never reach
+        // `Vars::resolve` or the cascade sort.
+        type Key = (Role, bool, Pseudo, String);
+        type Winner<'a> = ((bool, u32, usize, u64), Write<'a>);
+        let mut winners: BTreeMap<Key, Winner<'_>> = BTreeMap::new();
+        let mut sequence = 0u64;
         for (order, rule) in rules.iter().enumerate() {
             if rule
                 .color_scheme
@@ -556,15 +569,23 @@ impl NativeStyle {
             {
                 continue;
             }
-            let thin = rule_thin(rule);
-            let opacity = rule_opacity(rule);
+            // Most rules name Discord's DOM and match no native region; the
+            // pseudo-element's own shape is only read for the rules that do.
+            let mut thin = None;
+            let mut opacity = None;
             for selector in &rule.selectors {
                 let Some((role, hover, specificity, pseudo)) = match_selector(selector, dark)
                 else {
                     continue;
                 };
+                let thin = *thin.get_or_insert_with(|| rule_thin(rule));
+                let opacity = *opacity.get_or_insert_with(|| rule_opacity(rule));
                 for declaration in &rule.declarations {
-                    writes.push(Write {
+                    if !handled(&declaration.name) {
+                        continue;
+                    }
+                    sequence += 1;
+                    let write = Write {
                         important: declaration.important,
                         specificity,
                         order,
@@ -574,16 +595,28 @@ impl NativeStyle {
                         thin,
                         opacity,
                         declaration,
-                    });
+                    };
+                    let rank = (write.important, write.specificity, write.order, sequence);
+                    let key = (
+                        role,
+                        hover,
+                        pseudo,
+                        declaration.name.trim().to_ascii_lowercase(),
+                    );
+                    let replace = winners.get(&key).is_none_or(|(old, _)| rank >= *old);
+                    if replace {
+                        winners.insert(key, (rank, write));
+                    }
                 }
             }
         }
         // Normal declarations first, then specificity, then source order;
         // `!important` declarations come after all of them.
-        writes.sort_by_key(|write| (write.important, write.specificity, write.order));
+        let mut writes: Vec<_> = winners.into_values().collect();
+        writes.sort_by_key(|(rank, _)| *rank);
 
         let mut style = Self::default();
-        for write in writes {
+        for (_, write) in writes {
             let Some(value) = vars.resolve(&write.declaration.value) else {
                 continue;
             };
@@ -608,8 +641,56 @@ struct Write<'a> {
     declaration: &'a Declaration,
 }
 
+/// Whether a native region paints this property at all. Everything else a
+/// theme declares — its custom properties, layout, filters and Discord-only
+/// fields — is left for `Vars` or for the file.
+fn handled(property: &str) -> bool {
+    const PAINTED: &[&str] = &[
+        "background",
+        "background-color",
+        "background-image",
+        "color",
+        "border-radius",
+        "font-family",
+        "font-size",
+        "letter-spacing",
+        "text-transform",
+        "opacity",
+        "box-shadow",
+        "transition",
+        "transition-duration",
+        "animation",
+        "animation-duration",
+        "border",
+        "border-color",
+        "border-top",
+        "border-right",
+        "border-bottom",
+        "border-left",
+        "border-top-color",
+        "border-right-color",
+        "border-bottom-color",
+        "border-left-color",
+        "outline",
+        "outline-color",
+        "accent-color",
+        "caret-color",
+    ];
+    PAINTED
+        .iter()
+        .any(|painted| property.eq_ignore_ascii_case(painted))
+}
+
 fn apply(style: &mut NativeStyle, write: Write<'_>, value: &str, dark: bool) {
-    let property = write.declaration.name.trim().to_ascii_lowercase();
+    // Property names are usually already lower case; only a theme that
+    // shouts them pays for a new string.
+    let name = write.declaration.name.trim();
+    let property = if name.bytes().any(|byte| byte.is_ascii_uppercase()) {
+        Cow::Owned(name.to_ascii_lowercase())
+    } else {
+        Cow::Borrowed(name)
+    };
+    let property = property.as_ref();
     let value = value.trim();
     if value.is_empty() {
         return;
@@ -619,7 +700,7 @@ fn apply(style: &mut NativeStyle, write: Write<'_>, value: &str, dark: bool) {
         Pseudo::Ignored => return,
         Pseudo::Selection => {
             if matches!(
-                property.as_str(),
+                property,
                 "background" | "background-color" | "background-image"
             ) && let Some(color) = background_color(value, !dark)
                 && color.a > 0
@@ -640,7 +721,7 @@ fn apply(style: &mut NativeStyle, write: Write<'_>, value: &str, dark: bool) {
         Pseudo::Scrollbar | Pseudo::ScrollbarTrack => return,
         Pseudo::ScrollbarThumb | Pseudo::ScrollbarThumbHover => {
             if matches!(
-                property.as_str(),
+                property,
                 "background" | "background-color" | "background-image"
             ) && let Some(color) = background_color(value, !dark)
                 && color.a > 0
@@ -658,21 +739,29 @@ fn apply(style: &mut NativeStyle, write: Write<'_>, value: &str, dark: bool) {
             // `body::before` is where a theme's wallpaper usually lives;
             // that path already gives the window its background picture.
             if role != Role::Root {
-                apply_pseudo(style, &write, &property, value, dark);
+                apply_pseudo(style, &write, property, value, dark);
             }
             return;
         }
         Pseudo::None => {}
     }
-    match property.as_str() {
+    match property {
         "background" | "background-color" | "background-image" => {
+            let gradient = crate::theme::gradient(value);
+            let mut cleared = false;
             if let Some(color) = background_color(value, !dark) {
                 // A transparent background on a collapsed wrapper lets the
                 // region's own colour through; it must not erase the region in
                 // the native window.
                 if color.a > 0 {
                     set_background(style, role, write.hover, color);
+                    cleared = true;
                 }
+            }
+            match gradient {
+                Some(gradient) => set_gradient(style, role, write.hover, gradient),
+                None if cleared => clear_gradient(style, role, write.hover),
+                None => {}
             }
         }
         "color" => {
@@ -753,7 +842,7 @@ fn apply(style: &mut NativeStyle, write: Write<'_>, value: &str, dark: bool) {
                 role,
                 Role::Card | Role::Menu | Role::ServerSettings | Role::Profile
             ) {
-                apply_motion(style, &property, value);
+                apply_motion(style, property, value);
             }
         }
         "border"
@@ -900,6 +989,38 @@ fn set_background(style: &mut NativeStyle, role: Role, hover: bool, color: Rgba)
         }
     };
     *slot = Some(color);
+}
+
+/// Keeps a linear gradient for the region whose ground the window paints as
+/// one. Other regions and hover washes keep their solid colour.
+fn set_gradient(style: &mut NativeStyle, role: Role, hover: bool, gradient: crate::Gradient) {
+    if hover || !matches!(gradient.kind, crate::GradientKind::Linear(_)) {
+        return;
+    }
+    match role {
+        Role::Rail => style.rail_gradient = Some(gradient),
+        Role::Sidebar | Role::Category => style.sidebar_gradient = Some(gradient),
+        Role::Chat | Role::Messages | Role::Forum | Role::SearchResults => {
+            style.chat_gradient = Some(gradient);
+        }
+        // The page's own gradient is already the window's background
+        // picture; the other regions have no gradient painter.
+        _ => {}
+    }
+}
+
+fn clear_gradient(style: &mut NativeStyle, role: Role, hover: bool) {
+    if hover {
+        return;
+    }
+    match role {
+        Role::Rail => style.rail_gradient = None,
+        Role::Sidebar | Role::Category => style.sidebar_gradient = None,
+        Role::Chat | Role::Messages | Role::Forum | Role::SearchResults => {
+            style.chat_gradient = None;
+        }
+        _ => {}
+    }
 }
 
 fn set_text(style: &mut NativeStyle, role: Role, color: Rgba) {
@@ -1154,7 +1275,7 @@ fn family(value: &str) -> Option<String> {
 /// A pseudo-element a theme names. Only the ones a native window can paint
 /// are kept: text selection, a field's hint, a scrollbar's thumb, and the
 /// decoration a region's `::before` or `::after` draws.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Pseudo {
     None,
     Before,
@@ -1267,7 +1388,7 @@ fn match_selector(selector: &str, dark: bool) -> Option<(Role, bool, u32, Pseudo
                 | Pseudo::ScrollbarThumb
                 | Pseudo::ScrollbarThumbHover
         ) {
-            return Some((Role::Root, false, specificity(selector), pseudo));
+            return Some((Role::Root, false, specificity(&compounds), pseudo));
         }
         let last = compounds.last()?;
         let tag = last
@@ -1281,7 +1402,7 @@ fn match_selector(selector: &str, dark: bool) -> Option<(Role, bool, u32, Pseudo
             return None;
         }
     }
-    let specificity = specificity(selector);
+    let specificity = specificity(&compounds);
     for (index, node) in NODES.iter().enumerate() {
         let mut current = Some(index);
         let mut hover = false;
@@ -1329,9 +1450,9 @@ fn collapsed(role: Role) -> bool {
 }
 
 /// A rough CSS specificity: ids, classes/attributes/pseudo-classes, tags.
-fn specificity(selector: &str) -> u32 {
+fn specificity(compounds: &[String]) -> u32 {
     let mut specificity = 0;
-    for compound in selector_compounds(selector) {
+    for compound in compounds {
         let bytes = compound.as_bytes();
         let mut index = 0;
         if bytes.first().is_some_and(u8::is_ascii_alphabetic) {
@@ -1671,6 +1792,20 @@ mod tests {
 
     fn dark(css: &str) -> crate::ThemeFile {
         load_str(css, None, &Options::with_mode(Mode::Dark)).expect("theme")
+    }
+
+    #[test]
+    fn a_sidebar_gradient_is_kept_for_the_window() {
+        let theme = dark(
+            r#"
+            .theme-dark [class*="sidebarList_"] {
+                background: linear-gradient(180deg, #111111, #222222);
+            }
+            "#,
+        );
+        let gradient = theme.native.sidebar_gradient.expect("a gradient");
+        assert_eq!(gradient.kind, crate::GradientKind::Linear(180.0));
+        assert_eq!(gradient.stops.len(), 2);
     }
 
     #[test]

@@ -4,7 +4,9 @@
 //! not every corner of the language, and keeps what it doesn't know as text.
 
 use std::{
-    collections::BTreeMap,
+    borrow::Cow,
+    cell::RefCell,
+    collections::{BTreeMap, HashMap},
     fmt,
     path::{Path, PathBuf},
 };
@@ -529,7 +531,7 @@ fn import_condition_allows(condition: &str) -> bool {
 /// native window never matches.
 fn media_applies(prelude: &str) -> bool {
     let lower = prelude.to_ascii_lowercase();
-    !(lower.contains("print") && !lower.contains("screen"))
+    !(lower.contains("print") && !lower.contains("screen") && !lower.contains("not print"))
 }
 
 /// Whether an `@supports` prelude applies. Features ReCore's native selector
@@ -566,7 +568,24 @@ fn supports_value(condition: &str) -> bool {
             || lower.contains(":last-")
             || lower.contains(":only-"));
     }
-    true
+    // A native window paints no blur, mask, container query or view
+    // transition, so a theme's branch that needs one is not taken; its
+    // `not (...)` fallback is.
+    const UNSUPPORTED: &[&str] = &[
+        "backdrop-filter",
+        "-webkit-backdrop-filter",
+        "mask",
+        "-webkit-mask",
+        "container-type",
+        "view-transition-name",
+        "animation-timeline",
+        "scroll-timeline",
+    ];
+    let property = inner
+        .split_once(':')
+        .map(|(property, _)| property.trim().to_ascii_lowercase())
+        .unwrap_or_default();
+    !UNSUPPORTED.contains(&property.as_str())
 }
 
 /// Splits on `and`/`or` outside parentheses.
@@ -1183,14 +1202,23 @@ fn media_scheme(prelude: &str) -> Option<bool> {
     if !lower.contains("prefers-color-scheme") {
         return None;
     }
-    if lower.contains("prefers-color-scheme: dark") || lower.contains("prefers-color-scheme:dark") {
-        return Some(true);
-    }
-    if lower.contains("prefers-color-scheme: light") || lower.contains("prefers-color-scheme:light")
+    let negated = lower
+        .split("prefers-color-scheme")
+        .next()
+        .map(|prefix| prefix.trim_end().trim_end_matches('(').trim_end())
+        .is_some_and(|prefix| prefix.ends_with("not"));
+    let scheme = if lower.contains("prefers-color-scheme: dark")
+        || lower.contains("prefers-color-scheme:dark")
     {
-        return Some(false);
-    }
-    None
+        Some(true)
+    } else if lower.contains("prefers-color-scheme: light")
+        || lower.contains("prefers-color-scheme:light")
+    {
+        Some(false)
+    } else {
+        None
+    };
+    scheme.map(|scheme| scheme != negated)
 }
 
 /// The largest a value may grow to while its `var()`s are filled in. A
@@ -1211,6 +1239,9 @@ pub struct Vars {
     /// The folder or web address each property came from, for the files it
     /// names relatively.
     origin: BTreeMap<String, Option<String>>,
+    /// Values already filled in, so a palette and the options that name the
+    /// same variables resolve each chain once.
+    resolved: RefCell<HashMap<String, Option<String>>>,
 }
 
 impl Vars {
@@ -1232,6 +1263,7 @@ impl Vars {
             self.weight
                 .insert(declaration.name.clone(), (u32::MAX, usize::MAX));
             self.origin.insert(declaration.name.clone(), None);
+            self.resolved.borrow_mut().clear();
         }
     }
 
@@ -1266,6 +1298,7 @@ impl Vars {
                 .insert(declaration.name.clone(), (specificity, order));
             self.origin
                 .insert(declaration.name.clone(), origin.map(str::to_owned));
+            self.resolved.borrow_mut().clear();
         }
     }
 
@@ -1291,10 +1324,25 @@ impl Vars {
     }
 
     /// `value` with every `var()` replaced, or `None` when one has neither a
-    /// value nor a fallback.
-    pub fn resolve(&self, value: &str) -> Option<String> {
+    /// value nor a fallback. A value without `var()` comes back borrowed, as
+    /// most declarations are literals.
+    pub fn resolve<'a>(&'a self, value: &'a str) -> Option<Cow<'a, str>> {
+        if find_ignore_case(value, "var(").is_none() {
+            return Some(Cow::Borrowed(value));
+        }
+        if let Some(cached) = self.resolved.borrow().get(value) {
+            return cached.clone().map(Cow::Owned);
+        }
         let mut left = SUBSTITUTIONS;
-        self.resolve_depth(value, 0, &mut left)
+        let result = self.resolve_depth(value, 0, &mut left);
+        if value.len() <= 4096 {
+            let mut cache = self.resolved.borrow_mut();
+            if cache.len() >= 1024 {
+                cache.clear();
+            }
+            cache.insert(value.to_owned(), result.clone());
+        }
+        result.map(Cow::Owned)
     }
 
     /// The colour a declaration names, after its `var()`s are filled in.
@@ -1595,17 +1643,68 @@ pub struct Meta {
     pub vars: Vec<MetaVar>,
 }
 
+/// The CSS before its first `{` outside comments and strings, where a
+/// theme's metadata comments live.
+fn before_first_rule(css: &str) -> &str {
+    let bytes = css.as_bytes();
+    let mut index = 0;
+    let mut quote = None;
+    let mut escaped = false;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if let Some(opening) = quote {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == opening {
+                quote = None;
+            }
+            index += 1;
+            continue;
+        }
+        match byte {
+            b'/' if bytes.get(index + 1) == Some(&b'*') => {
+                index += 2;
+                while index < bytes.len() {
+                    if bytes[index] == b'*' && bytes.get(index + 1) == Some(&b'/') {
+                        index += 2;
+                        break;
+                    }
+                    index += 1;
+                }
+            }
+            b'"' | b'\'' => {
+                quote = Some(byte);
+                index += 1;
+            }
+            b'{' => return &css[..index],
+            _ => index += 1,
+        }
+    }
+    css
+}
+
 impl Meta {
     pub fn read(css: &str) -> Self {
         let mut meta = Self::default();
-        // Only the opening comment is metadata, not a comment deep in the file.
-        let Some(start) = css.find("/*") else {
-            return meta;
-        };
-        let Some(end) = css[start + 2..].find("*/") else {
-            return meta;
-        };
-        let header = &css[start + 2..start + 2 + end];
+        // Metadata lives in the comments before the first rule. A license
+        // banner may come before the `@name` block, and a theme may write
+        // several blocks, so all of them are read.
+        let head = before_first_rule(css);
+        let mut rest = head;
+        while let Some(start) = rest.find("/*") {
+            let after = &rest[start + 2..];
+            let Some(end) = after.find("*/") else {
+                break;
+            };
+            meta.read_block(&after[..end]);
+            rest = &after[end + 2..];
+        }
+        meta
+    }
+
+    fn read_block(&mut self, header: &str) {
         for line in header.lines() {
             let line = line.trim().trim_start_matches('*').trim();
             // A theme may write several `@key value` pairs on one line; each
@@ -1627,23 +1726,22 @@ impl Meta {
                     continue;
                 }
                 match key.as_str() {
-                    "name" => meta.name = Some(value),
-                    "author" => meta.author = Some(value),
-                    "description" => meta.description = Some(value),
-                    "version" => meta.version = Some(value),
-                    "license" => meta.license = Some(value),
-                    "source" => meta.source = Some(value),
-                    "website" => meta.website = Some(value),
+                    "name" => self.name = Some(value),
+                    "author" => self.author = Some(value),
+                    "description" => self.description = Some(value),
+                    "version" => self.version = Some(value),
+                    "license" => self.license = Some(value),
+                    "source" => self.source = Some(value),
+                    "website" => self.website = Some(value),
                     "var" => {
                         if let Some(var) = MetaVar::parse(&value) {
-                            meta.vars.push(var);
+                            self.vars.push(var);
                         }
                     }
                     _ => {}
                 }
             }
         }
-        meta
     }
 }
 
@@ -1781,6 +1879,16 @@ mod tests {
     }
 
     #[test]
+    fn negated_media_conditions_flip_their_sense() {
+        let sheet = parse(
+            "@media not (prefers-color-scheme: dark) { :root { --x: #fff; } } @media not print { :root { --y: #000; } }",
+            |_, _| None,
+        );
+        assert_eq!(sheet.rules.len(), 2);
+        assert_eq!(sheet.rules[0].color_scheme, Some(false));
+    }
+
+    #[test]
     fn font_faces_carry_their_data_uri() {
         let sheet = parse(
             r#"@font-face { font-family: "Test"; font-weight: 700; src: url("data:font/ttf;base64,AAEC") format("truetype"); }"#,
@@ -1837,6 +1945,15 @@ mod tests {
     }
 
     #[test]
+    fn a_license_banner_does_not_hide_the_header() {
+        let meta = Meta::read(
+            "/* Copyright 2026 Someone, MIT licensed */\n/**\n * @name After Dark\n * @author Someone\n */\n:root{}",
+        );
+        assert_eq!(meta.name.as_deref(), Some("After Dark"));
+        assert_eq!(meta.author.as_deref(), Some("Someone"));
+    }
+
+    #[test]
     fn comments_keep_descriptions_and_sections_for_options() {
         let sheet = parse(
             r#"
@@ -1873,6 +1990,23 @@ mod tests {
         );
         assert_eq!(sheet.rules.len(), 1);
         assert_eq!(sheet.rules[0].declarations[0].name, "--yes");
+    }
+
+    #[test]
+    fn unsupported_effects_take_their_fallback() {
+        let sheet = parse(
+            r#"
+            @supports (backdrop-filter: blur(8px)) {
+                :root { --frosted: #fff; }
+            }
+            @supports not (backdrop-filter: blur(8px)) {
+                :root { --opaque: #000; }
+            }
+            "#,
+            |_, _| None,
+        );
+        assert_eq!(sheet.rules.len(), 1);
+        assert_eq!(sheet.rules[0].declarations[0].name, "--opaque");
     }
 
     #[test]
