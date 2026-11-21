@@ -9223,7 +9223,7 @@ const GENERIC_CONTROLS = new Set([
   "stream-move", "sessions", "other-session", "cookies", "list-requests", "audit-log", "slow", "gateway-reconnect", "qr-scan",
   "qr-confirm", "qr-captcha", "qr-cancel", "qr-expire", "voice-audio", "video", "stream-codec", "reactor-pages",
   "reactor-removals", "thread-searches", "thread-creates", "thread-members", "typed", "acks", "invites",
-  "invite-joins", "invite-captcha", "invite-form", "onboarding", "onboarding-responses", "event-interest", "gift-redeems", "oauth-authorizations", "mfa", "soundboard-sends", "custom-call-sounds",
+  "invite-joins", "invite-captcha", "invite-form", "onboarding", "onboarding-responses", "channel-info", "event-interest", "gift-redeems", "oauth-authorizations", "mfa", "soundboard-sends", "custom-call-sounds",
   "login", "logins",
 ]);
 
@@ -9693,6 +9693,7 @@ const server = Bun.serve<SocketData>({
     if (path === "/_control/saved-messages") return Response.json(savedMessages);
     if (path === "/_control/join-requests") return Response.json(joinRequests);
     if (path === "/_control/onboarding-responses") return Response.json(onboardingResponses);
+    if (path === "/_control/channel-info") return Response.json(channelInfoRequests);
     if (req.method === "GET") {
       if (/^\/(icons|avatars|banners|embed\/avatars|guilds)\//.test(path)) mediaRequests.avatars++;
       if (/^\/(attachments|media\/attachments|external)\//.test(path)) mediaRequests.previews++;
