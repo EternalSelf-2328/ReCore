@@ -5,6 +5,7 @@ pub mod activity;
 pub mod activity_feed;
 pub mod api;
 pub mod attachment_privacy;
+pub mod auth;
 pub mod cache;
 mod call_connection;
 pub mod call_stats;

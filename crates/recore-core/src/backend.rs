@@ -54,8 +54,13 @@ mod tests {
     fn failed_restore_closes_the_event_stream_and_rejects_commands() {
         let runtime = Arc::new(BackgroundRuntime::new().unwrap());
         let directory = tempfile::tempdir().unwrap();
-        let (backend, mut events) =
-            Backend::start(runtime.clone(), directory.path().into(), Start::Restore);
+        let (backend, mut events) = Backend::start(
+            runtime.clone(),
+            directory.path().into(),
+            Start::Restore {
+                discord_account: None,
+            },
+        );
         runtime.block_on(async {
             let event = tokio::time::timeout(std::time::Duration::from_secs(2), events.recv())
                 .await

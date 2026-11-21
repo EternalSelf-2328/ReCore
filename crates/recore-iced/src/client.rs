@@ -36,6 +36,8 @@ pub struct Client {
     /// is noted for the window to let go of its listener.
     linking: Option<BackgroundTask<()>>,
     link_progress: Option<UnboundedReceiver<Progress>>,
+    /// Where an email login's two-factor code goes while it waits.
+    link_codes: Option<tokio::sync::mpsc::UnboundedSender<String>>,
     link_stopped: bool,
     /// Sounds the core asked for, for the window to play; new messages to
     /// tell of; a picture to put on the clipboard.
@@ -66,6 +68,7 @@ impl Client {
             last_visible: None,
             linking: None,
             link_progress: None,
+            link_codes: None,
             started: false,
             link_stopped: false,
             sounds: Vec::new(),
@@ -195,11 +198,22 @@ impl Client {
                         self.app.backend_failed(&command);
                     }
                 }
-                Effect::LinkDiscord => self.link_discord(None),
-                Effect::LinkDiscordToken(token) => self.link_discord(Some(token)),
+                Effect::LinkDiscord => self.link_discord(recore_core::discord_link::Login::Qr),
+                Effect::LinkDiscordToken(token) => {
+                    self.link_discord(recore_core::discord_link::Login::Token(token));
+                }
+                Effect::LinkDiscordEmail { email, password } => {
+                    self.link_discord(recore_core::discord_link::Login::Email { email, password });
+                }
+                Effect::DiscordMfaCode(code) => {
+                    if let Some(codes) = &self.link_codes {
+                        let _ = codes.send(code);
+                    }
+                }
                 Effect::StopDiscordLink => {
                     self.linking = None;
                     self.link_progress = None;
+                    self.link_codes = None;
                     self.link_stopped = true;
                 }
                 // Discord's captcha, while linking.
@@ -217,13 +231,14 @@ impl Client {
         }
     }
 
-    /// Starts linking a Discord account, by QR code or with a pasted token,
-    /// in place of any linking under way. The work runs on the backend's
-    /// runtime.
-    fn link_discord(&mut self, token: Option<String>) {
-        let (task, progress) = recore_core::discord_link::start(&self.runtime, token);
-        self.linking = Some(task);
-        self.link_progress = Some(progress);
+    /// Starts linking a Discord account, by QR code, with a pasted token or
+    /// with an email and password, in place of any linking under way. The
+    /// work runs on the backend's runtime.
+    fn link_discord(&mut self, login: recore_core::discord_link::Login) {
+        let started = recore_core::discord_link::start(&self.runtime, login);
+        self.linking = Some(started.task);
+        self.link_progress = Some(started.progress);
+        self.link_codes = Some(started.codes);
     }
 
     /// The rows from `first` to `last` of the open timeline are in view:

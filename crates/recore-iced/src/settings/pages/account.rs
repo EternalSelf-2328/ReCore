@@ -36,6 +36,10 @@ impl Settings {
                 Action::Logout
             }
             AccountEvent::Unlink => Action::UnlinkDiscord,
+            AccountEvent::AddDiscord => Action::LinkDiscord,
+            AccountEvent::CancelDiscord => Action::CancelDiscordLink,
+            AccountEvent::SwitchDiscord(id) => Action::SwitchDiscordAccount(id),
+            AccountEvent::RemoveDiscord(id) => Action::RemoveDiscordAccount(id),
             AccountEvent::Unblock(user) => Action::ChangeRelationship {
                 user,
                 change: RelationshipChange::Unblock,

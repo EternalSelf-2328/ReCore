@@ -1,8 +1,41 @@
-//! The linked Discord account: its friends and requests, linking, the custom status, and what its snapshots list.
+//! The linked Discord accounts: which is in use, linking another, its
+//! friends and requests, the custom status, and what its snapshots list.
 
 use super::{members, *};
+use crate::discord_accounts::SavedAccount;
 
 impl Application {
+    /// Uses another account's saved token, starting the Discord service on
+    /// it again; what it holds shows as its snapshots come.
+    pub(super) fn switch_discord_account(&mut self, id: String) -> Vec<Effect> {
+        if self.state.preview || !self.state.discord_accounts.select(&id) {
+            return vec![];
+        }
+        vec![Effect::Backend(Command::Discord(
+            DiscordCommand::SwitchAccount(id),
+        ))]
+    }
+
+    /// Forgets one account. Removing the one in use chooses the first left,
+    /// which the service starts on; removing the last unlinks.
+    pub(super) fn remove_discord_account(&mut self, id: String) -> Vec<Effect> {
+        if self.state.preview {
+            return vec![];
+        }
+        let removed = self.state.discord_accounts.remove(&id);
+        if !removed.found {
+            return vec![];
+        }
+        let fallback = if removed.was_active {
+            removed.active.clone()
+        } else {
+            None
+        };
+        vec![Effect::Backend(Command::Discord(
+            DiscordCommand::RemoveAccount { id, fallback },
+        ))]
+    }
+
     pub(super) fn open_dm_screen(&mut self, screen: DmScreen) -> Vec<Effect> {
         if self.state.dm_screen == Some(screen)
             || self.state.navigation != Navigation::DirectMessages
@@ -216,6 +249,8 @@ impl Application {
                 *link = DiscordLink::Captcha(page.clone());
                 return vec![Effect::OpenPage(page)];
             }
+            Progress::Mfa => *link = DiscordLink::Mfa,
+            Progress::MfaError(error) => *link = DiscordLink::MfaError(error),
             // A code that showed expired, so a new one replaces it. Without
             // one, the service turned ReCore away.
             Progress::Expired if *link == DiscordLink::Starting => {
@@ -228,15 +263,21 @@ impl Application {
                 return vec![Effect::LinkDiscord];
             }
             Progress::Failed(error) => *link = DiscordLink::Failed(error),
-            Progress::Linked => {
+            Progress::Linked(account) => {
                 self.state.discord_link = None;
                 self.state.discord_linked = true;
-                // A running ReCore connects the account; one without Matrix
-                // signs in with it.
+                self.state.discord_accounts.add(account.clone());
+                self.state.discord_accounts.select(&account.id);
+                // A running ReCore switches to the account; one without
+                // Matrix signs in with it.
                 return if self.state.account.is_some() {
-                    vec![Effect::Backend(Command::Discord(DiscordCommand::Start))]
+                    vec![Effect::Backend(Command::Discord(
+                        DiscordCommand::SwitchAccount(account.id),
+                    ))]
                 } else {
-                    self.start(chat::Start::Restore)
+                    self.start(chat::Start::Restore {
+                        discord_account: Some(account.id),
+                    })
                 };
             }
         }
@@ -468,6 +509,17 @@ impl Application {
             });
         }
         self.state.discord_linked = true;
+        // An account linked before ReCore kept several is listed by the
+        // session that names it, and becomes the one in use.
+        if let (Some(id), Some(account)) = (snapshot.user_id.as_deref(), snapshot.account.as_ref())
+        {
+            self.state.discord_accounts.add(SavedAccount {
+                id: id.to_owned(),
+                name: account.name.clone(),
+                username: account.username.clone(),
+            });
+            self.state.discord_accounts.select(id);
+        }
         self.state.discord_user.clone_from(&snapshot.user_id);
         self.state.discord_presence =
             Some(snapshot.presence.clone()).filter(|presence| !presence.is_empty());

@@ -2,6 +2,15 @@
 
 use super::*;
 
+#[cfg(feature = "discord")]
+fn saved(id: &str, name: &str) -> crate::discord_accounts::SavedAccount {
+    crate::discord_accounts::SavedAccount {
+        id: id.into(),
+        name: name.into(),
+        username: name.to_lowercase(),
+    }
+}
+
 #[test]
 #[cfg(feature = "discord")]
 fn links_discord_by_qr_code_and_unlinks_it() {
@@ -53,17 +62,26 @@ fn links_discord_by_qr_code_and_unlinks_it() {
         [Effect::OpenPage(opened)] if *opened == page
     ));
     assert!(matches!(
-        app.linking(Progress::Linked).as_slice(),
-        [Effect::Backend(Command::Discord(DiscordCommand::Start))]
+        app.linking(Progress::Linked(saved("1", "alice"))).as_slice(),
+        [Effect::Backend(Command::Discord(DiscordCommand::SwitchAccount(id)))] if id == "1"
     ));
     assert_eq!(app.state.discord_link, None);
     assert!(app.state.discord_linked);
-    assert!(
-        app.dispatch(Action::LinkDiscord).is_empty(),
-        "already linked"
+    assert_eq!(
+        app.state
+            .discord_accounts
+            .active()
+            .map(|account| account.id.as_str()),
+        Some("1")
     );
+    // Another account can be linked while this one is in use.
+    assert!(matches!(
+        app.dispatch(Action::LinkDiscord).as_slice(),
+        [Effect::LinkDiscord]
+    ));
+    app.dispatch(Action::CancelDiscordLink);
 
-    // Unlinking forgets everything Discord showed.
+    // Unlinking forgets everything Discord showed, and only this account.
     app.apply(discord_event(Snapshot {
         status: Status::Online,
         user_id: Some("1".into()),
@@ -72,7 +90,8 @@ fn links_discord_by_qr_code_and_unlinks_it() {
     }));
     assert!(matches!(
         app.dispatch(Action::UnlinkDiscord).as_slice(),
-        [Effect::Backend(Command::Discord(DiscordCommand::Unlink))]
+        [Effect::Backend(Command::Discord(DiscordCommand::RemoveAccount { id, fallback }))]
+            if id == "1" && fallback.is_none()
     ));
     app.apply(Event::DiscordUnlinked);
     assert!(!app.state.discord_linked);
@@ -85,15 +104,18 @@ fn links_discord_by_qr_code_and_unlinks_it() {
         app.dispatch(Action::CancelDiscordLink).as_slice(),
         [Effect::StopDiscordLink]
     ));
-    assert!(app.linking(Progress::Linked).is_empty());
+    assert!(
+        app.linking(Progress::Linked(saved("1", "alice")))
+            .is_empty()
+    );
     assert!(!app.state.discord_linked);
 
     // Without a session, as in a build without Matrix, linking signs in.
     let mut app = Application::default();
     app.dispatch(Action::LinkDiscord);
     assert!(matches!(
-        app.linking(Progress::Linked).as_slice(),
-        [Effect::Start(chat::Start::Restore)]
+        app.linking(Progress::Linked(saved("1", "alice"))).as_slice(),
+        [Effect::Start(chat::Start::Restore { discord_account: Some(id) })] if id == "1"
     ));
     assert!(app.state.busy);
 }
@@ -121,10 +143,124 @@ fn links_discord_by_token() {
     // Pasted again, it signs in as linking by QR code does.
     app.dispatch(Action::LinkDiscordToken("abc.def".into()));
     assert!(matches!(
-        app.linking(Progress::Linked).as_slice(),
-        [Effect::Start(chat::Start::Restore)]
+        app.linking(Progress::Linked(saved("1", "alice"))).as_slice(),
+        [Effect::Start(chat::Start::Restore { discord_account: Some(id) })] if id == "1"
     ));
     assert!(app.state.discord_linked);
+}
+
+#[test]
+#[cfg(feature = "discord")]
+fn email_login_asks_for_the_code_discord_wants() {
+    use crate::discord_link::Progress;
+    let mut app = Application::default();
+    // Neither an email without a password nor a password without one goes.
+    assert!(
+        app.dispatch(Action::LinkDiscordEmail {
+            email: "alice@example.org".into(),
+            password: String::new(),
+        })
+        .is_empty()
+    );
+    assert!(matches!(
+        app.dispatch(Action::LinkDiscordEmail {
+            email: " alice@example.org ".into(),
+            password: "secret".into(),
+        })
+        .as_slice(),
+        [Effect::LinkDiscordEmail { email, password }]
+            if email == "alice@example.org" && password == "secret"
+    ));
+    assert_eq!(app.state.discord_link, Some(DiscordLink::EmailChecking));
+    // Discord wants a captcha on the way: the browser opens its page.
+    let page = "http://127.0.0.1:9/captcha/2".to_owned();
+    assert!(matches!(
+        app.linking(Progress::Captcha(page.clone())).as_slice(),
+        [Effect::OpenPage(opened)] if *opened == page
+    ));
+    // Then an authenticator code.
+    app.linking(Progress::Mfa);
+    assert_eq!(app.state.discord_link, Some(DiscordLink::Mfa));
+    assert!(app.dispatch(Action::DiscordMfa("  ".into())).is_empty());
+    assert!(matches!(
+        app.dispatch(Action::DiscordMfa("123456".into())).as_slice(),
+        [Effect::DiscordMfaCode(code)] if code == "123456"
+    ));
+    assert_eq!(app.state.discord_link, Some(DiscordLink::MfaChecking));
+    // A wrong one leaves the prompt up for another.
+    app.linking(Progress::MfaError(
+        "Discord didn't accept that code.".into(),
+    ));
+    assert_eq!(
+        app.state.discord_link,
+        Some(DiscordLink::MfaError(
+            "Discord didn't accept that code.".into()
+        ))
+    );
+    assert!(matches!(
+        app.dispatch(Action::DiscordMfa("654321".into())).as_slice(),
+        [Effect::DiscordMfaCode(code)] if code == "654321"
+    ));
+    // The right one signs in as any link does.
+    assert!(matches!(
+        app.linking(Progress::Linked(saved("1", "alice"))).as_slice(),
+        [Effect::Start(chat::Start::Restore { discord_account: Some(id) })] if id == "1"
+    ));
+    assert_eq!(app.state.discord_link, None);
+}
+
+#[test]
+#[cfg(feature = "discord")]
+fn another_linked_account_switches_and_the_removed_one_falls_back() {
+    use crate::discord_accounts::DiscordAccounts;
+    let mut app = connected();
+    app.dispatch(Action::RecallDiscordAccounts(DiscordAccounts {
+        saved: vec![saved("1", "alice"), saved("2", "bob")],
+        active: Some("1".into()),
+    }));
+    assert_eq!(
+        app.state
+            .discord_accounts
+            .active()
+            .map(|each| each.id.as_str()),
+        Some("1")
+    );
+    // Switching keeps both accounts, and tells Discord to start again on the
+    // other one.
+    assert!(matches!(
+        app.dispatch(Action::SwitchDiscordAccount("2".into())).as_slice(),
+        [Effect::Backend(Command::Discord(DiscordCommand::SwitchAccount(id)))] if id == "2"
+    ));
+    assert_eq!(app.state.discord_accounts.saved.len(), 2);
+    assert_eq!(
+        app.state
+            .discord_accounts
+            .active()
+            .map(|each| each.id.as_str()),
+        Some("2")
+    );
+    // Removing the account in use falls back to the one left.
+    assert!(matches!(
+        app.dispatch(Action::RemoveDiscordAccount("2".into())).as_slice(),
+        [Effect::Backend(Command::Discord(DiscordCommand::RemoveAccount { id, fallback: Some(next) }))]
+            if id == "2" && next == "1"
+    ));
+    assert_eq!(app.state.discord_accounts.saved.len(), 1);
+    assert_eq!(
+        app.state
+            .discord_accounts
+            .active()
+            .map(|each| each.id.as_str()),
+        Some("1")
+    );
+    // The link a session names is listed, as one linked before accounts were
+    // kept apart.
+    assert!(matches!(
+        app.dispatch(Action::RemoveDiscordAccount("1".into())).as_slice(),
+        [Effect::Backend(Command::Discord(DiscordCommand::RemoveAccount { id, fallback: None }))]
+            if id == "1"
+    ));
+    assert!(app.state.discord_accounts.is_empty());
 }
 
 #[test]

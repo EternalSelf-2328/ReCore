@@ -2359,12 +2359,28 @@ pub enum Direction {
 }
 
 pub enum Start {
-    Restore,
+    Restore {
+        /// The linked Discord account to use, if this device has one.
+        discord_account: Option<String>,
+    },
     Login {
         homeserver: String,
         username: String,
         password: String,
+        /// The linked Discord account to use, if this device has one.
+        discord_account: Option<String>,
     },
+}
+
+impl Start {
+    fn discord_account(&self) -> Option<&str> {
+        match self {
+            Start::Restore { discord_account }
+            | Start::Login {
+                discord_account, ..
+            } => discord_account.as_deref(),
+        }
+    }
 }
 
 /// How a message goes, besides what it says.
@@ -3493,6 +3509,16 @@ pub enum DiscordCommand {
     },
     /// Connect the Discord account that was just linked.
     Start,
+    /// Use another linked account's token, without linking it again; the
+    /// service starts again on it, and [`Event::DiscordSwitched`] follows.
+    SwitchAccount(String),
+    /// Forget one linked account's token. Removing the account in use leaves
+    /// its session on Discord and starts `fallback` if another remains;
+    /// otherwise [`Event::DiscordUnlinked`] follows.
+    RemoveAccount {
+        id: String,
+        fallback: Option<String>,
+    },
     /// Forget the linked Discord account on this device, ending its session
     /// on Discord; [`Event::DiscordUnlinked`] follows.
     Unlink,
@@ -4618,6 +4644,9 @@ pub enum Event {
         save: bool,
         result: Result<(), String>,
     },
+    /// [`DiscordCommand::SwitchAccount`] or [`DiscordCommand::RemoveAccount`]
+    /// started another account; what it shows follows in its snapshots.
+    DiscordSwitched,
     /// [`DiscordCommand::Pins`]'s messages, the latest pinned first, or why
     /// they didn't come.
     Pins {
@@ -5558,8 +5587,9 @@ pub fn can_restore(root: &std::path::Path) -> bool {
     return root.join("active.json").exists();
     #[cfg(all(not(feature = "matrix"), feature = "discord"))]
     return {
-        let _ = root;
-        recore_discord::token::load().is_ok()
+        // An account `layout.json` names, or the one linked before accounts
+        // were kept apart.
+        crate::layout_file::has_discord_account(root) || recore_discord::token::load().is_ok()
     };
     #[cfg(not(any(feature = "matrix", feature = "discord")))]
     {
@@ -5618,6 +5648,10 @@ pub async fn run(
     events: UnboundedSender<Event>,
 ) {
     let remembered = root.join(voice::DEVICES);
+    // The linked account this run started with, before `start` goes to
+    // Matrix; none means the account linked before accounts were kept apart.
+    #[cfg(feature = "discord")]
+    let mut discord_account = start.discord_account().map(str::to_owned);
     #[cfg(feature = "matrix")]
     let session = match crate::matrix_chat::open(root, start).await {
         Ok(session) => session,
@@ -5629,10 +5663,11 @@ pub async fn run(
     // Discord connects when this device has a linked account; see docs/discord/README.md.
     // Why a linked account isn't running answers the commands that need it.
     #[cfg(feature = "discord")]
-    let (mut discord, mut discord_error) = match crate::discord_text::Chat::start() {
-        Ok(discord) => (discord, None),
-        Err(error) => (None, Some(discord_failed(&error))),
-    };
+    let (mut discord, mut discord_error) =
+        match crate::discord_text::Chat::start(discord_account.as_deref()) {
+            Ok(discord) => (discord, None),
+            Err(error) => (None, Some(discord_failed(&error))),
+        };
     #[cfg(feature = "discord")]
     let mut attachment_privacy = recore_discord::attachment_privacy::AttachmentPrivacy::default();
     // Voice reaches Discord through this, so linking and unlinking reach it too.
@@ -5644,13 +5679,13 @@ pub async fn run(
         let refused = match start {
             Start::Login { .. } => Some("This build of ReCore has no Matrix sign-in."),
             #[cfg(feature = "discord")]
-            Start::Restore if discord.is_none() => Some(
+            Start::Restore { .. } if discord.is_none() => Some(
                 discord_error
                     .as_deref()
                     .unwrap_or("Link your Discord account to sign in."),
             ),
             #[cfg(not(feature = "discord"))]
-            Start::Restore => Some("This build of ReCore has no networks."),
+            Start::Restore { .. } => Some("This build of ReCore has no networks."),
             #[allow(
                 unreachable_patterns,
                 reason = "reached in builds without one of the networks"
@@ -5749,9 +5784,13 @@ pub async fn run(
                     Command::Discord(DiscordCommand::Start) => {
                         if discord.is_none() {
                             // Linking saved the login just before.
-                            let started = crate::discord_text::Chat::start().and_then(|started| {
-                                started.ok_or_else(|| anyhow::anyhow!("its login wasn't saved"))
-                            });
+                            let started =
+                                crate::discord_text::Chat::start(discord_account.as_deref())
+                                    .and_then(|started| {
+                                        started.ok_or_else(|| {
+                                            anyhow::anyhow!("its login wasn't saved")
+                                        })
+                                    });
                             match started {
                                 Ok(started) => {
                                     started.service().set_attachment_privacy(attachment_privacy);
@@ -5769,8 +5808,71 @@ pub async fn run(
                             );
                         }
                     }
+                    Command::Discord(DiscordCommand::SwitchAccount(id)) => {
+                        match switch_discord(&mut discord, &linked, &voice, &id, attachment_privacy)
+                        {
+                            Ok(()) => {
+                                discord_account = Some(id);
+                                discord_error = None;
+                                let _ = events.send(Event::DiscordSwitched);
+                            }
+                            Err(error) => {
+                                let error = discord_failed(&error);
+                                let _ = events.send(Event::Error(error.clone()));
+                                discord_error = Some(error);
+                            }
+                        }
+                    }
+                    Command::Discord(DiscordCommand::RemoveAccount { id, fallback }) => {
+                        let in_use = recore_discord::token::current_account().as_deref()
+                            == Some(id.as_str());
+                        if in_use {
+                            leave_discord_voice(&voice);
+                            linked.send_replace(None);
+                            if let Some(chat) = discord.take() {
+                                let service = chat.service();
+                                tokio::spawn(async move {
+                                    if let Err(error) = service.logout().await {
+                                        tracing::warn!(
+                                            error = format!("{error:#}"),
+                                            "could not end the Discord session"
+                                        );
+                                    }
+                                });
+                            }
+                        }
+                        if let Err(error) = recore_discord::token::forget_account(&id) {
+                            tracing::warn!(%error, "could not forget a Discord login");
+                        }
+                        if in_use {
+                            let started = fallback
+                                .as_deref()
+                                .map(|next| {
+                                    start_discord(&mut discord, &linked, next, attachment_privacy)
+                                })
+                                .transpose();
+                            match started {
+                                Ok(Some(())) => {
+                                    discord_account = fallback;
+                                    discord_error = None;
+                                    let _ = events.send(Event::DiscordSwitched);
+                                }
+                                Ok(None) => {
+                                    discord_error = None;
+                                    unlinked(&events);
+                                }
+                                Err(error) => {
+                                    let error = discord_failed(&error);
+                                    let _ = events.send(Event::Error(error.clone()));
+                                    discord_error = Some(error);
+                                    unlinked(&events);
+                                }
+                            }
+                        }
+                    }
                     Command::Discord(DiscordCommand::Unlink) => {
                         unlink_discord(&mut discord, &linked, &voice);
+                        discord_account = None;
                         discord_error = None;
                         let _ = events.send(Event::DiscordUnlinked);
                     }
@@ -5816,6 +5918,19 @@ pub async fn run(
                 if let Some(discord) = discord.as_mut() {
                     discord.handle(wake, &events);
                 }
+                // An account linked before accounts were kept apart is
+                // moved under its id once a session names it, so the next
+                // start can choose it.
+                if discord_account.is_none()
+                    && let Some(id) = discord
+                        .as_ref()
+                        .and_then(|chat| chat.service().snapshots().borrow().user_id.clone())
+                {
+                    if let Err(error) = recore_discord::token::adopt_legacy(&id) {
+                        tracing::warn!(%error, "could not move the Discord login under its account");
+                    }
+                    discord_account = Some(id);
+                }
             }
         }
     }
@@ -5831,14 +5946,9 @@ fn discord_failed(error: &anyhow::Error) -> String {
     format!("Discord couldn't start: {error}")
 }
 
-/// Forgets the linked Discord account on this device: leaves its call, ends
-/// its session on Discord, and stops it.
+/// Leaves the Discord call this account is in, if it is in one.
 #[cfg(feature = "discord")]
-fn unlink_discord(
-    discord: &mut Option<crate::discord_text::Chat>,
-    linked: &tokio::sync::watch::Sender<Option<recore_discord::service::Discord>>,
-    voice: &voice::Controller,
-) {
+fn leave_discord_voice(voice: &voice::Controller) {
     if voice
         .states
         .borrow()
@@ -5848,6 +5958,61 @@ fn unlink_discord(
     {
         voice.command(voice::Command::Leave);
     }
+}
+
+/// Starts Discord on another linked account's token, in place of the one
+/// running, whose session stays as it was: switching isn't unlinking it.
+#[cfg(feature = "discord")]
+fn switch_discord(
+    discord: &mut Option<crate::discord_text::Chat>,
+    linked: &tokio::sync::watch::Sender<Option<recore_discord::service::Discord>>,
+    voice: &voice::Controller,
+    account: &str,
+    privacy: recore_discord::attachment_privacy::AttachmentPrivacy,
+) -> anyhow::Result<()> {
+    leave_discord_voice(voice);
+    linked.send_replace(None);
+    drop(discord.take());
+    start_discord(discord, linked, account, privacy)
+}
+
+/// Starts Discord on the account `account`'s saved token, and gives voice its
+/// service.
+#[cfg(feature = "discord")]
+fn start_discord(
+    discord: &mut Option<crate::discord_text::Chat>,
+    linked: &tokio::sync::watch::Sender<Option<recore_discord::service::Discord>>,
+    account: &str,
+    privacy: recore_discord::attachment_privacy::AttachmentPrivacy,
+) -> anyhow::Result<()> {
+    let started = crate::discord_text::Chat::start(Some(account))?
+        .ok_or_else(|| anyhow::anyhow!("its login wasn't saved"))?;
+    started.service().set_attachment_privacy(privacy);
+    let service = started.service();
+    linked.send_replace(Some(service));
+    *discord = Some(started);
+    Ok(())
+}
+
+/// Says the last account went: a build without Matrix goes back to its
+/// sign-in screen, and one with it stays signed in.
+#[cfg(feature = "discord")]
+fn unlinked(events: &UnboundedSender<Event>) {
+    #[cfg(not(feature = "matrix"))]
+    let _ = events.send(Event::LoggedOut);
+    #[cfg(feature = "matrix")]
+    let _ = events.send(Event::DiscordUnlinked);
+}
+
+/// Forgets the linked Discord account on this device: leaves its call, ends
+/// its session on Discord, and stops it.
+#[cfg(feature = "discord")]
+fn unlink_discord(
+    discord: &mut Option<crate::discord_text::Chat>,
+    linked: &tokio::sync::watch::Sender<Option<recore_discord::service::Discord>>,
+    voice: &voice::Controller,
+) {
+    leave_discord_voice(voice);
     linked.send_replace(None);
     if let Some(chat) = discord.take() {
         let service = chat.service();

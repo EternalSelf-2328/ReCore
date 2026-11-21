@@ -855,7 +855,13 @@ fn the_sticker_picker_lists_the_servers_own_stickers_from_discord() {
     let (guild, general) = ("1400000000000000100", "1400000000000000102");
     let runtime = Arc::new(BackgroundRuntime::new().unwrap());
     let root = tempfile::tempdir().unwrap();
-    let (backend, mut events) = Backend::start(runtime, root.path().into(), Start::Restore);
+    let (backend, mut events) = Backend::start(
+        runtime,
+        root.path().into(),
+        Start::Restore {
+            discord_account: None,
+        },
+    );
     let mut app = Application::default();
     // What the window does with every event and effect.
     let send = |backend: &Backend, effects: Vec<Effect>| {

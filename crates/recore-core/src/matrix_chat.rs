@@ -155,11 +155,12 @@ impl OpenRoom {
 /// Restore the saved session or sign in.
 pub(crate) async fn open(root: PathBuf, start: Start) -> anyhow::Result<Session> {
     match start {
-        Start::Restore => Session::restore(root).await,
+        Start::Restore { .. } => Session::restore(root).await,
         Start::Login {
             homeserver,
             username,
             password,
+            ..
         } => Session::login(root, &homeserver, &username, &password).await,
     }
 }
@@ -2293,7 +2294,9 @@ mod tests {
         let (sender, mut events) = tokio::sync::mpsc::unbounded_channel();
         let actor = tokio::spawn(crate::chat::run(
             root.to_owned(),
-            Start::Restore,
+            Start::Restore {
+                discord_account: None,
+            },
             receiver,
             sender,
         ));

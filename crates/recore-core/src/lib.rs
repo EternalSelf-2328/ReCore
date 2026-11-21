@@ -33,10 +33,11 @@ pub mod decode;
 mod dereverb;
 pub mod discord;
 #[cfg(feature = "discord")]
+pub mod discord_accounts;
+#[cfg(feature = "discord")]
 pub mod discord_audio;
 #[cfg(feature = "discord")]
 pub mod discord_link;
-#[cfg(feature = "discord")]
 pub mod discord_text;
 #[cfg(feature = "discord")]
 mod discord_video;

@@ -32,6 +32,100 @@ impl<'a> Page<'a> {
         let state = self.cx.state;
         let prefs = &self.cx.layout.prefs;
         let mut parts = vec![form::title(theme, "Discord")];
+        let accounts = &state.discord_accounts;
+        if !accounts.is_empty() {
+            let mut list = column![
+                text("Accounts")
+                    .size(16)
+                    .font(crate::fonts::SEMIBOLD())
+                    .color(theme.text),
+                form::note(
+                    theme,
+                    "Each of these stays linked on this computer, in the system's credential store. Switching uses the one chosen without scanning its code again.",
+                ),
+            ]
+            .spacing(8);
+            for account in &accounts.saved {
+                let current = accounts.active.as_deref() == Some(account.id.as_str());
+                let mut names = column![
+                    text(account.label())
+                        .size(16)
+                        .font(crate::fonts::SEMIBOLD())
+                        .color(theme.text)
+                        .wrapping(text::Wrapping::None),
+                ]
+                .spacing(2);
+                if !account.username.is_empty() {
+                    names = names.push(
+                        text(format!("@{}", account.username))
+                            .size(14)
+                            .color(theme.secondary)
+                            .wrapping(text::Wrapping::None),
+                    );
+                }
+                let mut buttons = row![].spacing(8);
+                if current {
+                    buttons = buttons.push(
+                        text("In use")
+                            .size(14)
+                            .color(theme.live)
+                            .wrapping(text::Wrapping::None),
+                    );
+                } else {
+                    buttons = buttons.push(
+                        action(
+                            theme,
+                            "Switch",
+                            Kind::Plain,
+                            Some(account_message(AccountEvent::SwitchDiscord(
+                                account.id.clone(),
+                            ))),
+                        )
+                        .small(),
+                    );
+                }
+                buttons = buttons.push(
+                    action(
+                        theme,
+                        "Remove",
+                        Kind::Ghost,
+                        Some(account_message(AccountEvent::RemoveDiscord(
+                            account.id.clone(),
+                        ))),
+                    )
+                    .small(),
+                );
+                list = list.push(
+                    row![container(names).width(Length::Fill).clip(true), buttons,]
+                        .spacing(12)
+                        .padding([6, 0])
+                        .align_y(Alignment::Center),
+                );
+            }
+            parts.push(list.into());
+        }
+        if state.discord_link.is_some() {
+            parts.push(crate::signin::link_panel(self.cx));
+            parts.push(Element::from(
+                action(
+                    theme,
+                    "Cancel",
+                    Kind::Ghost,
+                    Some(account_message(AccountEvent::CancelDiscord)),
+                )
+                .small(),
+            ));
+        } else {
+            parts.push(
+                action(
+                    theme,
+                    "Add another account",
+                    Kind::Plain,
+                    Some(account_message(AccountEvent::AddDiscord)),
+                )
+                .into(),
+            );
+        }
         if cfg!(feature = "matrix") {
             parts.push(form::beside(
                 form::note(

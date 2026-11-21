@@ -22,6 +22,7 @@ impl Application {
             homeserver,
             username,
             password,
+            discord_account: self.state.discord_accounts.active.clone(),
         })
     }
 

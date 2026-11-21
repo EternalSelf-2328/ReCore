@@ -235,8 +235,12 @@ pub fn run(
         .set(runtime.block_on(async { tokio::runtime::Handle::current() }))
         .ok();
     // It starts on the preview, a saved session, or the sign-in screen.
+    let layout = crate::layout::Layout::open(&root, &crate::build().version);
     let restore = !options.preview && recore_core::chat::can_restore(&root);
     let mut client = Client::new(runtime, root);
+    // The account to connect is the one `layout.json` kept as in use; the
+    // window's layout hands the rest to the core as it opens.
+    client.dispatch(Action::RecallDiscordAccounts(layout.discord_accounts()));
     if options.preview {
         client.dispatch(Action::Preview);
     } else if restore {

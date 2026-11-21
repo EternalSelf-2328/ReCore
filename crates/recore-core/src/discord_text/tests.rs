@@ -1224,7 +1224,7 @@ async fn a_thread_beside_the_open_channel_plays_its_videos() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
-    let mut chat = Chat::start().unwrap().expect("the fake's account");
+    let mut chat = Chat::start(None).unwrap().expect("the fake's account");
     let mut snapshots = chat.discord.snapshots();
     tokio::time::timeout(
         Duration::from_secs(10),

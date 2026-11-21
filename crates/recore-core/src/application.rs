@@ -12,6 +12,7 @@ use crate::{
         Reply, Role,
     },
     discord,
+    discord_accounts::DiscordAccounts,
     mention::{self, Candidate, Target},
     network::Network,
     voice::{self, JoinSound, Phase},
@@ -156,6 +157,8 @@ pub enum DiscordLink {
     Starting,
     /// Discord is checking a pasted token.
     Checking,
+    /// Discord is checking an email and password.
+    EmailChecking,
     /// The code to scan, as the address it carries.
     Code(String),
     /// Someone scanned it, by their username, and confirms on their phone.
@@ -163,6 +166,12 @@ pub enum DiscordLink {
     /// They confirmed, and Discord wants a captcha solved first, on the page
     /// at this address, open in the browser.
     Captcha(String),
+    /// Discord wants the code from the account's authenticator app.
+    Mfa,
+    /// That code is being checked.
+    MfaChecking,
+    /// That code wasn't taken, with why; another can be tried.
+    MfaError(String),
     Failed(String),
 }
 
@@ -637,6 +646,8 @@ pub struct AppState {
     /// A Discord account is linked on this device, whether or not it's
     /// connected, and linking one, while that's under way.
     pub discord_linked: bool,
+    /// The Discord accounts linked on this device, and the one in use.
+    pub discord_accounts: DiscordAccounts,
     pub discord_link: Option<DiscordLink>,
     pub add_friend: Option<AddFriend>,
     /// A screen of the DM list open in place of a conversation.
@@ -2439,9 +2450,21 @@ pub enum Action {
     /// again; stop linking; or forget the linked account on this device.
     LinkDiscord,
     LinkDiscordToken(String),
+    LinkDiscordEmail {
+        email: String,
+        password: String,
+    },
+    /// Answer an email login's two-factor prompt with this code.
+    DiscordMfa(String),
     OpenDiscordCaptcha,
     CancelDiscordLink,
     UnlinkDiscord,
+    /// Take in the linked accounts `layout.json` kept as the window opens.
+    RecallDiscordAccounts(DiscordAccounts),
+    /// Use another of the linked accounts, without linking it again.
+    SwitchDiscordAccount(String),
+    /// Forget one linked account, choosing another if it was the one in use.
+    RemoveDiscordAccount(String),
     /// Open the custom status dialog, set the status, clear it, or close it.
     /// The emoji is a Unicode one or a custom one's `:name:`, which needs Nitro.
     OpenStatusEditor,
@@ -2581,9 +2604,15 @@ pub enum Effect {
     ListDevices,
     /// Link a Discord account by QR code, with `crate::discord_link::run`,
     /// reporting through `Application::linking`; this replaces any linking
-    /// under way. The same with a pasted token. Stop linking.
+    /// under way. The same with a pasted token, or with an email and
+    /// password. Stop linking, or answer a two-factor prompt with a code.
     LinkDiscord,
     LinkDiscordToken(String),
+    LinkDiscordEmail {
+        email: String,
+        password: String,
+    },
+    DiscordMfaCode(String),
     StopDiscordLink,
     /// Open this web page in the browser.
     OpenPage(String),
@@ -3791,7 +3820,9 @@ impl Application {
                 if self.state.busy || self.state.account.is_some() || self.state.preview {
                     vec![]
                 } else {
-                    self.start(chat::Start::Restore)
+                    self.start(chat::Start::Restore {
+                        discord_account: self.state.discord_accounts.active.clone(),
+                    })
                 }
             }
             Action::Recover(key) => self.recover(key),
@@ -4164,6 +4195,29 @@ impl Application {
                 self.state.discord_link = Some(DiscordLink::Checking);
                 vec![Effect::LinkDiscordToken(token)]
             }
+            Action::LinkDiscordEmail { email, password } => {
+                if self.state.preview || !cfg!(feature = "discord") {
+                    return vec![];
+                }
+                let email = email.trim().to_owned();
+                if email.is_empty() || password.is_empty() {
+                    self.state.notice = Some("Enter your Discord email and password.".into());
+                    return vec![];
+                }
+                self.state.discord_link = Some(DiscordLink::EmailChecking);
+                vec![Effect::LinkDiscordEmail { email, password }]
+            }
+            Action::DiscordMfa(code) => {
+                let waiting = matches!(
+                    self.state.discord_link,
+                    Some(DiscordLink::Mfa | DiscordLink::MfaError(_))
+                );
+                if !waiting || code.trim().is_empty() {
+                    return vec![];
+                }
+                self.state.discord_link = Some(DiscordLink::MfaChecking);
+                vec![Effect::DiscordMfaCode(code)]
+            }
             Action::OpenDiscordCaptcha => match &self.state.discord_link {
                 Some(DiscordLink::Captcha(page)) => vec![Effect::OpenPage(page.clone())],
                 _ => vec![],
@@ -4173,12 +4227,21 @@ impl Application {
                 None => vec![],
             },
             Action::UnlinkDiscord => {
-                if self.state.discord_linked && self.state.account.is_some() {
-                    vec![Effect::Backend(Command::Discord(DiscordCommand::Unlink))]
-                } else {
-                    vec![]
+                if !self.state.discord_linked || self.state.account.is_none() {
+                    return vec![];
+                }
+                match self.state.discord_accounts.active.clone() {
+                    Some(id) => self.remove_discord_account(id),
+                    // Linked before accounts were kept apart.
+                    None => vec![Effect::Backend(Command::Discord(DiscordCommand::Unlink))],
                 }
             }
+            Action::RecallDiscordAccounts(accounts) => {
+                self.state.discord_accounts = accounts;
+                vec![]
+            }
+            Action::SwitchDiscordAccount(id) => self.switch_discord_account(id),
+            Action::RemoveDiscordAccount(id) => self.remove_discord_account(id),
             Action::OpenAddFriend => {
                 if self.state.discord_user.is_some() {
                     self.state.add_friend = Some(AddFriend::default());
@@ -4960,7 +5023,7 @@ impl Application {
                     dialog.outcome = Some(outcome);
                 }
             }
-            Event::DiscordUnlinked => return self.forget_discord(),
+            Event::DiscordUnlinked | Event::DiscordSwitched => return self.forget_discord(),
             Event::Note { user, result } => {
                 if let Ok(note) = &result {
                     for view in [&mut self.state.profile, &mut self.state.panel_profile]

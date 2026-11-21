@@ -2,7 +2,7 @@
 
 | Area | Works on Linux | Open |
 | --- | --- | --- |
-| [Linking](#account-linking) | QR code from Settings, or the sign-in of a build without Matrix; unlinking; Discord's captcha, in the browser | Verify the reported two-captcha ticket rejection against real Discord |
+| [Linking](#account-linking) | QR code or email and password from Settings, or the sign-in of a build without Matrix; several linked accounts, switched in Settings; unlinking one, with another taking its place; Discord's captcha, in the browser | Verify the reported two-captcha ticket rejection and the email login against real Discord |
 | [Voice](voice.md) | Server voice channels, [a card of who is in one](voice.md#who-is-in-a-voice-channel), [how long each one's call has gone on](voice.md#how-long-a-channels-call-has-gone-on), mute, deafen, per-person volume, [moving people to another channel](servers.md#someones-menu-in-a-voice-channel) from their menu or [by dragging them](servers.md#dragging-someone-to-another-voice-channel), voice gate with its sensitivity, [push-to-talk](voice.md#push-to-talk) and [keybinds](../keybinds.md) for mute, deafen and the input mode, [DeepFilterNet noise suppression](voice.md#microphone) and its strength, taking a room's echo out, [camera video](voice.md#camera-video), [the soundboard](voice.md#soundboard) | A check of Windows audio, cameras and keybinds on real Windows, and of keybinds on real Wayland desktops |
 | [DM calls](voice.md#dm-calls) | Starting, ringing, answering and declining DM and group DM calls, with cameras | A check by hand through real Discord |
 | [Go Live](go-live.md) | Sharing a screen with its sound, watching streams | A check on real Windows |
@@ -130,11 +130,26 @@ it only works in servers that install the bot, and bots can't join DM calls.
 
 Link by QR code, the method mautrix-discord uses. ReCore shows a code from
 Discord's remote login service, and the person scans it with the Discord phone
-app. Pasting a token and email/password login aren't offered. A build with
-Matrix links from Settings, under Discord; one without Matrix links on its
-sign-in screen, and signing out there unlinks. Either way, ReCore first says
-that Discord doesn't allow third-party clients, so linking puts the account at
-risk, and shows the code only when asked.
+app. A build without Matrix also offers Discord's email and password on its
+sign-in screen, with the same warning: `POST /auth/login` with Discord's
+payload, then `POST /auth/mfa/totp` with the authenticator code when it asks
+for one, and the same captcha page as a QR ticket when it asks for a captcha.
+The password is used for the request and dropped; it is never logged or kept.
+Discord's real login may still refuse a client that isn't its browser, or
+demand a device check its page makes first; and only authenticator and backup
+codes are answered, not an SMS code or a passkey. The QR code stays the path
+Discord's own clients use. A build with Matrix links from Settings, under
+Discord; one without Matrix links on its sign-in screen. Either way, ReCore
+first says that Discord doesn't allow third-party clients, so linking puts the
+account at risk, and shows the code only when asked.
+
+Settings → Discord lists every account linked on this device, with Add
+Account, Switch and Remove. Adding another runs the same QR or token link
+without leaving the account in use; when it finishes, that account becomes the
+one in use. Switching starts the Discord service again on the chosen saved
+token, so no code is scanned and no session is ended: the account left stays
+signed in on Discord as this device's session. Removing the account in use
+chooses the first one left, and removing the last unlinks ReCore from Discord.
 
 HTTPS requests and WebSockets alike trust the certificates the system trusts,
 through `rustls-platform-verifier`, so a reverse proxy whose CA is in the
@@ -168,8 +183,8 @@ credential store can't be read, ReCore says why. What waits on Discord, such as
 a friend request, the custom status or a profile, fails with that reason
 rather than waiting, as it does when the chat backend stops.
 
-Discord may ask for a captcha when trading the ticket, as it does of logins
-from devices it doesn't know ([captcha
+Discord may ask for a captcha when trading the ticket or checking an email
+login, as it does of logins from devices it doesn't know ([captcha
 handling](https://docs.discord.food/topics/captcha-handling)): a 400 with
 `captcha_key`, an hCaptcha site key that changes, and often `captcha_rqdata`,
 `captcha_rqtoken` and `captcha_session_id`. ReCore has no web view, so
@@ -186,13 +201,20 @@ challenge. If Discord rejects the ticket with code 20042, ReCore asks you to
 start again with a new QR code. [Joining by invite](servers.md#joining-by-invite)
 shows Discord's captchas the same way.
 
-Store the Discord token in the OS credential store, next to the Matrix session.
-The token gives full control of the account, so it never goes into Matrix, not
-even encrypted. A device that links appears in Discord as its own session.
+Each account's token lives in the OS credential store under a name derived
+from its Discord user id, discovered with `GET /users/@me` after linking, next
+to the Matrix session. The token gives full control of the account, so it
+never goes into Matrix or a file, not even encrypted. `layout.json` keeps only
+the list of ids with their display names and the id in use. A device that
+links appears in Discord as its own session.
 
-Unlinking a device, from Settings or by signing out of a build without Matrix,
-leaves any Discord call, ends the session with `POST /auth/logout`, and deletes
-its token.
+Switching restarts the Discord service on the chosen token and leaves the
+previous session's token valid; the previous account's voice call ends, as
+voice belongs to the one account in use. Unlinking one account, from Settings
+or by signing out of a build without Matrix, leaves any Discord call, ends
+that account's session with `POST /auth/logout`, deletes only its token, and
+starts the next saved account when one remains. The last account unlinked
+returns a build without Matrix to its sign-in screen.
 
 ## Later
 
@@ -244,12 +266,15 @@ channel on screen. Measure settled idle and a Discord call with the method in
 
 `testing/fake_discord.ts` is a local Discord: the gateway, the parts of the
 HTTP API ReCore uses, a voice server that answers the handshake without DAVE,
-Go Live signalling, and the remote login gateway. Set
+Go Live signalling, the remote login gateway, and Discord's email login with
+its two-factor prompt. Set
 `RECORE_DISCORD_TEST_SERVER` to it, and ReCore uses a test token instead of
 the linked account, kept in memory. With `RECORE_DISCORD_TEST_UNLINKED=1` too,
 ReCore starts unlinked and links against the fake, whose controls scan and
-confirm the code. The fake resumes a dropped gateway session, replaying what it
-missed, and can send op 7. The tests in `crates/recore-discord/tests/fake_server/`
+confirm the code. `POST /_control/login` makes `POST /auth/login` answer with
+a login, ask for `mfa` or `captcha`, or `fail`, and `GET /_control/logins`
+lists the emails and codes tried, never a password. The fake resumes a dropped
+gateway session, replaying what it missed, and can send op 7. The tests in `crates/recore-discord/tests/fake_server/`
 run against it, each test on a fake of its own; `scripts/test-fake-discord
 FILTER` runs one area, such as `forum`. With `--env PATH`, the fake serves an environment's content in
 place of its fixture, for demos and screenshots; see

@@ -193,14 +193,19 @@ impl Drop for Chat {
 }
 
 impl Chat {
-    /// Connects when this device has a linked account; without one, there's
-    /// nothing to start.
-    pub(crate) fn start() -> anyhow::Result<Option<Self>> {
-        let token = match recore_discord::token::load() {
-            Ok(token) => token,
-            Err(error) if error.is::<recore_discord::token::NotLinked>() => return Ok(None),
-            Err(error) => return Err(error),
+    /// Connects the account `account`, with its token from the credential
+    /// store; without one, the account linked before accounts were kept
+    /// apart, or nothing.
+    pub(crate) fn start(account: Option<&str>) -> anyhow::Result<Option<Self>> {
+        let token = match account {
+            Some(id) => recore_discord::token::load_account(id)?,
+            None => match recore_discord::token::load() {
+                Ok(token) => token,
+                Err(error) if error.is::<recore_discord::token::NotLinked>() => return Ok(None),
+                Err(error) => return Err(error),
+            },
         };
+        recore_discord::token::set_current(account);
         let discord = Discord::start(token)?;
         let (done, finished) = tokio::sync::mpsc::unbounded_channel();
         Ok(Some(Self {

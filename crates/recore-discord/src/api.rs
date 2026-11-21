@@ -300,6 +300,20 @@ pub fn may_work_later(error: &anyhow::Error) -> bool {
     }
 }
 
+/// What `POST /auth/login` answered: the login, or what it asks before
+/// giving it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Login {
+    Token(String),
+    Mfa {
+        ticket: String,
+        login_instance_id: String,
+        /// The second factors Discord offers, such as `totp`; ReCore asks
+        /// for an authenticator app's code.
+        methods: Vec<&'static str>,
+    },
+}
+
 pub struct Api {
     http: Client,
     pub(crate) attachment_privacy: RwLock<crate::attachment_privacy::AttachmentPrivacy>,
@@ -457,6 +471,83 @@ impl Api {
         answer["encrypted_token"]
             .as_str()
             .map(str::to_owned)
+            .context("Discord didn't hand over the login.")
+    }
+
+    /// Signs in with Discord's email and password, as its client's login page
+    /// does. Discord may ask for a captcha first, and for an authenticator
+    /// code after the password, which [`Self::login_mfa`] answers.
+    pub async fn login(
+        &self,
+        email: &str,
+        password: &str,
+        solved: Option<(Captcha, String)>,
+    ) -> Result<Login> {
+        let body = json!({
+            "login": email,
+            "password": password,
+            "undelete": false,
+            "captcha_key": null,
+            "login_source": null,
+            "gift_code_sku_id": null,
+        });
+        let mut request = self.request(Method::POST, "/auth/login");
+        if let Some((captcha, solution)) = &solved {
+            for (name, value) in captcha.headers(solution) {
+                request = request.header(name, value);
+            }
+        }
+        let answer = self.json(with_json(request, &body)).await?;
+        if let Some(token) = answer["token"].as_str().filter(|token| !token.is_empty()) {
+            return Ok(Login::Token(token.to_owned()));
+        }
+        if answer["mfa"].as_bool() == Some(true) {
+            let ticket = answer["ticket"]
+                .as_str()
+                .context("Discord asked for two-factor authentication without a ticket.")?;
+            let instance = answer["login_instance_id"]
+                .as_str()
+                .context("Discord asked for two-factor authentication without a login.")?;
+            let methods = ["totp", "sms", "webauthn"]
+                .into_iter()
+                .filter(|method| answer[*method].as_bool() == Some(true))
+                .collect();
+            return Ok(Login::Mfa {
+                ticket: ticket.to_owned(),
+                login_instance_id: instance.to_owned(),
+                methods,
+            });
+        }
+        bail!("Discord didn't hand over the login.")
+    }
+
+    /// Answers a two-factor prompt from [`Self::login`] with an authenticator
+    /// app's code, or a backup code, and gets the login.
+    pub async fn login_mfa(
+        &self,
+        ticket: &str,
+        instance: &str,
+        code: &str,
+        solved: Option<(Captcha, String)>,
+    ) -> Result<String> {
+        let body = json!({
+            "code": code,
+            "ticket": ticket,
+            "login_instance_id": instance,
+            "gift_code_sku_id": null,
+            "login_source": null,
+        });
+        let mut request = self.request(Method::POST, "/auth/mfa/totp");
+        if let Some((captcha, solution)) = &solved {
+            for (name, value) in captcha.headers(solution) {
+                request = request.header(name, value);
+            }
+        }
+        let answer = self.json(with_json(request, &body)).await?;
+        answer["token"]
+            .as_str()
+            .map(str::to_owned)
+            .filter(|token| !token.is_empty())
             .context("Discord didn't hand over the login.")
     }
 

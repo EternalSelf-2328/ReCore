@@ -91,7 +91,7 @@ fn login_recovery_and_error_state_do_not_depend_on_widgets() {
         password: " secret ".into(),
     });
     assert!(
-        matches!(effects.as_slice(), [Effect::Start(chat::Start::Login { homeserver, username, password })] if homeserver == "https://example.org" && username == "@alice:example.org" && password == " secret ")
+        matches!(effects.as_slice(), [Effect::Start(chat::Start::Login { homeserver, username, password, .. })] if homeserver == "https://example.org" && username == "@alice:example.org" && password == " secret ")
     );
     assert!(app.state.busy);
     assert!(app.dispatch(Action::Restore).is_empty());

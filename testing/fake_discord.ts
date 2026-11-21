@@ -323,6 +323,13 @@
 // for an hCaptcha, as Discord does of a login it doesn't trust, until a try
 // brings X-Captcha-Key "solved" with the rqtoken and session it was given.
 // Add ?twice to ask for a second challenge with different request data.
+// Signing in with an email and password goes through POST /auth/login, as
+// Discord's login page does: it answers with the login, or with a two-factor
+// prompt that POST /auth/mfa/totp answers with a code. POST /_control/login
+// makes it ask for a code (?mfa), refuse the password (?fail), or ask for a
+// captcha (?captcha, solved with X-Captcha-Key "solved"); ?off restores the
+// plain login. GET /_control/logins lists each email tried, whether it had a
+// password, never the password itself, and each two-factor code tried.
 // Add ?reject to reject the ticket after its challenges are answered.
 // Start ReCore with RECORE_DISCORD_TEST_UNLINKED=1 to link. POST
 // /auth/logout ends the session, and GET /_control/logouts counts them.
@@ -424,6 +431,19 @@ const TOKEN = "recore-test-token";
 // changes through the next READY.
 let apiToken = TOKEN;
 let refreshingTo: string | null = null;
+
+/** Email and password login: POST /auth/login answers with the login, asks
+ *  for a two-factor code (`mfa`), or refuses it (`fail`), and `captcha`
+ *  asks for the same hCaptcha a risky request does. POST /_control/login
+ *  chooses one, with ?off for the login; GET /_control/logins lists each
+ *  attempt's email, whether it had a password (never the password), and each
+ *  two-factor code tried. */
+const emailLogin = {
+  mode: "ok" as "ok" | "fail" | "mfa" | "captcha",
+  code: "123456",
+};
+const emailLogins: { login: string; password: boolean; kind: string }[] = [];
+const emailMfaCodes: string[] = [];
 /** Whether Alice has Nitro: `--nitro`, or POST /_control/nitro, with ?off
  *  to take it away again, which tells her session with USER_UPDATE. */
 let nitro = args.nitro;
@@ -5783,6 +5803,45 @@ async function api(req: Request, path: string, origin: string): Promise<Response
     if (ticket.reject) return invalidRemoteTicket();
     return json({ encrypted_token: await seal(ticket.key, TOKEN) });
   }
+  // Discord's login page, without a login yet. Its captcha challenge is the
+  // same shape as a risky request's, and its two-factor prompt answers with
+  // POST /auth/mfa/totp.
+  if (req.method === "POST" && path === "/auth/login") {
+    const body: any = await req.json().catch(() => ({}));
+    emailLogins.push({
+      login: String(body.login ?? ""),
+      password: typeof body.password === "string" && body.password.length > 0,
+      kind: emailLogin.mode,
+    });
+    if (emailLogin.mode === "fail") {
+      return json({ message: "Invalid Form Body", code: 50035 }, 401);
+    }
+    if (emailLogin.mode === "captcha" && req.headers.get("x-captcha-key") !== "solved") {
+      return json(TICKET_CAPTCHA, 400);
+    }
+    if (emailLogin.mode === "mfa") {
+      return json({
+        mfa: true,
+        ticket: "email-login-ticket",
+        login_instance_id: "email-login-instance",
+        totp: true,
+        sms: false,
+        webauthn: false,
+      });
+    }
+    return json({ token: TOKEN, mfa: false });
+  }
+  if (req.method === "POST" && path === "/auth/mfa/totp") {
+    const body: any = await req.json().catch(() => ({}));
+    emailMfaCodes.push(String(body.code ?? ""));
+    if (body.ticket !== "email-login-ticket" || body.login_instance_id !== "email-login-instance") {
+      return json({ message: "Invalid two-factor auth ticket", code: 60006 }, 400);
+    }
+    if (String(body.code) !== emailLogin.code) {
+      return json({ message: "Invalid two-factor code", code: 60008 }, 400);
+    }
+    return json({ token: TOKEN, mfa: false });
+  }
   if (req.headers.get("authorization") !== apiToken) {
     return json({ message: "401: Unauthorized", code: 0 }, 401);
   }
@@ -8640,6 +8699,7 @@ const GENERIC_CONTROLS = new Set([
   "qr-confirm", "qr-captcha", "qr-cancel", "qr-expire", "voice-audio", "video", "stream-codec", "reactor-pages",
   "reactor-removals", "thread-searches", "thread-creates", "thread-members", "typed", "acks", "invites",
   "invite-joins", "invite-captcha", "invite-form", "event-interest", "gift-redeems", "oauth-authorizations", "mfa", "soundboard-sends", "custom-call-sounds",
+  "login", "logins",
 ]);
 
 /** A status's emoji as the env gives it, Unicode or `<:name:id>`, as Discord sends it. */
@@ -9586,6 +9646,18 @@ const server = Bun.serve<SocketData>({
     }
     if (req.method === "POST" && path === "/_control/qr-expire") {
       return eachRemoteLogin((ws) => ws.close(1000));
+    }
+    if (req.method === "POST" && path === "/_control/login") {
+      if (url.searchParams.has("fail")) emailLogin.mode = "fail";
+      else if (url.searchParams.has("mfa")) emailLogin.mode = "mfa";
+      else if (url.searchParams.has("captcha")) emailLogin.mode = "captcha";
+      else if (url.searchParams.has("off")) emailLogin.mode = "ok";
+      const code = url.searchParams.get("code");
+      if (code) emailLogin.code = code;
+      return new Response(`email login ${emailLogin.mode}\n`);
+    }
+    if (req.method === "GET" && path === "/_control/logins") {
+      return json({ logins: emailLogins, codes: emailMfaCodes });
     }
     if (path === "/_control/voice-audio") {
       return json(Object.fromEntries([...callAudio].map(([ssrc, { speaking, ...call }]) => [ssrc, { ...call, speaking: speaking.at(-1) ?? null, spoke: speaking.includes(1) }])));

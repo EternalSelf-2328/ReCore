@@ -20,6 +20,7 @@ use std::{
 use recore_core::{
     application::{Application, StickerUse},
     chat::Sticker,
+    discord_accounts::{DiscordAccounts, SavedAccount},
     keybinds::{Binding, Shortcut},
     theme::Custom,
 };
@@ -84,6 +85,12 @@ pub struct Layout {
     /// DMs pinned to the top of the list, by room id, the first pinned
     /// first.
     pub pinned: Vec<String>,
+    /// The Discord accounts linked on this device, as Settings lists them,
+    /// and the one in use; their tokens are in the OS credential store.
+    #[serde(default)]
+    pub discord_accounts: Vec<SavedAccount>,
+    #[serde(default)]
+    pub discord_account: Option<String>,
     /// A one-to-one DM's profile beside it is hidden; messages from people
     /// blocked don't show at all; a call from someone's menu starts without
     /// asking; the member list's Activity shows its header alone.
@@ -472,10 +479,19 @@ impl Voice {
 }
 
 impl Layout {
+    /// The linked accounts this device kept, and the one in use.
+    pub fn discord_accounts(&self) -> DiscordAccounts {
+        DiscordAccounts {
+            saved: self.discord_accounts.clone(),
+            active: self.discord_account.clone(),
+        }
+    }
+
     /// What the core is told of these as the window opens.
     pub fn actions(&self) -> Vec<recore_core::application::Action> {
         use recore_core::application::Action;
         vec![
+            Action::RecallDiscordAccounts(self.discord_accounts()),
             Action::ShowProfilePanel(!self.profile_panel_hidden),
             Action::HideBlocked(self.hide_blocked),
             Action::SkipCallPrompt(self.skip_call_prompt),
@@ -513,6 +529,21 @@ impl Layout {
                 })
                 .collect(),
         );
+    }
+
+    /// Keeps the linked Discord accounts and the one in use for the next
+    /// start, so it connects the same one without scanning a QR code again.
+    /// Each key is written only when it changed.
+    pub fn keep_discord_accounts(&mut self, root: &Path, app: &Application) {
+        let accounts = &app.state.discord_accounts;
+        if self.discord_accounts != accounts.saved {
+            self.discord_accounts.clone_from(&accounts.saved);
+            store(root, "discord_accounts", &self.discord_accounts);
+        }
+        if self.discord_account != accounts.active {
+            self.discord_account.clone_from(&accounts.active);
+            store(root, "discord_account", &self.discord_account);
+        }
     }
 
     /// Keeps what the core changed of those for the next start. This runs

@@ -717,6 +717,110 @@ async fn refreshes_the_login_and_signs_out() {
     assert_eq!(self::control(server, "GET", "/_control/logouts", ""), "1");
 }
 
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "starts testing/fake_discord.ts with bun; run scripts/test-fake-discord"]
+async fn signs_in_with_email_and_password() {
+    use recore_discord::{
+        api::Refused,
+        auth::{self, Login},
+    };
+    let Fixture { _fake, server, .. } = Fixture::start("signs_in_with_email_and_password").await;
+
+    // The password and email go to /auth/login, and the answer is the login.
+    let signed_in = auth::log_in("alice@example.org", "hunter2", |_| panic!("no captcha"))
+        .await
+        .unwrap();
+    assert_eq!(signed_in, Login::Token(client::TEST_TOKEN.into()));
+    let logins: serde_json::Value =
+        serde_json::from_str(&control(server, "GET", "/_control/logins", "")).unwrap();
+    assert_eq!(logins["logins"][0]["login"], "alice@example.org");
+    assert_eq!(logins["logins"][0]["password"], true);
+    assert!(
+        !logins.to_string().contains("hunter2"),
+        "the password is never kept: {logins}"
+    );
+
+    // A refused password says so, and is a 401 rather than a captcha.
+    post_control(server, "/_control/login?fail", "");
+    let refused = auth::log_in("alice@example.org", "wrong", |_| panic!("no captcha"))
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        refused
+            .downcast_ref::<Refused>()
+            .map(|refused| refused.0.as_u16()),
+        Some(401)
+    ));
+
+    // With two-factor authentication on, Discord asks for a code first.
+    post_control(server, "/_control/login?mfa", "");
+    let prompt = auth::log_in("alice@example.org", "hunter2", |_| panic!("no captcha"))
+        .await
+        .unwrap();
+    let Login::Mfa {
+        ticket,
+        login_instance_id,
+        methods,
+    } = prompt
+    else {
+        panic!("no two-factor prompt: {prompt:?}");
+    };
+    assert_eq!(methods, ["totp"]);
+    // A wrong code is refused, and a right one gets the login.
+    let wrong = auth::confirm_mfa(&ticket, &login_instance_id, "000000", |_| {
+        panic!("no captcha")
+    })
+    .await;
+    assert!(wrong.is_err());
+    let token = auth::confirm_mfa(&ticket, &login_instance_id, "123456", |_| {
+        panic!("no captcha")
+    })
+    .await
+    .unwrap();
+    assert_eq!(token, client::TEST_TOKEN);
+    let logins: serde_json::Value =
+        serde_json::from_str(&control(server, "GET", "/_control/logins", "")).unwrap();
+    assert_eq!(logins["codes"], serde_json::json!(["000000", "123456"]));
+    assert!(
+        !logins.to_string().contains("hunter2"),
+        "the password is never kept: {logins}"
+    );
+
+    // A captcha goes through the page `captcha::solving` serves, as a risky
+    // QR login's does.
+    post_control(server, "/_control/login?captcha", "");
+    let signed_in = auth::log_in("alice@example.org", "hunter2", |page| {
+        let page = page.to_owned();
+        std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            let address = page.trim_start_matches("http://").to_owned();
+            let (host, path) = address.split_once('/').unwrap();
+            let mut stream = std::net::TcpStream::connect(host).unwrap();
+            write!(
+                stream,
+                "GET /{path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
+            )
+            .unwrap();
+            let mut answer = String::new();
+            stream.read_to_string(&mut answer).unwrap();
+            assert!(answer.contains("fake-sitekey"), "{answer}");
+            let mut stream = std::net::TcpStream::connect(host).unwrap();
+            let body = "solved";
+            write!(
+                stream,
+                "POST /{path} HTTP/1.1\r\nHost: {host}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+            let _ = stream.read(&mut [0_u8]);
+        });
+    })
+    .await
+    .unwrap();
+    assert_eq!(signed_in, Login::Token(client::TEST_TOKEN.into()));
+    post_control(server, "/_control/login?off", "");
+}
+
 /// What linking showed next.
 async fn next_step(shown: &mut tokio::sync::mpsc::UnboundedReceiver<Step>) -> Step {
     timeout(WAIT, shown.recv())

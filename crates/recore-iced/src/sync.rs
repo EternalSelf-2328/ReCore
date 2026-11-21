@@ -260,6 +260,8 @@ impl App {
         let state = self.client.state();
         let switched = self.selected != state.selected;
         self.layout
+            .keep_discord_accounts(self.client.root(), &self.client.app);
+        self.layout
             .keep_uses(self.client.root(), &self.client.app, switched);
         if switched && self.composer.editing.is_some() {
             self.client

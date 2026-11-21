@@ -35,6 +35,23 @@ fn without_an_account_the_sign_in_screen_shows_and_the_preview_leaves_it() {
         let typed = signin::Event::Token("a-token".into());
         assert!(!format!("{typed:?}").contains("a-token"));
         assert!(!format!("{:?}", app.sign_in).contains("a-token"));
+        // Discord's email login is offered below it, its password hidden
+        // from a log line as the token's is.
+        assert!(shows(&app, "Sign in with email"));
+        interact(&mut app, |ui| {
+            ui.click(Id::new(signin::EMAIL)).expect("the email's field");
+            ui.typewrite("alice@example.org");
+        });
+        interact(&mut app, |ui| {
+            ui.click(Id::new(signin::EMAIL_PASSWORD))
+                .expect("the password's field");
+            ui.typewrite("hunter2");
+        });
+        assert_eq!(app.sign_in.email, "alice@example.org");
+        assert!(
+            !format!("{:?}", signin::Event::EmailPassword("hunter2".into())).contains("hunter2")
+        );
+        assert!(!format!("{:?}", app.sign_in).contains("hunter2"));
     }
     interact(&mut app, |ui| {
         ui.click("Explore local preview").expect("the preview");
@@ -58,6 +75,39 @@ fn a_pasted_token_goes_once_the_account_is_linked() {
     let _ = app.sync();
     assert!(app.sign_in.token.is_empty());
     assert!(!app.sign_in.token_open);
+}
+
+#[test]
+#[cfg(not(feature = "matrix"))]
+fn an_email_login_shows_the_two_factor_prompt() {
+    use recore_core::application::DiscordLink;
+    let folder = tempfile::tempdir_in(local()).expect("test folder");
+    let mut app = start(&folder, false);
+    // Discord asked for the code from the authenticator app.
+    app.client.app.state.discord_link = Some(DiscordLink::Mfa);
+    let _ = app.sync();
+    assert!(shows(&app, "Two-factor authentication"));
+    interact(&mut app, |ui| {
+        ui.click(Id::new(signin::MFA_CODE))
+            .expect("the code's field");
+        ui.typewrite("123456");
+    });
+    interact(&mut app, |ui| {
+        ui.click(Id::new(signin::MFA_CODE))
+            .expect("the code's field");
+        ui.tap_key(keyboard::Key::Named(key::Named::Enter));
+    });
+    assert_eq!(
+        app.client.state().discord_link,
+        Some(DiscordLink::MfaChecking)
+    );
+    assert!(shows(&app, "Checking..."));
+    // Turned down, the prompt stays for another code.
+    app.client.app.state.discord_link =
+        Some(DiscordLink::MfaError("That code didn't work.".into()));
+    let _ = app.sync();
+    assert!(shows(&app, "That code didn't work."));
+    assert!(!format!("{:?}", signin::Event::MfaCode("123456".into())).contains("123456"));
 }
 
 #[test]

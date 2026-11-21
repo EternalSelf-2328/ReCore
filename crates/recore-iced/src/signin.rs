@@ -29,6 +29,9 @@ pub const HOMESERVER: &str = "sign-in-homeserver";
 pub const USERNAME: &str = "sign-in-username";
 pub const PASSWORD: &str = "sign-in-password";
 pub const TOKEN: &str = "sign-in-token";
+pub const EMAIL: &str = "sign-in-email";
+pub const EMAIL_PASSWORD: &str = "sign-in-email-password";
+pub const MFA_CODE: &str = "sign-in-mfa-code";
 pub const RECOVERY: &str = "sign-in-recovery";
 
 /// What the sign-in screen holds as it's filled in.
@@ -41,6 +44,11 @@ pub struct SignIn {
     /// fix.
     pub token: String,
     pub token_open: bool,
+    /// Discord's email login: the address, its password, and the
+    /// authenticator code Discord may ask for.
+    pub email: String,
+    pub discord_password: String,
+    pub mfa_code: String,
     /// A Matrix recovery key, in the verify banner.
     pub recovery: String,
     /// A saved session can be tried again: worked out while the screen
@@ -65,6 +73,9 @@ impl Default for SignIn {
             password: String::new(),
             token: String::new(),
             token_open: false,
+            email: String::new(),
+            discord_password: String::new(),
+            mfa_code: String::new(),
             recovery: String::new(),
             restore_available: false,
             code: None,
@@ -81,6 +92,7 @@ impl std::fmt::Debug for SignIn {
             .debug_struct("SignIn")
             .field("homeserver", &self.homeserver)
             .field("username", &self.username)
+            .field("email", &self.email)
             .field("token_open", &self.token_open)
             .field("restore_available", &self.restore_available)
             .field("starting", &self.starting)
@@ -111,6 +123,12 @@ pub enum Event {
     Token(String),
     LinkToken,
     OpenCaptcha,
+    /// Discord's email login, and the code its two-factor prompt asks for.
+    Email(String),
+    EmailPassword(String),
+    LinkEmail,
+    MfaCode(String),
+    SubmitMfa,
     /// Matrix's verify banner.
     Recovery(String),
     Recover,
@@ -132,6 +150,11 @@ impl std::fmt::Debug for Event {
             Event::Token(_) => "Token(..)",
             Event::LinkToken => "LinkToken",
             Event::OpenCaptcha => "OpenCaptcha",
+            Event::Email(text) => return write!(formatter, "Email({text:?})"),
+            Event::EmailPassword(_) => "EmailPassword(..)",
+            Event::LinkEmail => "LinkEmail",
+            Event::MfaCode(_) => "MfaCode(..)",
+            Event::SubmitMfa => "SubmitMfa",
             Event::Recovery(_) => "Recovery(..)",
             Event::Recover => "Recover",
             Event::RefreshTrust => "RefreshTrust",
@@ -192,6 +215,32 @@ impl SignIn {
                     return Task::none();
                 }
             }
+            Event::Email(text) => self.email = text,
+            Event::EmailPassword(text) => self.discord_password = text,
+            Event::LinkEmail => {
+                if !self.email.is_empty() && !self.discord_password.is_empty() {
+                    cx.dispatch(Action::LinkDiscordEmail {
+                        email: self.email.clone(),
+                        password: self.discord_password.clone(),
+                    });
+                    // The password goes once it's on its way.
+                    forget(&mut self.discord_password);
+                    return Task::none();
+                }
+            }
+            Event::MfaCode(text) => self.mfa_code = text,
+            Event::SubmitMfa => {
+                if !self.mfa_code.is_empty()
+                    && matches!(
+                        cx.state().discord_link,
+                        Some(DiscordLink::Mfa | DiscordLink::MfaError(_))
+                    )
+                {
+                    cx.dispatch(Action::DiscordMfa(self.mfa_code.clone()));
+                    forget(&mut self.mfa_code);
+                    return Task::none();
+                }
+            }
             Event::OpenCaptcha => {
                 cx.dispatch(Action::OpenDiscordCaptcha);
                 return Task::none();
@@ -233,12 +282,24 @@ impl SignIn {
             self.code = None;
             self.starting = false;
             // Linked: the token pasted, kept until now to fix a refused
-            // one, goes with its field.
-            if state.account.is_some() && !self.token.is_empty() {
-                forget(&mut self.token);
-                self.token_open = false;
+            // one, goes with its field, and so do the email login's
+            // secrets.
+            if state.account.is_some() {
+                if !self.token.is_empty() {
+                    forget(&mut self.token);
+                    self.token_open = false;
+                }
+                forget(&mut self.discord_password);
+                forget(&mut self.mfa_code);
+                self.email.clear();
             }
             return;
+        }
+        if !matches!(
+            state.discord_link,
+            Some(DiscordLink::Mfa | DiscordLink::MfaChecking | DiscordLink::MfaError(_))
+        ) {
+            forget(&mut self.mfa_code);
         }
         match &state.discord_link {
             Some(DiscordLink::Code(address)) => {
@@ -378,6 +439,9 @@ fn discord_form<'a>(cx: Ctx<'a>) -> Element<'a, Message> {
     .width(Length::Fill);
     if !state.busy {
         form = form.push(link_panel(cx));
+        if matches!(state.discord_link, None | Some(DiscordLink::Failed(_))) {
+            form = form.push(email_form(cx));
+        }
     }
     if let Some(notice) = &state.notice
         && (state.busy || state.discord_link.is_none())
@@ -396,9 +460,66 @@ fn discord_form<'a>(cx: Ctx<'a>) -> Element<'a, Message> {
     form.into()
 }
 
+/// Discord's email login, under the QR code's panel: the address and
+/// password, with the warning that Discord doesn't allow clients like ReCore
+/// and that a real login may still ask for a captcha or a code.
+fn email_form<'a>(cx: Ctx<'a>) -> Element<'a, Message> {
+    let theme = cx.look.theme;
+    let form = cx.sign_in;
+    let open = !cx.state.busy;
+    let mut email = field(theme, EMAIL, "you@example.com", &form.email, false, open);
+    let mut password = field(
+        theme,
+        EMAIL_PASSWORD,
+        "",
+        &form.discord_password,
+        true,
+        open,
+    );
+    if open {
+        email = email.on_input(|text| Message::SignIn(Event::Email(text)));
+        password = password
+            .on_input(|text| Message::SignIn(Event::EmailPassword(text)))
+            .on_submit(Message::SignIn(Event::LinkEmail));
+    }
+    column![
+        row![
+            bar(theme.line, 1, Length::Fill),
+            text("OR").size(12).color(theme.muted),
+            bar(theme.line, 1, Length::Fill)
+        ]
+        .spacing(12)
+        .align_y(Alignment::Center),
+        label(theme, "EMAIL"),
+        email,
+        label(theme, "PASSWORD"),
+        password,
+        action(
+            theme,
+            "Sign in with email",
+            Kind::Plain,
+            (!form.email.is_empty() && !form.discord_password.is_empty())
+                .then_some(Message::SignIn(Event::LinkEmail)),
+        )
+        .wide(40.0),
+        text(
+            "Discord may still ask for a captcha, which opens in your browser, or for an \
+             authenticator code. If it refuses this sign-in, use the QR code above: its phone \
+             app is the login Discord's own clients use."
+        )
+        .size(12)
+        .color(theme.muted)
+        .width(Length::Fill),
+    ]
+    .spacing(8)
+    .width(Length::Fill)
+    .into()
+}
+
 /// Discord's linking, phase by phase: the warning and its buttons (the
 /// token's field under them once asked for), the code and what to do with
-/// it, the captcha, the token being checked.
+/// it, the captcha, the token or email being checked, the authenticator
+/// code.
 pub(crate) fn link_panel<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
     let theme = ctx.look.theme;
     let form = ctx.sign_in;
@@ -490,6 +611,59 @@ pub(crate) fn link_panel<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
             .size(15)
             .color(theme.secondary)
             .into(),
+        Some(DiscordLink::EmailChecking) => text("Checking your email and password...")
+            .size(15)
+            .color(theme.secondary)
+            .into(),
+        Some(DiscordLink::Mfa | DiscordLink::MfaChecking | DiscordLink::MfaError(_)) => {
+            let checking = matches!(link, Some(DiscordLink::MfaChecking));
+            let mut code = field(
+                theme,
+                MFA_CODE,
+                "6-digit code",
+                &form.mfa_code,
+                true,
+                !checking,
+            )
+            .on_input(|text| Message::SignIn(Event::MfaCode(text)));
+            if !checking {
+                code = code.on_submit(Message::SignIn(Event::SubmitMfa));
+            }
+            let mut panel = column![
+                text("Two-factor authentication")
+                    .size(17)
+                    .font(BOLD())
+                    .color(theme.text),
+                text(
+                    "Discord wants the code from your authenticator app, or one of your backup \
+                     codes."
+                )
+                .size(14)
+                .color(theme.secondary)
+                .width(Length::Fill),
+            ]
+            .spacing(8)
+            .width(Length::Fill);
+            if let Some(DiscordLink::MfaError(error)) = link {
+                panel = panel.push(crate::form::error(theme, error.clone()).width(Length::Fill));
+            }
+            panel
+                .push(
+                    row![
+                        code,
+                        action(
+                            theme,
+                            if checking { "Checking..." } else { "Confirm" },
+                            Kind::Primary,
+                            (!checking && !form.mfa_code.is_empty())
+                                .then_some(Message::SignIn(Event::SubmitMfa)),
+                        ),
+                    ]
+                    .spacing(8)
+                    .align_y(Alignment::Center),
+                )
+                .into()
+        }
         Some(DiscordLink::Captcha(_)) => column![
             text("Solve the captcha in your browser")
                 .size(17)

@@ -159,6 +159,11 @@ pub enum AccountEvent {
     CustomStatus,
     SignOut,
     Unlink,
+    /// Link another Discord account, use one already linked, or forget it.
+    AddDiscord,
+    CancelDiscord,
+    SwitchDiscord(String),
+    RemoveDiscord(String),
     Unblock(String),
     MoreBlocked,
     Open(&'static str),

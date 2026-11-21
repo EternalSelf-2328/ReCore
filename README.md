@@ -32,7 +32,7 @@
 
 The [releases page](https://github.com/leriart/ReCore/releases) carries the latest stable files and `SHA256SUMS.txt`. The [landing page](https://leriart.github.io/ReCore/) picks the right download for your computer and shows a live theme preview.
 
-First run links your account by scanning a QR code with Discord's phone app. ReCore keeps the session token in your system's credential store. Voice, screen sharing, GIFs, forums, threads, friends and the rest of the client are there after that.
+First run links your account by scanning a QR code with Discord's phone app, or with Discord's email and password if you prefer. ReCore keeps each linked account's session token in your system's credential store, and Settings → Discord can add more and switch between them. Voice, screen sharing, GIFs, forums, threads, friends and the rest of the client are there after that.
 
 ## Why ReCore?
 
