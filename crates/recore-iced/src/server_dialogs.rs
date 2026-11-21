@@ -10,12 +10,12 @@
 //! it.
 
 use iced::{
-    Alignment, Element, Length, Task,
+    Alignment, Border, Element, Length, Task,
     keyboard::key,
     widget::{Id, button, column, container, operation, row, text},
 };
 use recore_core::{
-    application::{Action, AppState, ChannelAsk, INVITE_AGES, INVITE_USES},
+    application::{Action, AppState, ChannelAsk, INVITE_AGES, INVITE_USES, VerificationAnswer},
     chat::{ChannelKind, ChannelSettings, GroupIcon},
 };
 
@@ -26,6 +26,7 @@ use crate::{
     dialog::buttons,
     form,
     media::{Fit, Shot},
+    pictures::Icon,
     style::rounded,
 };
 
@@ -83,8 +84,14 @@ pub enum Event {
     CloseInvite,
     JoinLink(String),
     Find,
-    /// Join Server's main button: find the invite, join, or open the form.
+    /// Join Server's main button: find the invite or join.
     Confirm,
+    /// A membership screening answer: agree to the terms, type a text
+    /// answer, or choose an option.
+    VerificationTerms(usize),
+    VerificationText(usize, String),
+    VerificationChoice(usize, u64),
+    SubmitVerification,
     OpenCaptcha,
     CloseJoin,
     ChannelName(String),
@@ -252,14 +259,22 @@ impl Dialogs {
                 let Some(join) = cx.state().join.as_ref() else {
                     return Task::none();
                 };
-                if join.form.is_some() {
-                    Action::OpenJoinForm
-                } else if join.preview.is_some() {
+                if join.preview.is_some() {
                     Action::JoinServer
                 } else {
                     return self.update(Event::Find, cx);
                 }
             }
+            Event::VerificationTerms(index) => {
+                Action::AnswerVerification(VerificationAnswer::Terms(index))
+            }
+            Event::VerificationText(index, text) => {
+                Action::AnswerVerification(VerificationAnswer::Text(index, text))
+            }
+            Event::VerificationChoice(index, choice) => {
+                Action::AnswerVerification(VerificationAnswer::Choice(index, choice))
+            }
+            Event::SubmitVerification => Action::SubmitVerification,
             Event::OpenCaptcha => Action::OpenJoinCaptcha,
             Event::CloseJoin => Action::CloseJoin,
             Event::ChannelName(name) => {
@@ -493,11 +508,151 @@ impl<'a> View<'a> {
         Some(self.cx.look.framed(body, WIDE, message(Event::CloseInvite)))
     }
 
+    /// A joined server's membership screening form: each question, the
+    /// answers, and Send.
+    fn verification_view(
+        self,
+        form: &'a recore_core::chat::VerificationForm,
+    ) -> Option<Element<'a, Message>> {
+        let theme = self.cx.look.theme;
+        let mut body = vec![
+            self.cx
+                .look
+                .dialog_head("Welcome!", message(Event::CloseJoin)),
+            form::note(
+                theme,
+                "This server asks a few questions before you can talk. Answer them to finish joining.",
+            )
+            .into(),
+        ];
+        if form.loading {
+            body.push(
+                text("Getting the server's questions...")
+                    .size(14)
+                    .color(theme.muted)
+                    .into(),
+            );
+        }
+        for (index, question) in form.fields.iter().enumerate() {
+            body.push(form::heading(theme, question.label.as_str()).into());
+            if !question.description.is_empty() {
+                body.push(
+                    text(question.description.as_str())
+                        .size(13)
+                        .color(theme.muted)
+                        .into(),
+                );
+            }
+            if question.is_terms() {
+                for value in &question.values {
+                    body.push(
+                        text(format!("• {value}"))
+                            .size(13)
+                            .color(theme.secondary)
+                            .width(Length::Fill)
+                            .into(),
+                    );
+                }
+                let (accent, faint, ink) = (theme.accent, theme.faint, theme.on_accent);
+                let tick: Element<'a, Message> = if question.agreed {
+                    self.cx.look.glyph(Icon::Check, 14, ink).into()
+                } else {
+                    text("").into()
+                };
+                let tick = container(tick).center(20).style(move |_| container::Style {
+                    background: question.agreed.then(|| accent.into()),
+                    border: Border {
+                        color: faint,
+                        width: if question.agreed { 0.0 } else { 2.0 },
+                        radius: 5.0.into(),
+                    },
+                    ..Default::default()
+                });
+                body.push(
+                    button(
+                        row![
+                            tick,
+                            text("I read and agree to the rules above")
+                                .size(14)
+                                .color(theme.text)
+                        ]
+                        .spacing(10)
+                        .align_y(Alignment::Center),
+                    )
+                    .padding([6, 8])
+                    .width(Length::Fill)
+                    .on_press(message(Event::VerificationTerms(index)))
+                    .style(|_, _| button::Style::default())
+                    .into(),
+                );
+            } else if question.is_text() {
+                let id = format!("verification-{index}");
+                body.push(
+                    form::field(theme, id, "", question.text.as_str())
+                        .padding([8.0, 10.0])
+                        .on_input(move |text| message(Event::VerificationText(index, text)))
+                        .into(),
+                );
+            } else if question.is_choice() {
+                for (choice, value) in question.values.iter().enumerate() {
+                    let chosen = question.choice == Some(choice as u64);
+                    let (ground, ink) = if chosen {
+                        (theme.accent, theme.on_accent)
+                    } else {
+                        (theme.sidebar, theme.text)
+                    };
+                    body.push(
+                        button(text(value.as_str()).size(14).color(ink))
+                            .padding([6, 10])
+                            .width(Length::Fill)
+                            .on_press(message(Event::VerificationChoice(index, choice as u64)))
+                            .style(move |_, _| button::Style {
+                                background: Some(ground.into()),
+                                border: crate::style::round(6),
+                                ..Default::default()
+                            })
+                            .into(),
+                    );
+                }
+            }
+        }
+        if let Some(error) = &form.error {
+            body.push(form::note_in(error.as_str(), theme.danger).into());
+        }
+        body.push(
+            row![
+                action(
+                    theme,
+                    "Cancel",
+                    Kind::Ghost,
+                    Some(message(Event::CloseJoin))
+                ),
+                iced::widget::Space::new().width(Length::Fill),
+                action(
+                    theme,
+                    if form.submitting {
+                        "Sending..."
+                    } else {
+                        "Send"
+                    },
+                    Kind::Primary,
+                    form.ready().then(|| message(Event::SubmitVerification)),
+                ),
+            ]
+            .spacing(8)
+            .into(),
+        );
+        Some(self.cx.look.framed(body, WIDE, message(Event::CloseJoin)))
+    }
+
     /// Join a Server, or the dialog a clicked invite link opens: the field
     /// (Join's alone), the server once found, how joining goes, and its
     /// buttons.
     fn join_server_view(self) -> Option<Element<'a, Message>> {
         let join = self.cx.state.join.as_ref()?;
+        if let Some(form) = &join.verification {
+            return self.verification_view(form);
+        }
         let typed = self.s.join.as_deref()?;
         let theme = self.cx.look.theme;
         let preview = join.preview.as_ref();
@@ -545,9 +700,7 @@ impl<'a> View<'a> {
                 ),
             );
         }
-        let status = if join.form.is_some() {
-            "You joined. This server asks new members to fill in a form before they can talk, which ReCore can't show yet. Finish it in Discord's web app."
-        } else if join.captcha.is_some() {
+        let status = if join.captcha.is_some() {
             "Discord asks for a captcha first. Solve it in your browser."
         } else if join.joining {
             "Joining..."
@@ -564,9 +717,7 @@ impl<'a> View<'a> {
         if let Some(error) = &join.error {
             body.push(form::note_in(error.as_str(), theme.danger));
         }
-        let confirm = if join.form.is_some() {
-            "Open in browser"
-        } else if join.member {
+        let confirm = if join.member {
             "Open Server"
         } else if preview.is_some() {
             "Join Server"
@@ -578,7 +729,7 @@ impl<'a> View<'a> {
         let mut row_ = vec![
             action(
                 theme,
-                if join.form.is_some() || confirm.is_empty() {
+                if confirm.is_empty() {
                     "Close"
                 } else {
                     "Cancel"

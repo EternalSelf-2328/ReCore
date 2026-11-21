@@ -11,6 +11,11 @@ use recore_discord::server_settings::GuildSettings as DiscordSettings;
 /// Why a Discord command fails for a room that isn't Discord's.
 pub(super) const NOT_DISCORD: &str = "That isn't a Discord room.";
 
+/// The Discord id in an item, such as `d:123`.
+fn discord_id(item: &str) -> Option<&str> {
+    item.strip_prefix("d:").filter(|id| !id.is_empty())
+}
+
 /// Carries out a command [`Command::route`] sends to Discord. Opening any
 /// room closes the open Discord channel. Without Discord, the error says
 /// why, and Discord commands fail with it.
@@ -81,6 +86,257 @@ pub fn command(
         }
         return;
     }
+    match &command {
+        Command::Discord(DiscordCommand::MemberVerification { room }) => {
+            let room = room.clone();
+            let (Ok(discord), Some((guild, _))) = (discord, discord::parse_room(&room)) else {
+                let _ = events.send(Event::MemberVerification {
+                    room,
+                    result: Err(NOT_DISCORD.into()),
+                });
+                return;
+            };
+            let (discord, guild, events) = (discord.clone(), guild.to_owned(), events.clone());
+            tokio::spawn(async move {
+                let result = discord
+                    .member_verification(&guild)
+                    .await
+                    .map(|form| verification_form(&room, &form))
+                    .map_err(|error| {
+                        tracing::warn!(
+                            error = format!("{error:#}"),
+                            "could not fetch a membership form"
+                        );
+                        error.to_string()
+                    });
+                let _ = events.send(Event::MemberVerification { room, result });
+            });
+            return;
+        }
+        Command::Discord(DiscordCommand::SubmitJoinRequest { room, fields }) => {
+            let room = room.clone();
+            let fields = fields.clone();
+            let (Ok(discord), Some((guild, _))) = (discord, discord::parse_room(&room)) else {
+                let _ = events.send(Event::JoinRequestSubmitted {
+                    room,
+                    result: Err(NOT_DISCORD.into()),
+                });
+                return;
+            };
+            let (discord, guild, events) = (discord.clone(), guild.to_owned(), events.clone());
+            tokio::spawn(async move {
+                let result = discord
+                    .submit_join_request(&guild, &fields)
+                    .await
+                    .map(drop)
+                    .map_err(|error| {
+                        tracing::warn!(
+                            error = format!("{error:#}"),
+                            "could not send a membership form"
+                        );
+                        error.to_string()
+                    });
+                let _ = events.send(Event::JoinRequestSubmitted { room, result });
+            });
+            return;
+        }
+        Command::Discord(DiscordCommand::RecentMentions) => {
+            let Ok(discord) = discord else {
+                let _ = events.send(Event::RecentMentions(Err(NOT_DISCORD.into())));
+                return;
+            };
+            let (discord, events) = (discord.clone(), events.clone());
+            tokio::spawn(async move {
+                let result = discord
+                    .recent_mentions()
+                    .await
+                    .map(|messages| {
+                        messages
+                            .iter()
+                            .map(|message| inbox_message(&discord, message))
+                            .collect()
+                    })
+                    .map_err(|error| {
+                        tracing::warn!(error = format!("{error:#}"), "could not list mentions");
+                        error.to_string()
+                    });
+                let _ = events.send(Event::RecentMentions(result));
+            });
+            return;
+        }
+        Command::Discord(DiscordCommand::DeleteMention(message)) => {
+            if let Ok(discord) = discord {
+                let (discord, message) = (discord.clone(), message.clone());
+                tokio::spawn(async move {
+                    if let Err(error) = discord.delete_mention(&message).await {
+                        tracing::debug!(error = format!("{error:#}"), "could not clear a mention");
+                    }
+                });
+            }
+            return;
+        }
+        Command::Discord(DiscordCommand::SavedMessages) => {
+            let Ok(discord) = discord else {
+                let _ = events.send(Event::SavedMessages(Err(NOT_DISCORD.into())));
+                return;
+            };
+            let (discord, events) = (discord.clone(), events.clone());
+            tokio::spawn(async move {
+                let result = discord
+                    .saved_messages()
+                    .await
+                    .map(|saved| {
+                        saved
+                            .iter()
+                            .map(|(message, _)| inbox_message(&discord, message))
+                            .collect()
+                    })
+                    .map_err(|error| {
+                        tracing::warn!(
+                            error = format!("{error:#}"),
+                            "could not list saved messages"
+                        );
+                        error.to_string()
+                    });
+                let _ = events.send(Event::SavedMessages(result));
+            });
+            return;
+        }
+        Command::Discord(DiscordCommand::SaveMessage { room, item, save }) => {
+            let item = item.clone();
+            let save = *save;
+            let (Ok(discord), Some((_, channel))) = (discord, discord::parse_room(room)) else {
+                let _ = events.send(Event::SavedChanged {
+                    item,
+                    save,
+                    result: Err(NOT_DISCORD.into()),
+                });
+                return;
+            };
+            let Some(id) = discord_id(&item).map(str::to_owned) else {
+                let _ = events.send(Event::SavedChanged {
+                    item,
+                    save,
+                    result: Err("That message is no longer available.".into()),
+                });
+                return;
+            };
+            let (discord, channel, events) = (discord.clone(), channel.to_owned(), events.clone());
+            tokio::spawn(async move {
+                let result = discord
+                    .save_message(&channel, &id, save)
+                    .await
+                    .map_err(|error| {
+                        tracing::warn!(error = format!("{error:#}"), "could not save a message");
+                        error.to_string()
+                    });
+                let _ = events.send(Event::SavedChanged { item, save, result });
+            });
+            return;
+        }
+        Command::ReportReasons { room, item } => {
+            let item = item.clone();
+            let (Ok(discord), Some((_, channel))) = (discord, discord::parse_room(room)) else {
+                let _ = events.send(Event::ReportReasons {
+                    item,
+                    result: Err(NOT_DISCORD.into()),
+                });
+                return;
+            };
+            let id = match discord_id(&item) {
+                Some(id) => id.to_owned(),
+                None => {
+                    let _ = events.send(Event::ReportReasons {
+                        item,
+                        result: Err("That message is no longer available.".into()),
+                    });
+                    return;
+                }
+            };
+            let (discord, channel, events) = (discord.clone(), channel.to_owned(), events.clone());
+            tokio::spawn(async move {
+                let result = discord
+                    .report_reasons(&channel, &id)
+                    .await
+                    .map(|reasons| {
+                        reasons
+                            .into_iter()
+                            .map(|reason| crate::chat::ReportReason {
+                                reason: reason.reason,
+                                label: reason.label,
+                                description: reason.description,
+                            })
+                            .collect()
+                    })
+                    .map_err(|error| {
+                        tracing::warn!(error = format!("{error:#}"), "could not report");
+                        error.to_string()
+                    });
+                let _ = events.send(Event::ReportReasons { item, result });
+            });
+            return;
+        }
+        Command::ReportMessage { room, item, reason } => {
+            let item = item.clone();
+            let reason = *reason;
+            let (Ok(discord), Some((_, channel))) = (discord, discord::parse_room(room)) else {
+                let _ = events.send(Event::MessageReported {
+                    item,
+                    result: Err(NOT_DISCORD.into()),
+                });
+                return;
+            };
+            let Some(id) = discord_id(&item).map(str::to_owned) else {
+                let _ = events.send(Event::MessageReported {
+                    item,
+                    result: Err("That message is no longer available.".into()),
+                });
+                return;
+            };
+            let (discord, channel, events) = (discord.clone(), channel.to_owned(), events.clone());
+            tokio::spawn(async move {
+                let result = discord
+                    .report_message(&channel, &id, reason)
+                    .await
+                    .map_err(|error| {
+                        tracing::warn!(error = format!("{error:#}"), "could not report a message");
+                        error.to_string()
+                    });
+                let _ = events.send(Event::MessageReported { item, result });
+            });
+            return;
+        }
+        Command::BulkDelete { room, items } => {
+            let items = items.clone();
+            let room = room.clone();
+            let (Ok(discord), Some((_, channel))) = (discord, discord::parse_room(&room)) else {
+                let _ = events.send(Event::BulkDeleted {
+                    room,
+                    items,
+                    result: Err(NOT_DISCORD.into()),
+                });
+                return;
+            };
+            let ids: Vec<String> = items
+                .iter()
+                .filter_map(|item| discord_id(item).map(str::to_owned))
+                .collect();
+            let (discord, channel, events) = (discord.clone(), channel.to_owned(), events.clone());
+            tokio::spawn(async move {
+                let result = discord.bulk_delete(&channel, &ids).await.map_err(|error| {
+                    tracing::warn!(error = format!("{error:#}"), "could not delete messages");
+                    error.to_string()
+                });
+                let _ = events.send(Event::BulkDeleted {
+                    room,
+                    items,
+                    result,
+                });
+            });
+            return;
+        }
+        _ => {}
+    }
     let Some(command) = account::command(
         command,
         discord,
@@ -141,6 +397,9 @@ pub fn command(
         | Command::RemoveReactor { room, .. }
         | Command::Delete { room, .. }
         | Command::Crosspost { room, .. }
+        | Command::ReportReasons { room, .. }
+        | Command::ReportMessage { room, .. }
+        | Command::BulkDelete { room, .. }
         | Command::Pin { room, .. }
         | Command::Retry { room, .. }
         | Command::Cancel { room, .. }
@@ -970,4 +1229,73 @@ fn forward(
         }
         let _ = events.send(Event::Forwarded { room, result });
     });
+}
+
+/// A message as the inbox lists it: the room it's in, its author, its
+/// channel and its body.
+fn inbox_message(
+    discord: &Discord,
+    message: &recore_discord::message::Message,
+) -> crate::chat::InboxMessage {
+    let snapshot = discord.snapshots().borrow().clone();
+    let mut guild = None;
+    let mut channel_name = None;
+    for server in &snapshot.servers {
+        if let Some(channel) = server.server.channel(&message.channel_id) {
+            guild = Some(server.server.id.as_str());
+            channel_name = Some(channel.name.clone());
+            break;
+        }
+    }
+    if channel_name.is_none() {
+        channel_name = snapshot
+            .conversations
+            .iter()
+            .find(|conversation| conversation.id == message.channel_id)
+            .map(|conversation| conversation.name.clone());
+    }
+    let guild = guild.unwrap_or(recore_discord::ready::PRIVATE);
+    crate::chat::InboxMessage {
+        room: discord::room_id(guild, &message.channel_id),
+        item: format!("d:{}", message.id),
+        author: message.author.clone(),
+        avatar: Some(discord.avatar(
+            (guild != recore_discord::ready::PRIVATE).then_some(guild),
+            &message.author_id,
+        )),
+        channel: channel_name.unwrap_or_else(|| "Direct message".into()),
+        body: if message.content.is_empty() {
+            message.system.clone().unwrap_or_default()
+        } else {
+            message.content.clone()
+        },
+        timestamp: message.timestamp() * 1000,
+    }
+}
+
+/// A membership screening form as the dialog shows it.
+fn verification_form(room: &str, form: &serde_json::Value) -> crate::chat::VerificationForm {
+    let fields = form["form_fields"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|field| crate::chat::VerificationField {
+            kind: field["field_type"].as_str().unwrap_or_default().to_owned(),
+            label: field["label"].as_str().unwrap_or_default().to_owned(),
+            description: field["description"].as_str().unwrap_or_default().to_owned(),
+            values: field["values"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|value| value.as_str().map(str::to_owned))
+                .collect(),
+            required: field["required"].as_bool().unwrap_or(false),
+            ..Default::default()
+        })
+        .collect();
+    crate::chat::VerificationForm {
+        room: room.to_owned(),
+        fields,
+        ..Default::default()
+    }
 }

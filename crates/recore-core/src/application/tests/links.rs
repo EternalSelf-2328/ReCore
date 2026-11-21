@@ -191,7 +191,7 @@ fn an_invite_link_opens_the_server_or_the_dialog() {
     assert!(!join.joining);
     assert!(join.error.unwrap().ends_with("full."));
 
-    // A server with a form to fill in sends it to Discord's web app.
+    // A server with a form to fill in asks for it here.
     app.dispatch(Action::JoinServer);
     app.apply(Event::ServerJoined {
         code: "new".into(),
@@ -202,12 +202,37 @@ fn an_invite_link_opens_the_server_or_the_dialog() {
         }),
     });
     assert!(app.dispatch(Action::JoinServer).is_empty());
-    let effects = app.dispatch(Action::OpenJoinForm);
+    let join = app.state.join.as_ref().unwrap();
+    assert!(join.verification.as_ref().is_some_and(|form| form.loading));
+    assert_eq!(app.pending_open.as_deref(), Some("discord:30:31"));
+    app.apply(Event::MemberVerification {
+        room: "discord:30:31".into(),
+        result: Ok(chat::VerificationForm {
+            room: "discord:30:31".into(),
+            fields: vec![chat::VerificationField {
+                kind: "TERMS".into(),
+                label: "Rules".into(),
+                values: vec!["Be kind.".into()],
+                required: true,
+                ..Default::default()
+            }],
+            ..Default::default()
+        }),
+    });
+    app.dispatch(Action::AnswerVerification(VerificationAnswer::Terms(0)));
+    let effects = app.dispatch(Action::SubmitVerification);
     assert!(matches!(
         effects.as_slice(),
-        [Effect::OpenPage(page)] if page == "https://discord.com/channels/30/31"
+        [Effect::Backend(Command::Discord(
+            DiscordCommand::SubmitJoinRequest { .. }
+        ))]
     ));
+    app.apply(Event::JoinRequestSubmitted {
+        room: "discord:30:31".into(),
+        result: Ok(()),
+    });
     assert!(app.state.join.is_none());
+    assert_eq!(app.pending_open.as_deref(), Some("discord:30:31"));
 }
 
 #[test]

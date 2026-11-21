@@ -9,12 +9,14 @@ fn videos_play_in_the_open_room_until_it_closes() {
         name: name.into(),
         size: None,
         image: false,
+        audio: false,
         dimensions: None,
         preview: None,
         preview_failed: false,
         placement: chat::Placement::Message,
         gif: None,
         spoiler: false,
+        sensitive: false,
         video,
         url: None,
         description: None,
@@ -192,18 +194,76 @@ fn a_voice_message_plays_and_pauses_one_at_a_time() {
 }
 
 #[test]
+fn a_sound_file_plays_in_place_with_its_time_from_the_file() {
+    let mut app = connected();
+    let sound = |id: &str, audio: bool| {
+        Arc::new(ChatMessage {
+            id: id.into(),
+            item: format!("d:{id}"),
+            attachments: vec![chat::Attachment {
+                name: format!("{id}.mp3"),
+                size: None,
+                image: false,
+                audio,
+                dimensions: None,
+                preview: None,
+                preview_failed: false,
+                placement: chat::Placement::Message,
+                gif: None,
+                spoiler: false,
+                sensitive: false,
+                video: false,
+                url: None,
+                description: None,
+            }],
+            ..Default::default()
+        })
+    };
+    app.apply(Event::Timeline {
+        room: "dm".into(),
+        messages: vec![sound("1", true), sound("2", false)],
+    });
+    assert!(matches!(
+        app.dispatch(Action::ToggleVoiceMessage("d:1".into())).as_slice(),
+        [Effect::Backend(Command::PlayVoiceMessage { item, .. })] if item == "d:1"
+    ));
+    let playing = app.state.voice_message.clone().unwrap();
+    assert!(playing.playing && playing.duration_ms.is_none());
+    // The file says how long it is, and its time moves where asked.
+    app.apply(Event::VoiceMessage(Some(chat::VoicePlayback {
+        duration_ms: Some(8000),
+        ..playing
+    })));
+    assert!(matches!(
+        app.dispatch(Action::MoveVoiceMessage("d:1".into(), 0.5))
+            .as_slice(),
+        [Effect::Backend(Command::MoveVoiceMessage {
+            at_ms: 4000,
+            ..
+        })]
+    ));
+    assert!(
+        app.dispatch(Action::ToggleVoiceMessage("d:2".into()))
+            .is_empty(),
+        "a plain file isn't a sound"
+    );
+}
+
+#[test]
 fn the_viewer_steps_through_a_messages_images() {
     let mut app = connected();
     let file = |name: &str, image: bool| chat::Attachment {
         name: name.into(),
         size: None,
         image,
+        audio: false,
         dimensions: None,
         preview: None,
         preview_failed: false,
         placement: chat::Placement::Message,
         gif: None,
         spoiler: false,
+        sensitive: false,
         video: false,
         url: None,
         description: None,
@@ -280,12 +340,14 @@ fn a_picture_with_an_address_is_copied_to_the_clipboard() {
         name: "cat.png".into(),
         size: None,
         image: true,
+        audio: false,
         dimensions: None,
         preview: None,
         preview_failed: false,
         placement: chat::Placement::Message,
         gif: None,
         spoiler: false,
+        sensitive: false,
         video: false,
         url: url.map(Into::into),
         description: None,

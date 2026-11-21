@@ -454,6 +454,16 @@ impl Application {
         if around.is_some_and(|place| self.manages(&place)) {
             managing.push(MenuChoice::CreateChannel);
         }
+        if self.manages(id)
+            && !self.state.is_category(id)
+            && self
+                .state
+                .rooms
+                .iter()
+                .any(|room| room.id == id && !room.voice)
+        {
+            managing.push(MenuChoice::BulkDelete);
+        }
         if self.manages(id) {
             managing.push(MenuChoice::DeleteChannel);
         }

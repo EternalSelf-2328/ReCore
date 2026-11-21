@@ -28,12 +28,15 @@ mod compose;
 mod cosmetics;
 mod discord_account;
 mod ephemeral;
+mod folders;
 mod forum;
 mod gifs;
 mod gift;
 mod header;
+mod inbox;
 mod interactions;
 mod join;
+pub use join::VerificationAnswer;
 mod link_prompts;
 mod members;
 mod messages;
@@ -362,6 +365,54 @@ pub struct Forwarding {
     /// Those chosen when the search last changed, which list first while
     /// it's empty; see [`AppState::forward_places`].
     pub pinned: Vec<String>,
+}
+
+/// Reporting a message, while its dialog is open: why Discord offers, the
+/// reason chosen, and how the report is going.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ReportDialog {
+    pub item: String,
+    /// Discord's reasons, once they came, or why they didn't.
+    pub reasons: Option<Vec<chat::ReportReason>>,
+    pub error: Option<String>,
+    pub selected: Option<i64>,
+    pub sending: bool,
+}
+
+/// Deleting messages at once, while its dialog is open: the room's messages
+/// that may go, those chosen, and how it's going.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BulkDelete {
+    pub room: String,
+    /// The messages that may be deleted, newest first.
+    pub items: Vec<String>,
+    pub chosen: Vec<String>,
+    pub sending: bool,
+    pub error: Option<String>,
+}
+
+/// A folder of Discord servers being made or changed, while its dialog is
+/// open.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FolderEditor {
+    /// Its Discord id, when it's a folder that exists; none for a new one.
+    pub id: Option<String>,
+    pub name: String,
+    pub color: Option<u32>,
+    /// Every server the rail lists, in its order, and whether the folder
+    /// holds it.
+    pub servers: Vec<FolderServer>,
+    pub saving: bool,
+    pub error: Option<String>,
+}
+
+/// A server in [`FolderEditor`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct FolderServer {
+    pub id: String,
+    pub name: String,
+    pub icon: Option<String>,
+    pub chosen: bool,
 }
 
 /// The conversations this account used, which rank where a message is
@@ -760,6 +811,18 @@ pub struct AppState {
     pub confirm_delete: Option<String>,
     /// The message whose poll the user is asked to confirm closing now.
     pub confirm_end_poll: Option<String>,
+    /// The message being reported, while its dialog is open.
+    pub report: Option<ReportDialog>,
+    /// Messages being deleted at once, while its dialog is open.
+    pub bulk_delete: Option<BulkDelete>,
+    /// A server folder being made or changed, while its dialog is open.
+    pub folder_editor: Option<FolderEditor>,
+    /// The messages that mentioned this account recently, once fetched.
+    pub recent_mentions: Option<Vec<chat::InboxMessage>>,
+    /// The messages this account saved for later, once fetched.
+    pub saved_messages: Option<Vec<chat::InboxMessage>>,
+    /// The items among them, for the message menu's bookmark.
+    pub saved_items: std::collections::HashSet<String>,
     /// The poll being made, while its dialog is open.
     pub poll_draft: Option<PollDraft>,
     /// A message being forwarded, while its dialog is open.
@@ -1020,6 +1083,9 @@ impl AppState {
             || self.poll_draft.is_some()
             || self.confirm_delete.is_some()
             || self.confirm_end_poll.is_some()
+            || self.report.is_some()
+            || self.bulk_delete.is_some()
+            || self.folder_editor.is_some()
             || self.reactions.is_some()
             || self.add_people.is_some()
             || self.switch_voice.is_some()
@@ -1732,6 +1798,39 @@ pub enum Action {
     DeleteNow(String),
     /// Publish a message in an announcement channel to its followers.
     Crosspost(String),
+    /// Open the dialog that reports a message to Discord.
+    ReportMessage(String),
+    /// Choose one of Discord's reasons for the report.
+    ChooseReportReason(i64),
+    /// Send the report as chosen.
+    SendReport,
+    CloseReport,
+    /// Open the dialog that deletes recent messages of the selected channel
+    /// at once.
+    OpenBulkDelete,
+    /// Include a message in that delete, or leave it out.
+    ToggleBulkDelete(String),
+    /// Delete those chosen now.
+    ConfirmBulkDelete,
+    CloseBulkDelete,
+    /// Make a folder with this server in it.
+    NewFolder(String),
+    /// Change a folder of servers, by its rail id.
+    EditFolder(String),
+    SetFolderName(String),
+    SetFolderColor(Option<u32>),
+    /// Include a server in the folder being changed, or leave it out.
+    ToggleFolderServer(String),
+    SaveFolder,
+    DeleteFolder,
+    CloseFolder,
+    /// Fetch the inbox's mentions, or its saved messages.
+    LoadRecentMentions,
+    LoadSavedMessages,
+    /// Save a message for later, or take it out.
+    ToggleSaved(String),
+    /// Acknowledge a mention, taking it out of the inbox.
+    DismissMention(String),
     /// Vote for these answers of a Discord message's poll, by item, in
     /// place of this account's vote; none takes it back.
     Vote {
@@ -2156,7 +2255,10 @@ pub enum Action {
     OpenInviteLink(String),
     JoinServer,
     OpenJoinCaptcha,
-    OpenJoinForm,
+    /// Answer a membership screening question.
+    AnswerVerification(VerificationAnswer),
+    /// Send the membership screening form as answered.
+    SubmitVerification,
     CloseJoin,
     /// Open a clicked authorization link, by its query; pick the
     /// server it installs to, by its Discord id; authorize it; or
@@ -3508,6 +3610,51 @@ impl Application {
             Action::RequestDelete(item) => self.request_delete(item),
             Action::DeleteNow(item) => self.delete_now(item),
             Action::Crosspost(item) => self.crosspost(item),
+            Action::ReportMessage(item) => self.report_message(item),
+            Action::ChooseReportReason(reason) => self.choose_report_reason(reason),
+            Action::SendReport => self.send_report(),
+            Action::CloseReport => {
+                self.state.report = None;
+                vec![]
+            }
+            Action::OpenBulkDelete => self.open_bulk_delete(),
+            Action::ToggleBulkDelete(item) => self.toggle_bulk_delete(item),
+            Action::ConfirmBulkDelete => self.confirm_bulk_delete(),
+            Action::CloseBulkDelete => {
+                self.state.bulk_delete = None;
+                vec![]
+            }
+            Action::NewFolder(server) => self.new_folder(server),
+            Action::EditFolder(id) => self.edit_folder(id),
+            Action::SetFolderName(name) => self.set_folder_name(name),
+            Action::SetFolderColor(color) => self.set_folder_color(color),
+            Action::ToggleFolderServer(server) => self.toggle_folder_server(server),
+            Action::SaveFolder => self.save_folder(),
+            Action::DeleteFolder => self.delete_folder(),
+            Action::CloseFolder => {
+                self.state.folder_editor = None;
+                vec![]
+            }
+            Action::LoadRecentMentions => {
+                if self.state.preview || !self.state.discord_online {
+                    vec![]
+                } else {
+                    vec![Effect::Backend(Command::Discord(
+                        DiscordCommand::RecentMentions,
+                    ))]
+                }
+            }
+            Action::LoadSavedMessages => {
+                if self.state.preview || !self.state.discord_online {
+                    vec![]
+                } else {
+                    vec![Effect::Backend(Command::Discord(
+                        DiscordCommand::SavedMessages,
+                    ))]
+                }
+            }
+            Action::ToggleSaved(item) => self.toggle_saved(item),
+            Action::DismissMention(item) => self.dismiss_mention(item),
             Action::Vote { item, answers } => self.vote(item, answers),
             Action::OpenPollDraft => self.open_poll_draft(),
             Action::EditPoll(edit) => self.edit_poll(edit),
@@ -3853,7 +4000,8 @@ impl Application {
             Action::OpenInviteLink(code) => self.open_invite_link(code),
             Action::JoinServer => self.join_server(),
             Action::OpenJoinCaptcha => self.open_join_captcha(),
-            Action::OpenJoinForm => self.open_join_form(),
+            Action::AnswerVerification(answer) => self.answer_verification(answer),
+            Action::SubmitVerification => self.submit_verification(),
             Action::CloseJoin => {
                 self.state.join = None;
                 vec![]
@@ -4404,6 +4552,124 @@ impl Application {
             Event::VoiceMessage(playback) => {
                 self.state.voice_message =
                     playback.filter(|playback| self.state.shows_room(&playback.room));
+            }
+            Event::ReportReasons { item, result } => {
+                if let Some(report) = &mut self.state.report
+                    && report.item == item
+                {
+                    match result {
+                        Ok(reasons) => {
+                            report.selected = reasons.first().map(|reason| reason.reason);
+                            report.reasons = Some(reasons);
+                        }
+                        Err(why) => {
+                            report.error = Some(why);
+                            report.reasons = Some(Vec::new());
+                        }
+                    }
+                }
+            }
+            Event::MemberVerification { room, result } => {
+                return self.member_verification(room, result);
+            }
+            Event::JoinRequestSubmitted { room, result } => {
+                let mut open = None;
+                if let Some(join) = &mut self.state.join
+                    && let Some(form) = &mut join.verification
+                    && form.room == room
+                {
+                    form.submitting = false;
+                    match result {
+                        Ok(()) => open = Some(form.room.clone()),
+                        Err(why) => form.error = Some(why),
+                    }
+                }
+                if let Some(room) = open {
+                    let server = discord::parse_room(&room)
+                        .map(|(guild, _)| discord::server_id(guild))
+                        .unwrap_or_default();
+                    return self.open_joined(&server, room);
+                }
+            }
+            Event::RecentMentions(result) => {
+                if let Ok(mentions) = result {
+                    self.state.recent_mentions = Some(mentions);
+                }
+            }
+            Event::SavedMessages(result) => {
+                if let Ok(saved) = result {
+                    self.state.saved_items = saved.iter().map(|one| one.item.clone()).collect();
+                    self.state.saved_messages = Some(saved);
+                }
+            }
+            Event::SavedChanged { item, save, result } => match result {
+                Ok(()) => {
+                    if !save {
+                        if let Some(saved) = &mut self.state.saved_messages {
+                            saved.retain(|one| one.item != item);
+                        }
+                    }
+                }
+                Err(_) => {
+                    if save {
+                        self.state.saved_items.remove(&item);
+                    } else {
+                        self.state.saved_items.insert(item);
+                    }
+                }
+            },
+            Event::FoldersSaved(result) => {
+                let mut close = false;
+                if let Some(editor) = &mut self.state.folder_editor {
+                    editor.saving = false;
+                    match result {
+                        Ok(()) => close = true,
+                        Err(why) => editor.error = Some(why),
+                    }
+                }
+                if close {
+                    self.state.folder_editor = None;
+                }
+            }
+            Event::MessageReported { item, result } => {
+                let mut close = false;
+                if let Some(report) = &mut self.state.report
+                    && report.item == item
+                {
+                    report.sending = false;
+                    match result {
+                        Ok(()) => close = true,
+                        Err(why) => report.error = Some(why),
+                    }
+                }
+                if close {
+                    self.state.report = None;
+                }
+            }
+            Event::BulkDeleted {
+                room,
+                items,
+                result,
+            } => {
+                let mut close = false;
+                if let Some(bulk) = &mut self.state.bulk_delete
+                    && bulk.room == room
+                {
+                    bulk.sending = false;
+                    match result {
+                        Ok(()) => {
+                            close = true;
+                            bulk.chosen.clear();
+                        }
+                        Err(why) => bulk.error = Some(why),
+                    }
+                }
+                if close {
+                    self.state.bulk_delete = None;
+                } else {
+                    // Discord deleted nothing, so the list stays.
+                    let _ = items;
+                }
             }
             // Do Not Disturb holds back message notifications, as in Discord.
             Event::Notify(_) if self.state.do_not_disturb() => {}

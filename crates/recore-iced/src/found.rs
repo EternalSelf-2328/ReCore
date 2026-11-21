@@ -135,7 +135,8 @@ pub fn found_view<'a>(
             let shot = ctx.shot(
                 Shot::new(attachment.preview.as_ref(), cell.size())
                     .radius(crate::message::PICTURE_RADIUS)
-                    .covered(attachment.spoiler),
+                    .covered(attachment.spoiler || attachment.sensitive)
+                    .sensitive(attachment.sensitive),
             );
             let shot: Element<'a, Message> = if attachment.video && !attachment.spoiler {
                 stack![

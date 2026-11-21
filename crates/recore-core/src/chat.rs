@@ -1754,6 +1754,8 @@ pub struct Attachment {
     pub name: String,
     pub size: Option<u64>,
     pub image: bool,
+    /// A sound file, which plays in place of a file card.
+    pub audio: bool,
     /// The full image's width and height, when the sender said.
     pub dimensions: Option<(u32, u32)>,
     pub preview: Option<Arc<Picture>>,
@@ -1762,6 +1764,8 @@ pub struct Attachment {
     pub placement: Placement,
     /// Marked as a spoiler: its picture is covered until clicked.
     pub spoiler: bool,
+    /// Flagged as sensitive content: covered until clicked, as a spoiler.
+    pub sensitive: bool,
     /// A video that plays in place of its picture, which is its poster:
     /// [`Command::PlayVideo`].
     pub video: bool,
@@ -1839,6 +1843,8 @@ pub struct VoicePlayback {
     /// Until its file downloads.
     pub loading: bool,
     pub playing: bool,
+    /// How long it plays, in milliseconds, once the file says.
+    pub duration_ms: Option<u64>,
     /// How far it has played, in milliseconds.
     pub position_ms: u64,
     /// Why it stopped, for the person.
@@ -1906,6 +1912,8 @@ pub struct Embed {
     pub footer: String,
     /// Its large picture is a video's poster, which opens `url`.
     pub video: bool,
+    /// A Discord server invite its link names, whose card offers Join.
+    pub invite: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -2097,6 +2105,105 @@ pub struct ChatMessage {
     /// Discord's that someone pinned one; its body says it after its
     /// author's name.
     pub notice: Option<Notice>,
+}
+
+/// A server's membership screening form, which a new member fills in before
+/// talking.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct VerificationForm {
+    /// The room joining opened, which shows once the form is sent.
+    pub room: String,
+    pub loading: bool,
+    pub fields: Vec<VerificationField>,
+    pub submitting: bool,
+    pub error: Option<String>,
+}
+
+/// One question of [`VerificationForm`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct VerificationField {
+    /// Discord's field type: `TERMS`, `TEXT_INPUT` or `MULTIPLE_CHOICE`.
+    pub kind: String,
+    pub label: String,
+    pub description: String,
+    pub values: Vec<String>,
+    pub required: bool,
+    /// A terms question's answer: whether they agreed.
+    pub agreed: bool,
+    /// A text question's answer.
+    pub text: String,
+    /// A choice question's answer: the index chosen.
+    pub choice: Option<u64>,
+}
+
+impl VerificationField {
+    pub fn is_terms(&self) -> bool {
+        self.kind == "TERMS"
+    }
+
+    pub fn is_text(&self) -> bool {
+        self.kind == "TEXT_INPUT"
+    }
+
+    pub fn is_choice(&self) -> bool {
+        self.kind == "MULTIPLE_CHOICE"
+    }
+
+    /// Whether this question is answered.
+    pub fn answered(&self) -> bool {
+        if self.is_terms() {
+            self.agreed
+        } else if self.is_text() {
+            !self.text.trim().is_empty()
+        } else {
+            self.choice.is_some()
+        }
+    }
+
+    /// Its answer in Discord's form: `true`, the text or the chosen index.
+    pub fn response(&self) -> serde_json::Value {
+        if self.is_terms() {
+            serde_json::Value::Bool(self.agreed)
+        } else if self.is_text() {
+            serde_json::Value::String(self.text.clone())
+        } else {
+            serde_json::Value::from(self.choice.unwrap_or(0))
+        }
+    }
+}
+
+impl VerificationForm {
+    /// Whether every required question is answered.
+    pub fn ready(&self) -> bool {
+        !self.loading
+            && !self.submitting
+            && self
+                .fields
+                .iter()
+                .filter(|field| field.required)
+                .all(VerificationField::answered)
+    }
+}
+
+/// A message in the inbox: one that mentioned this account, or one it saved
+/// for later.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InboxMessage {
+    pub room: String,
+    pub item: String,
+    pub author: String,
+    pub avatar: Option<String>,
+    pub channel: String,
+    pub body: String,
+    pub timestamp: u64,
+}
+
+/// A reason Discord's report dialog offers for a message.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReportReason {
+    pub reason: i64,
+    pub label: String,
+    pub description: String,
 }
 
 /// A notice in place of a message, as Discord's client marks it: with an
@@ -2371,6 +2478,25 @@ pub enum Command {
     Crosspost {
         room: String,
         item: String,
+    },
+    /// The reasons Discord offers for reporting a message; [`Event::ReportReasons`]
+    /// follows.
+    ReportReasons {
+        room: String,
+        item: String,
+    },
+    /// Report a message for one of those reasons; [`Event::MessageReported`]
+    /// follows.
+    ReportMessage {
+        room: String,
+        item: String,
+        reason: i64,
+    },
+    /// Delete these messages at once, as Discord's bulk delete does;
+    /// [`Event::BulkDeleted`] follows.
+    BulkDelete {
+        room: String,
+        items: Vec<String>,
     },
     /// Pin a Discord message to its channel's pinned messages, or unpin it.
     Pin {
@@ -2983,6 +3109,36 @@ pub enum DiscordCommand {
         user: String,
         change: RelationshipChange,
         location: &'static str,
+    },
+    /// Keep this server list's order and folders as Discord's settings hold
+    /// them, as its own client's Folders page does. [`Event::FoldersSaved`]
+    /// follows.
+    SetServerFolders(Vec<recore_discord::settings::Folder>),
+    /// The membership screening form of the server `room` is in;
+    /// [`Event::MemberVerification`] follows.
+    MemberVerification {
+        room: String,
+    },
+    /// Send a membership screening form's answers for the server `room` is
+    /// in; [`Event::JoinRequestSubmitted`] follows.
+    SubmitJoinRequest {
+        room: String,
+        fields: serde_json::Value,
+    },
+    /// The messages that mentioned this account recently;
+    /// [`Event::RecentMentions`] follows.
+    RecentMentions,
+    /// Acknowledge a mention, taking it out of the inbox.
+    DeleteMention(String),
+    /// The messages this account saved for later;
+    /// [`Event::SavedMessages`] follows.
+    SavedMessages,
+    /// Save a message for later, or take it out; [`Event::SavedChanged`]
+    /// follows.
+    SaveMessage {
+        room: String,
+        item: String,
+        save: bool,
     },
     /// Fetch this account's note on a Discord user; [`Event::Note`] follows.
     Note {
@@ -4176,6 +4332,9 @@ impl Command {
             | Command::RemoveReactor { room, .. }
             | Command::Delete { room, .. }
             | Command::Crosspost { room, .. }
+            | Command::ReportReasons { room, .. }
+            | Command::ReportMessage { room, .. }
+            | Command::BulkDelete { room, .. }
             | Command::Pin { room, .. }
             | Command::Retry { room, .. }
             | Command::Cancel { room, .. }
@@ -4360,6 +4519,24 @@ pub enum Event {
     /// The voice message [`Command::PlayVoiceMessage`] plays, as it
     /// changes; none once it stops.
     VoiceMessage(Option<VoicePlayback>),
+    /// The reasons Discord gives for reporting a message, or why they didn't
+    /// come.
+    ReportReasons {
+        item: String,
+        result: Result<Vec<ReportReason>, String>,
+    },
+    /// Whether reporting a message went, or why it didn't.
+    MessageReported {
+        item: String,
+        result: Result<(), String>,
+    },
+    /// Whether deleting messages at once went; the deleted ones leave by
+    /// the gateway either way.
+    BulkDeleted {
+        room: String,
+        items: Vec<String>,
+        result: Result<(), String>,
+    },
     /// An image [`Command::ViewImage`] asked for, or why it can't show.
     Image {
         room: String,
@@ -4416,6 +4593,31 @@ pub enum Event {
     JoinSoundSet(Result<(), String>),
     /// [`DiscordCommand::Unlink`] forgot the account.
     DiscordUnlinked,
+    /// Whether [`DiscordCommand::SetServerFolders`] saved the server list, or
+    /// why it didn't.
+    FoldersSaved(Result<(), String>),
+    /// The membership screening form a joined server asks for, or why it
+    /// didn't come.
+    MemberVerification {
+        room: String,
+        result: Result<VerificationForm, String>,
+    },
+    /// Whether a membership screening form was sent, or why not.
+    JoinRequestSubmitted {
+        room: String,
+        result: Result<(), String>,
+    },
+    /// The messages that mentioned this account recently, or why they didn't
+    /// come.
+    RecentMentions(Result<Vec<InboxMessage>, String>),
+    /// The messages this account saved for later, or why they didn't come.
+    SavedMessages(Result<Vec<InboxMessage>, String>),
+    /// Whether saving a message went, or why it didn't.
+    SavedChanged {
+        item: String,
+        save: bool,
+        result: Result<(), String>,
+    },
     /// [`DiscordCommand::Pins`]'s messages, the latest pinned first, or why
     /// they didn't come.
     Pins {

@@ -609,3 +609,54 @@ fn matrix_peoples_menus_offer_a_dm_but_not_to_this_account() {
         [Effect::Backend(Command::StartDm { id, discord: false })] if id == "@bob:test"
     ));
 }
+
+#[test]
+fn a_server_makes_a_folder_and_the_folder_can_be_changed() {
+    use crate::chat::ServerFolder;
+    let mut app = discord_server();
+    assert!(
+        app.state
+            .menu_choices("discord:10")
+            .contains(&MenuChoice::NewFolder)
+    );
+    assert!(
+        app.dispatch(Action::NewFolder("discord:10".into()))
+            .is_empty()
+    );
+    let editor = app.state.folder_editor.as_ref().unwrap();
+    assert!(
+        editor
+            .servers
+            .iter()
+            .any(|server| server.id == "discord:10" && server.chosen)
+    );
+    app.dispatch(Action::SetFolderName("Fun".into()));
+    let effects = app.dispatch(Action::SaveFolder);
+    let folders = match effects.as_slice() {
+        [Effect::Backend(Command::Discord(DiscordCommand::SetServerFolders(folders)))] => {
+            folders.clone()
+        }
+        _ => panic!("expected SetServerFolders"),
+    };
+    assert_eq!(folders.len(), 1);
+    assert_eq!(folders[0].name.as_deref(), Some("Fun"));
+    assert_eq!(folders[0].servers, ["10"]);
+    app.apply(Event::FoldersSaved(Ok(())));
+    assert!(app.state.folder_editor.is_none());
+
+    // Editing it shows its servers and saves a colour.
+    std::sync::Arc::make_mut(&mut app.state.servers[0]).folder = Some(ServerFolder {
+        id: "discord-folder:1".into(),
+        name: Some("Fun".into()),
+        color: None,
+    });
+    app.dispatch(Action::EditFolder("discord-folder:1".into()));
+    assert_eq!(app.state.folder_editor.as_ref().unwrap().name, "Fun");
+    app.dispatch(Action::SetFolderColor(Some(0x5865f2)));
+    let effects = app.dispatch(Action::SaveFolder);
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::Backend(Command::Discord(DiscordCommand::SetServerFolders(folders)))]
+            if folders[0].color == Some(0x5865f2)
+    ));
+}

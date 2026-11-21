@@ -335,6 +335,15 @@ impl App {
         if let Some(modal) = crate::dialogs::delete_view(self.confirm_focus, self.ctx()) {
             layers = layers.push(modal);
         }
+        if let Some(report) = crate::dialogs::report_view(self.ctx()) {
+            layers = layers.push(report);
+        }
+        if let Some(bulk) = crate::dialogs::bulk_delete_view(self.ctx()) {
+            layers = layers.push(bulk);
+        }
+        if let Some(folder) = crate::dialogs::folder_view(self.ctx()) {
+            layers = layers.push(folder);
+        }
         if let Some(dialog) = crate::person_menu::view(&self.person, self.ctx()) {
             layers = layers.push(self.popup(L(Layer::PersonDialog), dialog));
         }

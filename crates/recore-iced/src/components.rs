@@ -168,7 +168,8 @@ pub fn app_card<'a>(
                                 )
                                 .fit(Fit::Cover)
                                 .radius(PICTURE_RADIUS)
-                                .covered(attachments::covered(ctx, message, at)),
+                                .covered(attachments::hidden(ctx, message, at))
+                                .sensitive(attachment.sensitive),
                             );
                             line = line.push(attachments::pressed(ctx, index, message, at, shot));
                         }

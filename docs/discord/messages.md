@@ -330,6 +330,12 @@ ReCore is back, rather than showing an error.
   minute of it, decoded by the FFmpeg, libvpx and dav1d inside libwebrtc
   (`native/video.c`). One that can't be decoded shows its still picture. It's
   named and saved as its video, not its picture.
+- A sound file sent on its own, such as an MP3 or OGG, shows as a card with
+  its name and a round play button instead of a file card. It plays in place
+  through the same player as a voice message, with the same speed, volume and
+  mute, and its time and progress show as it goes; the file still saves from
+  its menu. Discord marks a voice message's own recording apart with its
+  waveform and countdown.
 - Attached videos show their poster, which the media proxy makes from the
   first frame (`proxy_url?format=webp`), with a play button; they play in
   place, with sound, under a bar to pause, move through them, mute (the
@@ -428,12 +434,20 @@ ReCore is back, rather than showing an error.
   on a file waiting in the composer marks it as a spoiler, which blurs its
   thumbnail; ReCore uploads it as `SPOILER_` and its name, as Discord's client
   does. Matrix has no spoiler for a file, so its rooms don't offer the eye.
+- Discord also flags media it scanned as potentially sensitive: an embed
+  whose flags carry explicit media, gore or self-harm content. Its pictures
+  and thumbnails show blurred under a "Sensitive content" cover until a
+  click, like a spoiler. Author and footer icons stay clear; the text of the
+  card is unchanged.
 - Custom emoji show as pictures: in messages, as reactions and in the emoji
   picker, which lists them by server after the frequently used ones, the open
   server's first. In a message each is a run of its own in the text
   (`markdown::with_emoji`), which keeps the picture's room on the line, so
   the text wraps and selects round it, and the picture is drawn there; a copy
-  gives back its `:name:`. A message's Unicode emoji are text, drawn from
+  gives back its `:name:`. An animated custom emoji plays wherever it shows:
+  in a message, a reaction, the picker, the suggestion list, a status or a
+  server settings list, asked from Discord as a GIF rather than a PNG. A
+  message's Unicode emoji are text, drawn from
   Twemoji's pictures. They need no font at runtime:
   `crates/recore-iced/build.rs` makes one colour bitmap (CBDT) font of all
   of them (`emoji_font_tables.rs`), which the program carries and every text
@@ -987,11 +1001,33 @@ Discord's client.
 
 Discord's client also marks a thread it isn't in, or an archived one, after
 joining it or opening it again; ReCore offers Mark Unread only in threads
-this account is in that aren't archived. Its Bookmark Message, which saves a
-message to the inbox's "For Later" list with `PUT
-/users/@me/saved-messages/{channel}/{message}`, isn't here: it needs that
-list to be useful, and Discord's client offers it only where a switch
-Discord controls turns it on.
+this account is in that aren't archived. Bookmark Message saves a message
+to the inbox's "For Later" list with `PUT
+/users/@me/saved-messages/{channel}/{message}`; taking it out again sends
+`DELETE` to the same address. The list comes from `GET
+/users/@me/saved-messages` when the tab opens, and its rows open the saved
+message where it was written.
+
+## Reporting a message, and deleting many
+
+A message someone else wrote offers Report Message. The dialog asks Discord
+for its reasons with `GET /report?channel_id={channel}&message_id={message}`,
+shows each label and description, and sends the chosen one with `POST /report`
+and `{channel_id, message_id, reason}`. The report is anonymous. ReCore needs
+the account's verified email, as Discord does; a refusal is shown in the
+dialog. This is Discord's first reporting API: its in-app tree of questions
+is not rendered.
+
+A text channel's menu offers Delete messages to an account with Manage
+Messages. The dialog lists the recent messages this account may delete, at
+most 100 and none older than two weeks, each ticked or not. Delete Messages
+sends `POST /channels/{channel}/messages/bulk-delete` with `{"messages": [...]}`;
+the gateway's `MESSAGE_DELETE_BULK` takes them out of the timeline.
+
+The inbox's Mentions tab lists the messages that mentioned this account in
+the last seven days from `GET /users/@me/mentions`, newest first; a row opens
+its message, and acknowledging one sends `DELETE /users/@me/mentions/{id}`.
+Its For Later tab lists the messages saved above.
 
 ## Stickers
 

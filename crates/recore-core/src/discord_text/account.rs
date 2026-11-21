@@ -415,6 +415,28 @@ pub(super) fn command(
         }
         return None;
     }
+    if let Command::Discord(DiscordCommand::SetServerFolders(folders)) = command {
+        match discord {
+            Ok(discord) => {
+                let events = events.clone();
+                let discord = discord.clone();
+                tokio::spawn(async move {
+                    let result = discord.set_server_folders(&folders).await.map_err(|error| {
+                        tracing::warn!(
+                            error = format!("{error:#}"),
+                            "could not save the server folders"
+                        );
+                        error.to_string()
+                    });
+                    let _ = events.send(Event::FoldersSaved(result));
+                });
+            }
+            Err(why) => {
+                let _ = events.send(Event::FoldersSaved(Err(why.into())));
+            }
+        }
+        return None;
+    }
     if let Command::Discord(DiscordCommand::Inactive { since, show_idle }) = command {
         if let Ok(discord) = discord {
             discord.set_inactive(since, show_idle);

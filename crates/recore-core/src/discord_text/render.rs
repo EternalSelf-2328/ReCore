@@ -123,11 +123,13 @@ pub(super) fn found(
                 name: attachment.name.clone(),
                 size: attachment.size,
                 image: attachment.image,
+                audio: attachment.audio,
                 dimensions: attachment.dimensions,
                 preview: None,
                 preview_failed: false,
                 placement: Placement::Message,
                 spoiler: attachment.spoiler,
+                sensitive: attachment.sensitive,
                 video: attachment.video_url.is_some(),
                 gif: super::gifs::favorite_gif(attachment),
                 url: Some(
@@ -910,6 +912,11 @@ pub(super) fn chat_embed(
     embed: &recore_discord::embed::Embed,
 ) -> Embed {
     let text = |text: &Option<String>| text.clone().unwrap_or_default();
+    let invite = embed
+        .url
+        .as_deref()
+        .and_then(recore_discord::invite::typed_code)
+        .map(str::to_owned);
     Embed {
         color: embed.color,
         provider: text(&embed.provider),
@@ -933,6 +940,7 @@ pub(super) fn chat_embed(
             .collect(),
         footer: text(&embed.footer),
         video: embed.video,
+        invite,
     }
 }
 

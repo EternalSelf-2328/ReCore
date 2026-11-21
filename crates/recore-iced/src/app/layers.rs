@@ -24,6 +24,9 @@ pub enum Layer {
     Inbox,
     Mfa,
     ConfirmDelete,
+    Report,
+    BulkDelete,
+    Folder,
     /// A bot's select menu, over the app's form it may be on.
     SelectMenu,
     /// An app's form, unless its select menu is open over it.
@@ -71,10 +74,13 @@ pub enum Layer {
 }
 
 /// Every layer, in the order they take keys and Escape.
-const LAYERS: [Layer; 42] = [
+const LAYERS: [Layer; 45] = [
     Layer::Inbox,
     Layer::Mfa,
     Layer::ConfirmDelete,
+    Layer::Report,
+    Layer::BulkDelete,
+    Layer::Folder,
     Layer::SelectMenu,
     Layer::Modal,
     Layer::Viewer,
@@ -260,6 +266,9 @@ impl App {
             Layer::Inbox => self.inbox.is_some(),
             Layer::Mfa => self.client.app.mfa_prompt().is_some(),
             Layer::ConfirmDelete => state.confirm_delete.is_some(),
+            Layer::Report => state.report.is_some(),
+            Layer::BulkDelete => state.bulk_delete.is_some(),
+            Layer::Folder => state.folder_editor.is_some(),
             Layer::SelectMenu => state.select_menu.is_some(),
             Layer::Modal => state.interaction_modal.is_some() && state.select_menu.is_none(),
             Layer::Viewer => state.viewer.is_some() && self.win.menu.is_none(),
@@ -490,6 +499,9 @@ impl App {
     ) -> Task<Message> {
         match (layer, named) {
             (Layer::ConfirmDelete, _) => crate::dialogs::confirm_key(self, named),
+            (Layer::Report, Some(key::Named::Enter)) => crate::dialogs::report_enter(self),
+            (Layer::BulkDelete, Some(key::Named::Enter)) => crate::dialogs::bulk_enter(self),
+            (Layer::Folder, Some(key::Named::Enter)) => crate::dialogs::folder_enter(self),
             (Layer::Viewer, _) => {
                 let mut cx = crate::ctx::cx!(self);
                 self.viewer.key(named, &mut cx)
@@ -623,6 +635,9 @@ impl App {
             Layer::AsideReply => crate::thread::update(self, crate::thread::Event::CancelReply),
             // These take Escape in their own key handlers (`layer_key`).
             Layer::ConfirmDelete
+            | Layer::Report
+            | Layer::BulkDelete
+            | Layer::Folder
             | Layer::Viewer
             | Layer::Switcher
             | Layer::LinkDialog

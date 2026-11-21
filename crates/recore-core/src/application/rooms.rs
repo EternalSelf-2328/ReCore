@@ -119,7 +119,13 @@ pub enum MenuChoice {
     /// Set a Discord voice channel's status, or clear it.
     SetVoiceStatus,
     DuplicateChannel,
+    /// Delete recent messages of a text channel at once.
+    BulkDelete,
     DeleteChannel,
+    /// Put a Discord server in a new folder.
+    NewFolder,
+    /// Change a folder's name, colour and servers, or delete it.
+    EditFolder,
     /// Leave a Discord server this account doesn't own.
     LeaveServer,
     /// Join a Discord thread this account isn't in, or leave one it is.
@@ -377,6 +383,14 @@ impl AppState {
         if self.unread_channels(id).next().is_some() {
             choices.push(MenuChoice::MarkRead);
         }
+        if self.discord_online
+            && self
+                .servers
+                .iter()
+                .any(|server| server.id == id && server.discord)
+        {
+            choices.push(MenuChoice::NewFolder);
+        }
         choices.extend([MenuChoice::CopyLink, MenuChoice::CopyId]);
         choices
     }
@@ -397,11 +411,14 @@ impl AppState {
     /// What a rail folder's menu offers: marking its servers read, as
     /// Discord's does.
     fn folder_choices(&self, id: &str) -> Vec<MenuChoice> {
+        let mut choices = vec![];
         if !self.preview && self.unread_in_folder(id).next().is_some() {
-            vec![MenuChoice::MarkRead]
-        } else {
-            vec![]
+            choices.push(MenuChoice::MarkRead);
         }
+        if self.discord_online {
+            choices.push(MenuChoice::EditFolder);
+        }
+        choices
     }
 
     /// The channels of a folder's servers with messages to read.

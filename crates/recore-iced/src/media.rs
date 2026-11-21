@@ -42,8 +42,11 @@ pub struct Shot<'a> {
     pub size: Size,
     pub fit: Fit,
     pub radius: f32,
-    /// Under a spoiler's cover.
+    /// Under a cover: a spoiler's, or sensitive content's.
     pub covered: bool,
+    /// The cover says the picture is sensitive content rather than a
+    /// spoiler.
+    pub sensitive: bool,
     /// Its ground shows behind it while it comes, and behind a picture
     /// with see-through parts; a sticker has none.
     pub ground: bool,
@@ -57,6 +60,7 @@ impl<'a> Shot<'a> {
             fit: Fit::Cover,
             radius: 0.0,
             covered: false,
+            sensitive: false,
             ground: true,
         }
     }
@@ -73,6 +77,11 @@ impl<'a> Shot<'a> {
 
     pub fn covered(mut self, covered: bool) -> Self {
         self.covered = covered;
+        self
+    }
+
+    pub fn sensitive(mut self, sensitive: bool) -> Self {
+        self.sensitive = sensitive;
         self
     }
 
@@ -202,6 +211,7 @@ impl<'a> crate::ctx::Ctx<'a> {
             fit,
             radius,
             covered,
+            sensitive,
             ground,
         } = shot;
         let shown = picture.filter(|picture| picture.width > 0 && picture.height > 0);
@@ -284,7 +294,7 @@ impl<'a> crate::ctx::Ctx<'a> {
         };
         let mut layers = stack![inner].width(size.width).height(size.height);
         if covered {
-            layers = layers.push(self.spoiler_cover(radius));
+            layers = layers.push(self.spoiler_cover(radius, sensitive));
         }
         let boxed = container(layers).width(size.width).height(size.height);
         if !ground || hidden {
@@ -294,11 +304,16 @@ impl<'a> crate::ctx::Ctx<'a> {
         boxed.style(move |_| rounded(raised, radius)).into()
     }
 
-    /// A spoiler's cover over a picture: the picture dimmed, "SPOILER" on a
-    /// pill.
-    pub fn spoiler_cover(self, radius: f32) -> Element<'a, Message> {
+    /// A spoiler's or sensitive content's cover over a picture: the picture
+    /// dimmed, "SPOILER" or "SENSITIVE CONTENT" on a pill.
+    pub fn spoiler_cover(self, radius: f32, sensitive: bool) -> Element<'a, Message> {
+        let label = if sensitive {
+            "SENSITIVE CONTENT"
+        } else {
+            "SPOILER"
+        };
         container(
-            container(text("SPOILER").size(13).font(BOLD()).color(Color::WHITE))
+            container(text(label).size(13).font(BOLD()).color(Color::WHITE))
                 .padding([0, 12])
                 .height(28)
                 .align_y(Alignment::Center)

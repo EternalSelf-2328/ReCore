@@ -238,8 +238,11 @@ pub(super) async fn stickers(discord: &Discord, guild: &str) -> anyhow::Result<V
 }
 
 fn server_emoji(emoji: GuildEmoji) -> ServerEmoji {
-    let picture =
-        recore_discord::ready::custom_emoji(&emoji.id, false, crate::chat::EMOJI_PICTURE_SIZE);
+    let picture = recore_discord::ready::custom_emoji(
+        &emoji.id,
+        emoji.animated,
+        crate::chat::EMOJI_PICTURE_SIZE,
+    );
     ServerEmoji {
         picture,
         id: emoji.id,

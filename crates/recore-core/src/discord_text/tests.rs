@@ -263,6 +263,7 @@ fn closed_channels_keep_metadata_without_pinning_previews() {
             size: None,
             url: "".into(),
             image: true,
+            audio: false,
             dimensions: None,
             preview_url: Some(format!("preview/{id}")),
             view_url: None,
@@ -272,6 +273,7 @@ fn closed_channels_keep_metadata_without_pinning_previews() {
             link_url: None,
             animated: false,
             spoiler: false,
+            sensitive: false,
             description: None,
         }],
         ..message(&id.to_string(), None)
@@ -313,6 +315,7 @@ fn changes_render_again_only_the_messages_they_change() {
             size: None,
             url: "".into(),
             image: true,
+            audio: false,
             dimensions: None,
             preview_url: Some("preview/9".into()),
             view_url: None,
@@ -322,6 +325,7 @@ fn changes_render_again_only_the_messages_they_change() {
             link_url: None,
             animated: false,
             spoiler: false,
+            sensitive: false,
             description: None,
         }],
         ..message("9", None)
@@ -1633,6 +1637,7 @@ fn changing_the_view_drops_old_previews_and_ignores_late_downloads() {
                     size: None,
                     url: "image".into(),
                     image: true,
+                    audio: false,
                     dimensions: Some((1, 1)),
                     preview_url: Some("preview".into()),
                     view_url: None,
@@ -1642,6 +1647,7 @@ fn changing_the_view_drops_old_previews_and_ignores_late_downloads() {
                     link_url: None,
                     animated: false,
                     spoiler: false,
+                    sensitive: false,
                     description: None,
                 }],
                 ..message("1", None)
@@ -1699,6 +1705,7 @@ async fn previews_follow_the_view_and_share_cache_across_channels() {
             size: None,
             url: "".into(),
             image: true,
+            audio: false,
             dimensions: Some((720, 540)),
             preview_url: Some(format!(
                 "{}/external/viewport-{id}/720x540.png",
@@ -1711,6 +1718,7 @@ async fn previews_follow_the_view_and_share_cache_across_channels() {
             link_url: None,
             animated: false,
             spoiler: false,
+            sensitive: false,
             description: None,
         }],
         ..message(id, None)

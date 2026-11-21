@@ -468,7 +468,7 @@ fn staged_tile<'a>(
                 .style(move |_| rounded(ground, 6));
             // A spoiler's cover goes over its file icon as over a picture.
             if file.spoiler {
-                iced::widget::stack![icon, ctx.spoiler_cover(6.0)]
+                iced::widget::stack![icon, ctx.spoiler_cover(6.0, false)]
                     .width(inner)
                     .height(TILE_PICTURE)
                     .into()

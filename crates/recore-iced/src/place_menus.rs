@@ -298,7 +298,10 @@ pub fn choose_place(app: &mut App, place: String, choice: MenuChoice) -> Task<Me
             kind: ChannelKind::Category,
         },
         MenuChoice::DuplicateChannel => Action::AskChannel(ChannelAsk::Duplicate(place)),
+        MenuChoice::BulkDelete => Action::OpenBulkDelete,
         MenuChoice::DeleteChannel => Action::AskChannel(ChannelAsk::Delete(place)),
+        MenuChoice::NewFolder => Action::NewFolder(place),
+        MenuChoice::EditFolder => Action::EditFolder(place),
         MenuChoice::LeaveServer => Action::AskLeaveServer(place),
         MenuChoice::JoinThread | MenuChoice::LeaveThread => Action::JoinThread {
             room: place,
@@ -655,7 +658,10 @@ pub fn group_of(choice: MenuChoice) -> u8 {
         | MenuChoice::CreateCategory
         | MenuChoice::EditChannel
         | MenuChoice::SetVoiceStatus
-        | MenuChoice::DuplicateChannel => 6,
+        | MenuChoice::DuplicateChannel
+        | MenuChoice::BulkDelete
+        | MenuChoice::NewFolder
+        | MenuChoice::EditFolder => 6,
         MenuChoice::EditGroup
         | MenuChoice::DeleteChannel
         | MenuChoice::LeaveServer
@@ -710,10 +716,12 @@ pub fn icon(choice: MenuChoice) -> Icon {
         C::CreateChannel => Icon::CirclePlus,
         C::CreateCategory => Icon::FolderPlus,
         C::DuplicateChannel => Icon::CopyPlus,
+        C::BulkDelete => Icon::Trash,
         C::DeleteChannel => Icon::Trash,
         C::JoinThread | C::CloseThread | C::OpenThread => Icon::Thread,
         C::LockThread | C::UnlockThread => Icon::Lock,
         C::SetVoiceStatus => Icon::Volume,
+        C::NewFolder | C::EditFolder => Icon::FolderPlus,
     }
 }
 
@@ -781,7 +789,10 @@ pub fn label(choice: MenuChoice) -> &'static str {
         MenuChoice::EditChannel => "Edit channel",
         MenuChoice::SetVoiceStatus => "Set voice status",
         MenuChoice::DuplicateChannel => "Duplicate channel",
+        MenuChoice::BulkDelete => "Delete messages",
         MenuChoice::DeleteChannel => "Delete channel",
+        MenuChoice::NewFolder => "Create folder",
+        MenuChoice::EditFolder => "Edit folder",
         MenuChoice::LeaveServer => "Leave server",
         MenuChoice::JoinThread => "Join thread",
         MenuChoice::LeaveThread => "Leave thread",

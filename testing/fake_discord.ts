@@ -1887,6 +1887,21 @@ function searchFilter(url: URL): (message: Message) => boolean {
 const indexed = new Set<string>();
 /** Each message search's query string, as GET /_control/searches lists them. */
 const searches: string[] = [];
+
+/** Each report Alice sent, as GET /_control/reports lists them. */
+const reports: any[] = [];
+
+/** Each bulk delete Alice sent, as GET /_control/bulk-deletes lists them. */
+const bulkDeletes: any[] = [];
+
+/** The messages Alice saved for later, oldest first. */
+const savedMessages: { channel: string; id: string }[] = [];
+
+/** Each mention Alice acknowledged, as GET /_control/acknowledged-mentions lists them. */
+const acknowledgedMentions: string[] = [];
+
+/** Each membership screening form Alice sent, as GET /_control/join-requests lists them. */
+const joinRequests: any[] = [];
 /** Discord's answer while it indexes what's searched: 202, with the
  *  Retry-After its client reads. */
 const stillIndexing = () =>
@@ -5796,6 +5811,45 @@ async function api(req: Request, path: string, origin: string): Promise<Response
   }
 
   // "Server"'s profile in Server Settings; see "Server Settings" above.
+  // Membership screening: the questions, and a new member's answers.
+  if (method === "GET" && (m = path.match(/^\/guilds\/(\d+)\/member-verification$/))) {
+    return json({
+      version: "1",
+      form_fields: [
+        {
+          field_type: "TERMS",
+          label: "Read and agree to the server rules",
+          description: null,
+          automations: null,
+          required: true,
+          values: ["Be kind.", "No spam."],
+        },
+        {
+          field_type: "TEXT_INPUT",
+          label: "Why did you join?",
+          description: null,
+          automations: null,
+          required: false,
+          placeholder: "Say hello",
+        },
+      ],
+    });
+  }
+  if (method === "PUT" && (m = path.match(/^\/guilds\/(\d+)\/requests\/@me$/))) {
+    const body: any = await req.json();
+    joinRequests.push({ guild: m[1], fields: body.form_fields ?? [] });
+    return json({
+      id: String(Date.now()),
+      join_request_id: String(Date.now()),
+      guild_id: m[1],
+      user_id: ALICE,
+      application_status: "APPROVED",
+      created_at: new Date().toISOString(),
+      form_responses: body.form_fields ?? [],
+      last_seen: new Date().toISOString(),
+    });
+  }
+
   if ((m = path.match(/^\/guilds\/(\d+)\/profile$/))) {
     if (m[1] === PRIVATE_GUILD && method === "GET") return json({ message: "Missing Access", code: 50001 }, 403);
     if (m[1] !== GUILD) return notFound("Unknown Guild", 10004);
@@ -6629,6 +6683,47 @@ async function api(req: Request, path: string, origin: string): Promise<Response
     return json(wireMessage(message, origin));
   }
 
+  // Reporting a message: Discord's reasons, and the report itself.
+  if (method === "GET" && path === "/report") {
+    const url = new URL(req.url);
+    const message = byId.get(url.searchParams.get("message_id") ?? "");
+    if (!message) return notFound("Unknown Message", 10008);
+    return json([
+      { reason: 1, label: "Harassment", description: "Insults, threats or unwanted attention." },
+      { reason: 2, label: "Spam or Phishing Links", description: "Unsolicited advertisements or malicious links." },
+      { reason: 3, label: "Hate Speech", description: "Attacks on people for who they are." },
+    ]);
+  }
+  if (method === "POST" && path === "/report") {
+    const body: any = await req.json();
+    const message = byId.get(String(body.message_id ?? ""));
+    if (!message) return notFound("Unknown Message", 10008);
+    reports.push({ channel_id: body.channel_id, message_id: body.message_id, reason: body.reason });
+    return json({ id: String(Date.now()) });
+  }
+
+  // Deleting messages at once, as a moderator does.
+  if (method === "POST" && (m = path.match(/^\/channels\/(\d+)\/messages\/bulk-delete$/))) {
+    const body: any = await req.json();
+    const ids: string[] = Array.isArray(body.messages) ? body.messages.map(String) : [];
+    const list = messages.get(m[1]!);
+    if (!list) return notFound("Unknown Channel", 10003);
+    const gone: string[] = [];
+    for (const id of ids) {
+      const message = byId.get(id);
+      if (!message || message.channel !== m[1]) continue;
+      const at = list.indexOf(message);
+      if (at >= 0) list.splice(at, 1);
+      byId.delete(id);
+      gone.push(id);
+    }
+    if (gone.length > 0) {
+      dispatch("MESSAGE_DELETE_BULK", { ids: gone, channel_id: m[1], ...guildOf(m[1]!) });
+    }
+    bulkDeletes.push({ channel_id: m[1], ids });
+    return empty();
+  }
+
   if ((m = path.match(/^\/channels\/(\d+)\/messages\/(\d+)$/))) {
     const message = byId.get(m[2]!);
     if (!message || message.channel !== m[1]) return notFound("Unknown Message", 10008);
@@ -7123,6 +7218,43 @@ async function api(req: Request, path: string, origin: string): Promise<Response
       entries: env ? [] : feedEntries(url.origin).map((content) => ({ content })),
     });
   }
+  if (method === "GET" && path === "/users/@me/mentions") {
+    const found: any[] = [];
+    for (const list of messages.values()) {
+      for (const message of list) {
+        if ((message.mentions ?? []).includes(ALICE) || message.mention_everyone) {
+          found.push(message);
+        }
+      }
+    }
+    found.sort((a, b) => Number(b.id) - Number(a.id));
+    return json(found.slice(0, 25).map((message) => wireMessage(message, origin)));
+  }
+  if (method === "DELETE" && (m = path.match(/^\/users\/@me\/mentions\/(\d+)$/))) {
+    acknowledgedMentions.push(m[1]!);
+    return empty();
+  }
+  if (method === "GET" && path === "/users/@me/saved-messages") {
+    const results = [...savedMessages].reverse().flatMap((saved) => {
+      const message = byId.get(saved.id);
+      if (!message || message.channel !== saved.channel) return [];
+      return [{ message: wireMessage(message, origin), save_data: { channel_id: saved.channel, message_id: saved.id, saved_at: new Date().toISOString() } }];
+    });
+    return json({ results });
+  }
+  if ((method === "PUT" || method === "DELETE") && (m = path.match(/^\/users\/@me\/saved-messages\/(\d+)\/(\d+)$/))) {
+    const channel = m[1]!;
+    const id = m[2]!;
+    const message = byId.get(id);
+    if (!message || message.channel !== channel) return notFound("Unknown Message", 10008);
+    const at = savedMessages.findIndex((saved) => saved.id === id);
+    if (method === "PUT" && at < 0) savedMessages.push({ channel, id });
+    if (method === "DELETE" && at >= 0) savedMessages.splice(at, 1);
+    return method === "PUT"
+      ? json({ message: wireMessage(message, origin), save_data: { channel_id: channel, message_id: id, saved_at: new Date().toISOString() } })
+      : empty();
+  }
+
   if (method === "GET" && path === "/users/@me/settings-proto/1") {
     settingsReads++;
     return json({ settings });
@@ -8970,6 +9102,11 @@ const server = Bun.serve<SocketData>({
       return Response.json(historyRequests);
     }
     if (path === "/_control/forwards") return Response.json(forwards);
+    if (path === "/_control/reports") return Response.json(reports);
+    if (path === "/_control/bulk-deletes") return Response.json(bulkDeletes);
+    if (path === "/_control/acknowledged-mentions") return Response.json(acknowledgedMentions);
+    if (path === "/_control/saved-messages") return Response.json(savedMessages);
+    if (path === "/_control/join-requests") return Response.json(joinRequests);
     if (req.method === "GET") {
       if (/^\/(icons|avatars|banners|embed\/avatars|guilds)\//.test(path)) mediaRequests.avatars++;
       if (/^\/(attachments|media\/attachments|external)\//.test(path)) mediaRequests.previews++;

@@ -892,7 +892,10 @@ impl Matrix {
             | Command::PlayVoiceMessage { .. }
             | Command::MoveVoiceMessage { .. }
             | Command::PauseVoiceMessage
-            | Command::TuneVoiceMessage(_) => {}
+            | Command::TuneVoiceMessage(_)
+            | Command::ReportReasons { .. }
+            | Command::ReportMessage { .. }
+            | Command::BulkDelete { .. } => {}
         }
         true
     }
@@ -1956,12 +1959,14 @@ async fn publish_timeline(
                             name: content.filename().into(),
                             size,
                             image: true,
+                            audio: false,
                             dimensions,
                             preview_failed: matches!(cached, Some(None)),
                             placement: Placement::Message,
                             gif: None,
                             url: None,
                             spoiler: false,
+                            sensitive: false,
                             video: false,
                             preview: cached.flatten(),
                             description: None,
@@ -1977,6 +1982,7 @@ async fn publish_timeline(
                                 .and_then(|info| info.size)
                                 .map(u64::from),
                             image: false,
+                            audio: false,
                             dimensions: None,
                             preview: None,
                             preview_failed: false,
@@ -1984,6 +1990,7 @@ async fn publish_timeline(
                             gif: None,
                             url: None,
                             spoiler: false,
+                            sensitive: false,
                             video: false,
                             description: None,
                         }];
@@ -1998,6 +2005,7 @@ async fn publish_timeline(
                                 .and_then(|info| info.size)
                                 .map(u64::from),
                             image: false,
+                            audio: false,
                             dimensions: None,
                             preview: None,
                             preview_failed: false,
@@ -2005,6 +2013,7 @@ async fn publish_timeline(
                             gif: None,
                             url: None,
                             spoiler: false,
+                            sensitive: false,
                             video: false,
                             description: None,
                         }];
@@ -2019,6 +2028,7 @@ async fn publish_timeline(
                                 .and_then(|info| info.size)
                                 .map(u64::from),
                             image: false,
+                            audio: false,
                             dimensions: None,
                             preview: None,
                             preview_failed: false,
@@ -2026,6 +2036,7 @@ async fn publish_timeline(
                             gif: None,
                             url: None,
                             spoiler: false,
+                            sensitive: false,
                             video: false,
                             description: None,
                         }];

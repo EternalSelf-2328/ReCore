@@ -153,6 +153,18 @@ pub(super) fn embed<'a>(
     if !embed.fields.is_empty() {
         card = card.push(fields);
     }
+    if let Some(code) = &embed.invite {
+        let link = format!("https://discord.gg/{code}");
+        card = card.push(
+            controls::action(
+                theme,
+                "Join Server",
+                controls::Kind::Primary,
+                Some(Message::Link(link, Point::ORIGIN)),
+            )
+            .small(),
+        );
+    }
     let thumbnail = message
         .attachments
         .iter()
@@ -205,7 +217,8 @@ pub(super) fn embed<'a>(
             Shot::new(attachment.preview.as_ref(), size)
                 .fit(Fit::Contain)
                 .radius(PICTURE_RADIUS)
-                .covered(crate::message::attachments::covered(ctx, message, at)),
+                .covered(crate::message::attachments::hidden(ctx, message, at))
+                .sensitive(attachment.sensitive),
         );
         beside = beside.push(crate::message::attachments::pressed(
             ctx, index, message, at, shot,

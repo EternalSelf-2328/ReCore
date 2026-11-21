@@ -246,3 +246,142 @@ fn only_ban_members_revokes_a_ban() {
     assert!(bans(&app).open_ban().is_some());
     assert!(app.dispatch(Action::Bans(BanInput::Unban)).is_empty());
 }
+
+#[test]
+fn reporting_a_message_asks_discord_for_reasons_and_sends_the_chosen_one() {
+    let mut app = discord_server();
+    let room = "discord:10:11";
+    let mut target = message("d:1", false);
+    target.can_delete = false;
+    app.state.selected = Some(room.into());
+    app.apply(Event::Timeline {
+        room: room.into(),
+        messages: timeline(vec![target]),
+    });
+    let asked = app.dispatch(Action::ReportMessage("d:1".into()));
+    assert!(matches!(
+        asked.as_slice(),
+        [Effect::Backend(Command::ReportReasons { room: asked, item })]
+            if asked == room && item == "d:1"
+    ));
+    assert!(
+        app.state
+            .report
+            .as_ref()
+            .is_some_and(|report| report.item == "d:1")
+    );
+    app.apply(Event::ReportReasons {
+        item: "d:1".into(),
+        result: Ok(vec![crate::chat::ReportReason {
+            reason: 2,
+            label: "Spam".into(),
+            description: "Unsolicited.".into(),
+        }]),
+    });
+    assert_eq!(app.state.report.as_ref().unwrap().selected, Some(2));
+    assert!(matches!(
+        app.dispatch(Action::SendReport).as_slice(),
+        [Effect::Backend(Command::ReportMessage { reason: 2, .. })]
+    ));
+    app.apply(Event::MessageReported {
+        item: "d:1".into(),
+        result: Ok(()),
+    });
+    assert!(app.state.report.is_none(), "sent, so the dialog closes");
+}
+
+#[test]
+fn reporting_this_accounts_own_message_does_nothing() {
+    let mut app = discord_server();
+    app.state.selected = Some("discord:10:11".into());
+    app.apply(Event::Timeline {
+        room: "discord:10:11".into(),
+        messages: timeline(vec![message("d:1", true)]),
+    });
+    assert!(app.dispatch(Action::ReportMessage("d:1".into())).is_empty());
+    assert!(app.state.report.is_none());
+}
+
+#[test]
+fn bulk_delete_offers_recent_messages_and_deletes_those_chosen() {
+    let mut app = discord_server();
+    let room = "discord:10:11";
+    app.state.selected = Some(room.into());
+    let mut first = message("d:1", true);
+    first.timestamp = crate::clock::now_ms() / 1000;
+    let mut second = message("d:2", true);
+    second.timestamp = crate::clock::now_ms() / 1000;
+    let mut old = message("d:3", true);
+    old.timestamp = 1;
+    app.apply(Event::Timeline {
+        room: room.into(),
+        messages: timeline(vec![first, second, old]),
+    });
+    assert!(app.dispatch(Action::OpenBulkDelete).is_empty());
+    let bulk = app.state.bulk_delete.as_ref().unwrap();
+    assert_eq!(bulk.items, ["d:1", "d:2"], "too old goes");
+    app.dispatch(Action::ToggleBulkDelete("d:2".into()));
+    assert_eq!(app.state.bulk_delete.as_ref().unwrap().chosen, ["d:2"]);
+    assert!(matches!(
+        app.dispatch(Action::ConfirmBulkDelete).as_slice(),
+        [Effect::Backend(Command::BulkDelete { items, .. })] if items == &["d:2".to_owned()]
+    ));
+    app.apply(Event::BulkDeleted {
+        room: room.into(),
+        items: vec!["d:2".into()],
+        result: Ok(()),
+    });
+    assert!(app.state.bulk_delete.is_none());
+}
+
+#[test]
+fn the_inbox_lists_mentions_and_saved_messages_and_saves_from_the_menu() {
+    let mut app = discord_server();
+    let row = |item: &str| crate::chat::InboxMessage {
+        room: "discord:10:11".into(),
+        item: item.into(),
+        author: "Bob".into(),
+        avatar: None,
+        channel: "general".into(),
+        body: "Look".into(),
+        timestamp: 1,
+    };
+    app.apply(Event::RecentMentions(Ok(vec![row("d:1")])));
+    app.apply(Event::SavedMessages(Ok(vec![row("d:2")])));
+    assert_eq!(app.state.recent_mentions.as_ref().unwrap()[0].item, "d:1");
+    assert!(app.state.saved_items.contains("d:2"));
+
+    app.state.selected = Some("discord:10:11".into());
+    app.apply(Event::Timeline {
+        room: "discord:10:11".into(),
+        messages: timeline(vec![message("d:3", false)]),
+    });
+    assert!(matches!(
+        app.dispatch(Action::ToggleSaved("d:3".into())).as_slice(),
+        [Effect::Backend(Command::Discord(
+            DiscordCommand::SaveMessage { save: true, .. }
+        ))]
+    ));
+    assert!(app.state.saved_items.contains("d:3"));
+    app.apply(Event::SavedChanged {
+        item: "d:3".into(),
+        save: true,
+        result: Err("no".into()),
+    });
+    assert!(
+        !app.state.saved_items.contains("d:3"),
+        "a refusal puts the menu back"
+    );
+    app.apply(Event::SavedChanged {
+        item: "d:2".into(),
+        save: false,
+        result: Ok(()),
+    });
+    assert!(
+        app.state.saved_messages.as_ref().unwrap().is_empty(),
+        "unsaved leaves For Later"
+    );
+    app.apply(Event::RecentMentions(Ok(vec![])));
+    app.dispatch(Action::DismissMention("d:1".into()));
+    assert!(app.state.recent_mentions.as_ref().unwrap().is_empty());
+}

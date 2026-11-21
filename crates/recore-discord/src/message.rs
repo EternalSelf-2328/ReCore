@@ -112,6 +112,18 @@ pub(crate) const IS_SPOILER: u64 = 1 << 3;
 /// The flag of an attachment, or an embed's picture, that moves.
 const IS_ANIMATED: u64 = 1 << 5;
 
+/// Whether a file's name is one ReCore plays as sound: an attached sound
+/// without a content type, such as a bot's.
+pub(crate) fn sound_file(name: &str) -> bool {
+    let extension = name
+        .rsplit_once('.')
+        .map(|(_, extension)| extension.to_ascii_lowercase());
+    matches!(
+        extension.as_deref(),
+        Some("mp3" | "ogg" | "oga" | "opus" | "wav" | "flac" | "m4a" | "aac" | "webm")
+    )
+}
+
 /// Whether an attachment or an embed's picture moves: Discord marks it
 /// animated, or it's a GIF.
 pub(crate) fn animated(media: &Value) -> bool {
@@ -480,6 +492,9 @@ pub struct Attachment {
     pub size: Option<u64>,
     pub url: Arc<str>,
     pub image: bool,
+    /// It's a sound file, which plays in place of a file card.
+    #[serde(default)]
+    pub audio: bool,
     /// The image's width and height.
     pub dimensions: Option<(u32, u32)>,
     /// The image scaled down by Discord's media proxy, for previews.
@@ -505,6 +520,10 @@ pub struct Attachment {
     pub shown: Shown,
     /// Marked as a spoiler: by a name starting `SPOILER_`, or by its flags.
     pub spoiler: bool,
+    /// Discord flagged its picture as sensitive content: covered until
+    /// clicked, as a spoiler is.
+    #[serde(default)]
+    pub sensitive: bool,
     /// Its alt text, which a screen reader reads in place of the picture.
     #[serde(default)]
     pub description: Option<String>,
@@ -921,10 +940,12 @@ pub fn parse(value: &Value) -> Option<Message> {
             let video = kind.starts_with("video/");
             let url: Arc<str> = attachment["url"].as_str()?.into();
             let name = attachment["filename"].as_str()?;
+            let audio = kind.starts_with("audio/") || (kind.is_empty() && sound_file(name));
             Some(Attachment {
                 name: name.into(),
                 size: attachment["size"].as_u64(),
                 image,
+                audio,
                 dimensions: (image || video)
                     .then(|| {
                         let side = |name: &str| u32::try_from(attachment[name].as_u64()?).ok();
@@ -945,6 +966,7 @@ pub fn parse(value: &Value) -> Option<Message> {
                 shown: Shown::Message,
                 spoiler: name.starts_with("SPOILER_")
                     || attachment["flags"].as_u64().unwrap_or_default() & IS_SPOILER != 0,
+                sensitive: false,
                 description: alt_text(&attachment["description"]),
             })
         })
@@ -1003,6 +1025,7 @@ pub fn parse(value: &Value) -> Option<Message> {
             size: None,
             url: url.as_str().into(),
             image: true,
+            audio: false,
             dimensions: Some((STICKER_SIZE, STICKER_SIZE)),
             preview_url: Some(url.clone()),
             view_url: Some(url),
@@ -1012,6 +1035,7 @@ pub fn parse(value: &Value) -> Option<Message> {
             animated: false,
             shown: Shown::Sticker,
             spoiler: false,
+            sensitive: false,
             description: None,
         });
     }

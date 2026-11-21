@@ -1296,3 +1296,29 @@ async fn gives_up_the_server_as_discords_client_does() {
     post_control(server, "/_control/guild-reset", "");
     snapshot_where(discord, owner(bob)).await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "starts testing/fake_discord.ts with bun; run scripts/test-fake-discord"]
+async fn reads_and_sends_a_membership_screening_form() {
+    let Fixture {
+        _fake,
+        discord,
+        server,
+        guild,
+        ..
+    } = Fixture::start("membership_form").await;
+    let form = discord.member_verification(&guild).await.unwrap();
+    let fields = form["form_fields"].as_array().unwrap();
+    assert_eq!(fields[0]["field_type"], "TERMS");
+    assert_eq!(fields[1]["field_type"], "TEXT_INPUT");
+    let answers = serde_json::json!([
+        {"field_type": "TERMS", "label": fields[0]["label"], "required": true,
+         "values": fields[0]["values"], "response": true},
+    ]);
+    let request = discord.submit_join_request(&guild, &answers).await.unwrap();
+    assert_eq!(request["application_status"], "APPROVED");
+    let sent: serde_json::Value =
+        serde_json::from_str(&control(server, "GET", "/_control/join-requests", "")).unwrap();
+    assert_eq!(sent[0]["guild"], guild);
+    assert_eq!(sent[0]["fields"], answers);
+}

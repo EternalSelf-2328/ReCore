@@ -90,11 +90,12 @@ fn cells<'a>(
     let pointed = own && ctx.pointed.message.as_deref() == Some(message.item.as_str());
     for &(at, cell) in &gallery.cells {
         let attachment = &message.attachments[at];
-        let covered = covered(ctx, message, at);
+        let covered = hidden(ctx, message, at);
         let shot = ctx.shot(
             Shot::new(attachment.preview.as_ref(), cell.size())
                 .radius(CELL_RADIUS)
-                .covered(covered),
+                .covered(covered)
+                .sensitive(covered && attachment.sensitive),
         );
         let mut shot: Element<'a, Message> = if covered {
             pressed(ctx, index, message, at, shot)
@@ -216,9 +217,10 @@ fn favorite_star<'a>(
         .into()
 }
 
-/// Whether a message's attachment `at` is a spoiler not yet uncovered.
-pub fn covered(ctx: crate::ctx::Ctx<'_>, message: &ChatMessage, at: usize) -> bool {
-    message.attachments[at].spoiler
+/// Whether a message's attachment `at` is covered until clicked: a spoiler,
+/// or sensitive content.
+pub fn hidden(ctx: crate::ctx::Ctx<'_>, message: &ChatMessage, at: usize) -> bool {
+    (message.attachments[at].spoiler || message.attachments[at].sensitive)
         && !ctx
             .lanes
             .timeline
@@ -236,7 +238,7 @@ pub fn pressed<'a>(
     at: usize,
     shot: Element<'a, Message>,
 ) -> Element<'a, Message> {
-    if covered(ctx, message, at) {
+    if hidden(ctx, message, at) {
         mouse_area(shot)
             .on_press(Message::Timeline(crate::timeline::Event::Reveal(
                 ctx.row_item(index),

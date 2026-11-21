@@ -1670,6 +1670,7 @@ impl OpenChannel {
                         name: file.name.clone(),
                         size: Some(file.size),
                         image: false,
+                        audio: false,
                         dimensions: None,
                         preview: None,
                         preview_failed: false,
@@ -1677,6 +1678,7 @@ impl OpenChannel {
                         gif: None,
                         url: None,
                         spoiler: file.spoiler,
+                        sensitive: false,
                         video: false,
                         description: None,
                     })
@@ -1762,6 +1764,7 @@ impl OpenChannel {
                     name: attachment.name.clone(),
                     size: attachment.size,
                     image: attachment.image && attachment.preview_url.is_some(),
+                    audio: attachment.audio,
                     dimensions: attachment.dimensions,
                     preview_failed: matches!(preview, Some(None)),
                     preview: preview.flatten(),
@@ -1775,6 +1778,7 @@ impl OpenChannel {
                         Shown::Component(slot) => Placement::Component(slot),
                     },
                     spoiler: attachment.spoiler,
+                    sensitive: attachment.sensitive,
                     video: attachment.video_url.is_some(),
                     gif: super::gifs::favorite_gif(attachment),
                     url: Some(

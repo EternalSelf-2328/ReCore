@@ -173,6 +173,10 @@ pub enum MenuAct {
     MarkUnread,
     CopyLink,
     CopyId,
+    /// Report a message to Discord.
+    Report,
+    /// Save a message for later, or take it out.
+    Save,
     Delete,
     /// Delete without asking, as Shift and the hover bar's Delete do.
     DeleteNow,
@@ -425,6 +429,16 @@ pub fn open_menu(app: &mut App, index: usize, at: Point) -> Task<Message> {
     if !message.body.is_empty() {
         rows.push(row(MenuAct::CopyText, "Copy text", Icon::Copy));
         rows.push(row(MenuAct::Translate, "Translate", Icon::Translate));
+    }
+    if !message.own && sent && message.notice.is_none() && message.item.starts_with("d:") {
+        rows.push(row(MenuAct::Report, "Report Message", Icon::Shield));
+    }
+    if sent && message.item.starts_with("d:") {
+        rows.push(if state.saved_items.contains(&message.item) {
+            row(MenuAct::Save, "Remove from Saved", Icon::StarFilled)
+        } else {
+            row(MenuAct::Save, "Save for Later", Icon::Star)
+        });
     }
     if crate::timeline::selection::copied_selection(app).is_some() {
         rows.push(row(
@@ -786,6 +800,14 @@ pub fn act(
             Some(copied) => Task::batch([iced::clipboard::write(copied), focus]),
             None => focus,
         },
+        MenuAct::Report => {
+            app.client.dispatch(Action::ReportMessage(item));
+            Task::batch([app.sync(), operation::focus(NOBODY)])
+        }
+        MenuAct::Save => {
+            app.client.dispatch(Action::ToggleSaved(item));
+            Task::batch([app.sync(), focus])
+        }
         MenuAct::Delete => {
             app.client.dispatch(Action::RequestDelete(item));
             app.confirm_focus = true;

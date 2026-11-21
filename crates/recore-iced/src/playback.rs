@@ -10,17 +10,17 @@
 
 use iced::{
     Alignment, Background, Color, Element, Length, Padding, Size, Task, gradient,
-    widget::{Space, button, container, mouse_area, row, stack, text},
+    widget::{Space, button, column, container, mouse_area, row, stack, text},
 };
 use recore_core::{
     application::Action,
-    chat::{ChatMessage, VideoCommand, VoiceMessage},
+    chat::{Attachment, ChatMessage, VideoCommand, VoiceMessage},
 };
 
 use crate::{
     app::{App, Message},
     controls::lights,
-    fonts::BOLD,
+    fonts::{BOLD, MEDIUM},
     pictures::Icon,
     style::{faded, rounded},
     video::Video,
@@ -30,6 +30,8 @@ use crate::{
 /// The pill's height, the button across, its waveform's bars.
 const PILL: f32 = 52.0;
 const BUTTON: f32 = 36.0;
+/// A sound file's card: as tall as a voice message's pill, as wide.
+const AUDIO_CARD: f32 = 420.0;
 const BARS: usize = 32;
 const BAR: f32 = 3.0;
 const BAR_PITCH: f32 = 6.0;
@@ -579,6 +581,114 @@ pub fn voice_card<'a>(
     )
     .padding(Padding::ZERO.top(4))
     .into()
+}
+
+/// A sound file's card: a round play button, its name, and how far it has
+/// played, over a thin bar. The core plays it, as it does a voice message's
+/// recording, and says where it is; nothing here keeps time.
+pub fn audio_card<'a>(
+    ctx: crate::ctx::Ctx<'a>,
+    message: &'a ChatMessage,
+    attachment: &'a Attachment,
+) -> Element<'a, Message> {
+    let theme = ctx.look.theme;
+    let state = ctx.state;
+    let item = &message.item;
+    let playback = state
+        .voice_message
+        .as_ref()
+        .filter(|playback| playback.item == *item);
+    let playing = playback.is_some_and(|playback| playback.playing);
+    let enabled = !state.preview && message.delivery == recore_core::chat::Delivery::default();
+    let accent = theme.accent;
+    let light = crate::theme::mix(Color::WHITE, accent, 0.2);
+    let face = container(ctx.look.glyph(
+        if playing { Icon::Pause } else { Icon::Play },
+        17,
+        Color::WHITE,
+    ))
+    .center(BUTTON);
+    let play = button(face)
+        .padding(0)
+        .width(BUTTON)
+        .height(BUTTON)
+        .on_press_maybe(enabled.then(|| Message::Voice(Event::Toggle(item.clone()))))
+        .style(move |_, status| {
+            let opacity = match (enabled, lights(status)) {
+                (false, _) => 0.5,
+                (true, true) => 0.9,
+                (true, false) => 1.0,
+            };
+            button::Style {
+                background: Some(Background::Gradient(
+                    gradient::Linear::new(std::f32::consts::FRAC_PI_4 * 3.0)
+                        .add_stop(0.0, faded(light, opacity))
+                        .add_stop(1.0, faded(accent, opacity))
+                        .into(),
+                )),
+                border: crate::style::round(BUTTON / 2.0),
+                text_color: Color::WHITE,
+                ..button::Style::default()
+            }
+        });
+    let error = playback.and_then(|playback| playback.error.as_deref());
+    let duration = playback.and_then(|playback| playback.duration_ms);
+    let at = playback.map_or(0, |playback| playback.position_ms);
+    let progress = match duration {
+        Some(duration) if duration > 0 => (at as f32 / duration as f32).min(1.0),
+        _ => 0.0,
+    };
+    let detail = match (error, duration) {
+        (Some(error), _) => error.to_owned(),
+        (None, Some(duration)) => format!("{} / {}", voice_time(at), voice_time(duration)),
+        (None, None) if playback.is_some_and(|playback| playback.loading) => {
+            "Loading...".to_owned()
+        }
+        (None, None) => "Sound".to_owned(),
+    };
+    let words = column![
+        text(attachment.name.as_str())
+            .size(14)
+            .font(MEDIUM())
+            .color(theme.text)
+            .wrapping(text::Wrapping::None)
+            .width(Length::Fill),
+        text(detail).size(12).color(if error.is_some() {
+            theme.danger
+        } else {
+            theme.muted
+        }),
+    ]
+    .spacing(2)
+    .width(Length::Fill)
+    .clip(true);
+    let bar = row![
+        container(Space::new().height(3))
+            .width(Length::FillPortion(
+                ((progress * 1000.0).round() as u16).max(1)
+            ))
+            .style(move |_| rounded(accent, 1.5)),
+        Space::new().width(Length::FillPortion(
+            ((1000.0 - progress * 1000.0).round() as u16).max(1)
+        )),
+    ];
+    let body = column![
+        row![play, words].spacing(12).align_y(Alignment::Center),
+        bar
+    ]
+    .spacing(8)
+    .width(Length::Fill);
+    let ground = theme.sidebar;
+    let card = container(body)
+        .padding(Padding {
+            top: 8.0,
+            right: 14.0,
+            bottom: 8.0,
+            left: 8.0,
+        })
+        .max_width(AUDIO_CARD)
+        .style(move |_| rounded(ground, 8.0));
+    container(card).padding(Padding::ZERO.top(4)).into()
 }
 
 /// A voice message's volume, a popup over its mute: an upright slider

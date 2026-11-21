@@ -148,6 +148,17 @@ pub const MAX_FILES: usize = 10;
 /// The most channels one bulk read acknowledgement carries.
 pub const ACK_BULK_LIMIT: usize = 100;
 
+/// The most messages one bulk delete carries.
+pub const BULK_DELETE_LIMIT: usize = 100;
+
+/// A reason Discord's report dialog offers for a message.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReportReason {
+    pub reason: i64,
+    pub label: String,
+    pub description: String,
+}
+
 const MIB: u64 = 1024 * 1024;
 
 /// The largest file this account may send, in bytes: by its Nitro, as
@@ -855,6 +866,51 @@ impl Api {
             .await
     }
 
+    /// The reasons Discord offers for reporting `message` in `channel`, as
+    /// its report dialog lists them.
+    pub async fn report_reasons(&self, channel: &str, message: &str) -> Result<Vec<ReportReason>> {
+        let path = format!("/report?channel_id={channel}&message_id={message}");
+        let answer = self.json(self.request(Method::GET, &path)).await?;
+        Ok(answer
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|reason| {
+                Some(ReportReason {
+                    reason: i64::try_from(reason["reason"].as_u64()?).ok()?,
+                    label: reason["label"].as_str()?.to_owned(),
+                    description: reason["description"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_owned(),
+                })
+            })
+            .collect())
+    }
+
+    /// Reports `message` in `channel` for `reason`, one of
+    /// [`Api::report_reasons`]'s. The report is anonymous to its author.
+    pub async fn report_message(&self, channel: &str, message: &str, reason: i64) -> Result<()> {
+        let body = json!({
+            "channel_id": channel,
+            "message_id": message,
+            "reason": reason,
+        });
+        self.json(with_json(self.request(Method::POST, "/report"), &body))
+            .await
+            .map(drop)
+    }
+
+    /// Deletes `messages` in `channel` at once, at most
+    /// [`BULK_DELETE_LIMIT`] and none older than two weeks, as Discord
+    /// requires.
+    pub async fn bulk_delete(&self, channel: &str, messages: &[String]) -> Result<()> {
+        let body = json!({"messages": messages});
+        let path = format!("/channels/{channel}/messages/bulk-delete");
+        self.empty(with_json(self.request(Method::POST, &path), &body))
+            .await
+    }
+
     /// Deletes a message. One Discord no longer has is as good as deleted:
     /// another client, or a moderator, got there first.
     pub async fn delete(&self, channel: &str, message: &str) -> Result<()> {
@@ -1344,6 +1400,47 @@ impl Api {
         ))
         .await
         .map(drop)
+    }
+
+    /// The membership screening form of `guild`, as its new members fill it
+    /// in.
+    pub async fn member_verification(&self, guild: &str) -> Result<Value> {
+        let path = format!("/guilds/{guild}/member-verification");
+        self.json(self.request(Method::GET, &path)).await
+    }
+
+    /// Sends a new member's answers to `guild`'s membership screening form.
+    pub async fn submit_join_request(&self, guild: &str, fields: &Value) -> Result<Value> {
+        let path = format!("/guilds/{guild}/requests/@me");
+        let body = json!({"form_fields": fields});
+        self.json(with_json(self.request(Method::PUT, &path), &body))
+            .await
+    }
+
+    /// The messages that mentioned this account in the last seven days, at
+    /// most `limit`.
+    pub async fn recent_mentions(&self, limit: u32) -> Result<Value> {
+        let path = format!("/users/@me/mentions?limit={limit}&roles=true&everyone=true");
+        self.json(self.request(Method::GET, &path)).await
+    }
+
+    /// Acknowledges a mention, which takes it out of the inbox.
+    pub async fn delete_mention(&self, message: &str) -> Result<()> {
+        let path = format!("/users/@me/mentions/{message}");
+        self.empty(self.request(Method::DELETE, &path)).await
+    }
+
+    /// The messages this account saved for later.
+    pub async fn saved_messages(&self) -> Result<Value> {
+        self.json(self.request(Method::GET, "/users/@me/saved-messages"))
+            .await
+    }
+
+    /// Saves a message for later, or with `save` false takes it out.
+    pub async fn save_message(&self, channel: &str, message: &str, save: bool) -> Result<()> {
+        let path = format!("/users/@me/saved-messages/{channel}/{message}");
+        let method = if save { Method::PUT } else { Method::DELETE };
+        self.empty(self.request(method, &path)).await
     }
 
     /// The services linked to this account, as READY's `connected_accounts`.

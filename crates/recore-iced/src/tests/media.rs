@@ -27,12 +27,14 @@ fn viewing(app: &mut crate::app::App) {
                 name: "a.png".into(),
                 size: None,
                 image: true,
+                audio: false,
                 dimensions: Some((40, 30)),
                 preview: Some(picture),
                 preview_failed: false,
                 placement: Placement::Message,
                 gif: None,
                 spoiler: false,
+                sensitive: false,
                 video: false,
                 url: None,
                 description: None,
@@ -102,12 +104,14 @@ fn picture_at(name: &str, side: u32, placement: Placement, spoiler: bool) -> Att
         name: name.into(),
         size: None,
         image: true,
+        audio: false,
         dimensions: Some((side, side)),
         preview: None,
         preview_failed: false,
         placement,
         gif: None,
         spoiler,
+        sensitive: false,
         video: false,
         url: Some(format!("https://example.com/{name}").into()),
         description: None,
@@ -235,6 +239,7 @@ fn a_video_links_poster_opens_the_videos_page() {
                 title: "A video".into(),
                 url: page.into(),
                 video: true,
+                invite: None,
                 ..Default::default()
             }],
             attachments: vec![poster],
@@ -536,4 +541,24 @@ fn a_store_button_on_a_bots_message_without_its_app_opens_the_bots_store() {
         )),
         "the bot's store"
     );
+}
+
+#[test]
+fn sensitive_media_is_covered_until_clicked() {
+    let (mut app, _folder) = preview();
+    let mut picture = picture_at("sensitive.png", 200, Placement::Message, false);
+    picture.sensitive = true;
+    only(
+        &mut app,
+        ChatMessage {
+            item: "i0".into(),
+            author: "Sam".into(),
+            attachments: vec![picture],
+            ..Default::default()
+        },
+    );
+    let at = bounds_of(&app, "SENSITIVE CONTENT").center();
+    let uncovered = clicked(&app, at, iced::mouse::Button::Left);
+    apply(&mut app, uncovered);
+    assert!(!shows(&app, "SENSITIVE CONTENT"), "uncovered");
 }

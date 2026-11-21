@@ -92,6 +92,131 @@ impl Application {
         vec![Effect::Backend(Command::Crosspost { room, item })]
     }
 
+    /// Opens the report dialog for a message this account didn't send, and
+    /// asks Discord for the reasons it offers.
+    pub(super) fn report_message(&mut self, item: String) -> Vec<Effect> {
+        let Some(message) = self.state.message(&item) else {
+            return vec![];
+        };
+        if self.state.preview
+            || message.own
+            || message.deleted
+            || message.delivery != chat::Delivery::default()
+        {
+            return vec![];
+        }
+        let Some(room) = self.state.room_of(&item).cloned() else {
+            return vec![];
+        };
+        if Network::of(&room) != Network::Discord {
+            return vec![];
+        }
+        self.state.report = Some(super::ReportDialog {
+            item: item.clone(),
+            ..Default::default()
+        });
+        vec![Effect::Backend(Command::ReportReasons { room, item })]
+    }
+
+    pub(super) fn choose_report_reason(&mut self, reason: i64) -> Vec<Effect> {
+        if let Some(report) = &mut self.state.report
+            && report
+                .reasons
+                .as_ref()
+                .is_some_and(|reasons| reasons.iter().any(|one| one.reason == reason))
+        {
+            report.selected = Some(reason);
+            report.error = None;
+        }
+        vec![]
+    }
+
+    pub(super) fn send_report(&mut self) -> Vec<Effect> {
+        let Some((item, reason)) = self.state.report.as_ref().and_then(|report| {
+            let reason = report.selected.filter(|_| !report.sending)?;
+            Some((report.item.clone(), reason))
+        }) else {
+            return vec![];
+        };
+        let Some(room) = self.state.room_of(&item).cloned() else {
+            return vec![];
+        };
+        if let Some(report) = &mut self.state.report {
+            report.sending = true;
+            report.error = None;
+        }
+        vec![Effect::Backend(Command::ReportMessage {
+            room,
+            item,
+            reason,
+        })]
+    }
+
+    /// Opens the bulk delete dialog on the selected Discord channel, with
+    /// the messages it may delete that Discord takes: this account can
+    /// delete them, and they're younger than two weeks.
+    pub(super) fn open_bulk_delete(&mut self) -> Vec<Effect> {
+        let Some(room) = self.state.selected.clone() else {
+            return vec![];
+        };
+        if self.state.preview || Network::of(&room) != Network::Discord {
+            return vec![];
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs());
+        let recent = now.saturating_sub(14 * 24 * 60 * 60);
+        let items: Vec<String> = self
+            .state
+            .messages
+            .iter()
+            .filter(|message| {
+                message.can_delete
+                    && !message.deleted
+                    && message.delivery == chat::Delivery::default()
+                    && message.timestamp >= recent
+                    && message.notice.is_none()
+            })
+            .map(|message| message.item.clone())
+            .take(100)
+            .collect();
+        self.state.bulk_delete = Some(super::BulkDelete {
+            room,
+            items,
+            ..Default::default()
+        });
+        vec![]
+    }
+
+    pub(super) fn toggle_bulk_delete(&mut self, item: String) -> Vec<Effect> {
+        if let Some(bulk) = &mut self.state.bulk_delete
+            && bulk.items.contains(&item)
+        {
+            match bulk.chosen.iter().position(|chosen| *chosen == item) {
+                Some(at) => {
+                    bulk.chosen.remove(at);
+                }
+                None => bulk.chosen.push(item),
+            }
+            bulk.error = None;
+        }
+        vec![]
+    }
+
+    pub(super) fn confirm_bulk_delete(&mut self) -> Vec<Effect> {
+        let Some(bulk) = &mut self.state.bulk_delete else {
+            return vec![];
+        };
+        if bulk.sending || bulk.chosen.is_empty() {
+            return vec![];
+        }
+        let items = bulk.chosen.clone();
+        let room = bulk.room.clone();
+        bulk.sending = true;
+        bulk.error = None;
+        vec![Effect::Backend(Command::BulkDelete { room, items })]
+    }
+
     pub(super) fn delete_now(&mut self, item: String) -> Vec<Effect> {
         if !self
             .state
@@ -382,11 +507,8 @@ impl Application {
     /// plays. The button changes at once; the backend's
     /// [`Event::VoiceMessage`] follows.
     pub(super) fn toggle_voice_message(&mut self, item: String) -> Vec<Effect> {
-        let voice = self
-            .state
-            .message(&item)
-            .is_some_and(|message| message.voice.is_some());
-        let Some(room) = self.state.room_of(&item).cloned().filter(|_| voice) else {
+        let plays = self.state.message(&item).is_some_and(plays_sound);
+        let Some(room) = self.state.room_of(&item).cloned().filter(|_| plays) else {
             return vec![];
         };
         let playback = &mut self.state.voice_message;
@@ -407,6 +529,7 @@ impl Application {
             item: item.clone(),
             loading: paused.is_none(),
             playing: true,
+            duration_ms: None,
             position_ms: paused.unwrap_or(0),
             error: None,
         });
@@ -424,12 +547,24 @@ impl Application {
     /// in Discord. Its waveform and time follow at once; the backend's
     /// [`Event::VoiceMessage`] follows.
     pub(super) fn move_voice_message(&mut self, item: String, fraction: f32) -> Vec<Effect> {
-        let Some(duration) = self
+        let duration = self
             .state
             .message(&item)
-            .and_then(|message| message.voice.as_ref())
-            .map(|voice| voice.duration_ms)
-        else {
+            .filter(|message| plays_sound(message))
+            .and_then(|message| {
+                message
+                    .voice
+                    .as_ref()
+                    .map(|voice| voice.duration_ms)
+                    .or_else(|| {
+                        self.state
+                            .voice_message
+                            .as_ref()
+                            .filter(|playback| playback.item == item)
+                            .and_then(|playback| playback.duration_ms)
+                    })
+            });
+        let Some(duration) = duration else {
             return vec![];
         };
         let Some(room) = self.state.room_of(&item).cloned() else {
@@ -448,6 +583,7 @@ impl Application {
                     item: item.clone(),
                     loading: true,
                     playing: false,
+                    duration_ms: None,
                     position_ms: at_ms,
                     error: None,
                 });
@@ -1054,4 +1190,14 @@ impl Application {
         }
         vec![]
     }
+}
+
+/// Whether a message's sound plays in place: a Discord voice message, or an
+/// audio file attached to it with nothing else before it.
+fn plays_sound(message: &ChatMessage) -> bool {
+    message.voice.is_some()
+        || message
+            .attachments
+            .first()
+            .is_some_and(|attachment| attachment.audio && !attachment.image && !attachment.video)
 }

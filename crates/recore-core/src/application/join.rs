@@ -6,6 +6,17 @@
 use super::*;
 use crate::chat::{InvitePreview, JoinedServer};
 
+/// What a membership screening question was answered with.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VerificationAnswer {
+    /// Agree or disagree with the terms at this field.
+    Terms(usize),
+    /// Type this into the text question at this field.
+    Text(usize, String),
+    /// Choose this option of the question at this field.
+    Choice(usize, u64),
+}
+
 /// The Join a Server dialog, while it's open.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct JoinDialog {
@@ -21,9 +32,8 @@ pub struct JoinDialog {
     pub joining: bool,
     /// The page with the captcha Discord asked for before joining.
     pub captcha: Option<String>,
-    /// The server, joined, asks new members to fill in its form first,
-    /// which ReCore leaves to Discord's web app at this address.
-    pub form: Option<String>,
+    /// The server, joined, asks new members to fill in its form first.
+    pub verification: Option<crate::chat::VerificationForm>,
     pub error: Option<String>,
 }
 
@@ -120,7 +130,7 @@ impl Application {
             .state
             .join
             .as_mut()
-            .filter(|join| !join.joining && join.form.is_none())
+            .filter(|join| !join.joining && join.verification.is_none())
         else {
             return vec![];
         };
@@ -193,30 +203,121 @@ impl Application {
         };
         if joined.form {
             // The server lists once Discord sends it, and the dialog stays
-            // to send the form to the web app.
-            join.form = Some(match discord::parse_room(&joined.room) {
-                Some((guild, channel)) => {
-                    format!("https://discord.com/channels/{guild}/{channel}")
-                }
-                None => "https://discord.com/app".into(),
+            // to ask for its membership screening form.
+            let room = joined.room;
+            join.verification = Some(crate::chat::VerificationForm {
+                room: room.clone(),
+                loading: true,
+                ..Default::default()
             });
-            self.pending_open = Some(joined.room);
-            return vec![];
+            self.pending_open = Some(room.clone());
+            return vec![Effect::Backend(Command::Discord(
+                DiscordCommand::MemberVerification { room },
+            ))];
         }
         self.open_joined(&joined.server, joined.room)
     }
 
-    /// Opens the server's form in Discord's web app, and closes the dialog.
-    pub(super) fn open_join_form(&mut self) -> Vec<Effect> {
-        match self.state.join.take().and_then(|join| join.form) {
-            Some(page) => vec![Effect::OpenPage(page)],
-            None => vec![],
+    /// The membership screening form arrived, or why it didn't.
+    pub(super) fn member_verification(
+        &mut self,
+        room: String,
+        result: Result<crate::chat::VerificationForm, String>,
+    ) -> Vec<Effect> {
+        let Some(join) = &mut self.state.join else {
+            return vec![];
+        };
+        let Some(form) = &mut join.verification else {
+            return vec![];
+        };
+        if form.room != room {
+            return vec![];
         }
+        match result {
+            Ok(found) => *form = found,
+            Err(error) => {
+                form.loading = false;
+                form.error = Some(error);
+            }
+        }
+        vec![]
+    }
+
+    pub(super) fn answer_verification(&mut self, answer: VerificationAnswer) -> Vec<Effect> {
+        let Some(form) = self
+            .state
+            .join
+            .as_mut()
+            .and_then(|join| join.verification.as_mut())
+        else {
+            return vec![];
+        };
+        match answer {
+            VerificationAnswer::Terms(index) => {
+                if let Some(field) = form.fields.get_mut(index)
+                    && field.is_terms()
+                {
+                    field.agreed = !field.agreed;
+                }
+            }
+            VerificationAnswer::Text(index, text) => {
+                if let Some(field) = form.fields.get_mut(index)
+                    && field.is_text()
+                {
+                    field.text = text;
+                }
+            }
+            VerificationAnswer::Choice(index, choice) => {
+                if let Some(field) = form.fields.get_mut(index)
+                    && field.is_choice()
+                {
+                    field.choice = Some(choice);
+                }
+            }
+        }
+        form.error = None;
+        vec![]
+    }
+
+    pub(super) fn submit_verification(&mut self) -> Vec<Effect> {
+        let Some(form) = self
+            .state
+            .join
+            .as_mut()
+            .and_then(|join| join.verification.as_mut())
+        else {
+            return vec![];
+        };
+        if !form.ready() {
+            return vec![];
+        }
+        let fields: Vec<serde_json::Value> = form
+            .fields
+            .iter()
+            .map(|field| {
+                serde_json::json!({
+                    "field_type": field.kind.as_str(),
+                    "label": field.label.as_str(),
+                    "required": field.required,
+                    "values": &field.values,
+                    "response": field.response(),
+                })
+            })
+            .collect();
+        let room = form.room.clone();
+        form.submitting = true;
+        form.error = None;
+        vec![Effect::Backend(Command::Discord(
+            DiscordCommand::SubmitJoinRequest {
+                room,
+                fields: serde_json::Value::Array(fields),
+            },
+        ))]
     }
 
     /// Closes the dialog and opens the invite's channel, now or once it
     /// lists, or else its server.
-    fn open_joined(&mut self, server: &str, room: String) -> Vec<Effect> {
+    pub(super) fn open_joined(&mut self, server: &str, room: String) -> Vec<Effect> {
         self.state.join = None;
         if self.state.rooms.iter().any(|listed| listed.id == room) {
             return self.dispatch(Action::Open(room));

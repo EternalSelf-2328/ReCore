@@ -54,6 +54,8 @@ enum Control {
 pub enum Report {
     /// The recording downloaded and started playing.
     Loaded,
+    /// How long it plays, when its file says.
+    Duration(u64),
     /// It has played this many milliseconds.
     Position(u64),
     /// It moved to this many milliseconds, as the player asked: one for each
@@ -206,6 +208,7 @@ impl Player {
     pub fn handle(&mut self, report: Option<Report>) -> bool {
         match report {
             Some(Report::Loaded) => self.playback.loading = false,
+            Some(Report::Duration(duration_ms)) => self.playback.duration_ms = Some(duration_ms),
             Some(Report::Position(position_ms)) if self.moves == 0 => {
                 self.playback.position_ms = position_ms;
             }
@@ -322,6 +325,9 @@ fn play(
     let (rate, channels) = file.sound.context("the file has no sound")?;
     let mut resampler = Resampler::new(rate, channels);
     let mut tempo = Tempo::new();
+    if let Some(duration_ms) = file.duration_ms {
+        let _ = reports.send(Report::Duration(duration_ms));
+    }
     let _ = reports.send(Report::Loaded);
     // How far into the recording what was written reaches, in frames: at
     // another speed, more or less than was written.
@@ -599,11 +605,19 @@ mod tests {
         let seconds = speakers.0.len() as f32 / 2.0 / RATE as f32;
         assert!((seconds - 2.0).abs() < 0.1, "played {seconds} s");
         let reports: Vec<Report> = std::iter::from_fn(|| reports.try_recv().ok()).collect();
-        assert_eq!(reports[0], Report::Loaded);
-        let positions: Vec<u64> = reports[1..]
+        let loaded = reports
             .iter()
-            .map(|report| match report {
-                Report::Position(at) => *at,
+            .position(|report| *report == Report::Loaded)
+            .expect("loaded");
+        assert!(
+            matches!(reports[..loaded], [Report::Duration(_)]),
+            "{reports:?}"
+        );
+        let positions: Vec<u64> = reports[loaded + 1..]
+            .iter()
+            .filter_map(|report| match report {
+                Report::Position(at) => Some(*at),
+                Report::Duration(_) => None,
                 other => panic!("{other:?}"),
             })
             .collect();
@@ -659,6 +673,7 @@ mod tests {
             .unwrap();
             (ended, speakers.0.len())
         });
+        assert!(matches!(reports.blocking_recv(), Some(Report::Duration(_))));
         assert_eq!(reports.blocking_recv(), Some(Report::Loaded));
         assert_eq!(reports.blocking_recv(), Some(Report::Position(0)));
         drop(control);
@@ -702,9 +717,13 @@ mod tests {
             "played {seconds} of {whole} s"
         );
         let told: Vec<Report> = std::iter::from_fn(|| reports.try_recv().ok()).collect();
-        assert_eq!(told[..2], [Report::Loaded, Report::Moved(1500)]);
+        let loaded = told
+            .iter()
+            .position(|report| *report == Report::Loaded)
+            .expect("loaded");
+        assert_eq!(told[loaded + 1], Report::Moved(1500));
         assert!(
-            told[2..]
+            told[loaded + 2..]
                 .iter()
                 .all(|report| matches!(report, Report::Position(at) if *at >= 1500)),
             "{told:?}"
@@ -723,6 +742,7 @@ mod tests {
             );
             (ended.unwrap(), speakers.0.len())
         });
+        assert!(matches!(reports.blocking_recv(), Some(Report::Duration(_))));
         assert_eq!(reports.blocking_recv(), Some(Report::Loaded));
         assert_eq!(reports.blocking_recv(), Some(Report::Position(1000)));
         control.send(Control::Play(true)).unwrap();

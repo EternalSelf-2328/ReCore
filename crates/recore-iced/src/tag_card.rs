@@ -265,6 +265,7 @@ fn view<'a>(shown: &'a Shown, cx: Ctx<'a>) -> Element<'a, Message> {
             fit: Fit::Cover,
             radius: 18.0,
             covered: false,
+            sensitive: false,
             ground: true,
         }),
         None => {

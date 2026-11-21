@@ -419,6 +419,7 @@ fn media(item: &Value, slot: usize, size: (u64, u64), spoiler: bool) -> Option<A
         size: None,
         url: url.into(),
         image: !video,
+        audio: false,
         dimensions: side("width").zip(side("height")),
         // A video's poster is its first frame alone.
         preview_url: scaled_url(item, size.0, size.1, !video),
@@ -431,6 +432,7 @@ fn media(item: &Value, slot: usize, size: (u64, u64), spoiler: bool) -> Option<A
         animated: !video && animated(item),
         shown: Shown::Component(slot),
         spoiler: spoiler || item["flags"].as_u64().unwrap_or_default() & IS_SPOILER != 0,
+        sensitive: false,
         description: None,
     })
 }
@@ -447,6 +449,9 @@ fn file(component: &Value, slot: usize, spoiler: bool) -> Option<Attachment> {
         size: component["size"].as_u64(),
         url: url.into(),
         image: false,
+        audio: component["file"]["content_type"]
+            .as_str()
+            .is_some_and(|kind| kind.starts_with("audio/")),
         dimensions: None,
         preview_url: None,
         view_url: None,
@@ -456,6 +461,7 @@ fn file(component: &Value, slot: usize, spoiler: bool) -> Option<Attachment> {
         animated: false,
         shown: Shown::Component(slot),
         spoiler,
+        sensitive: false,
         description: None,
     })
 }

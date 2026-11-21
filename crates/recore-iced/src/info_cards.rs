@@ -521,6 +521,7 @@ impl<'a> View<'a> {
                 fit: Fit::Cover,
                 radius: 0.0,
                 covered: false,
+                sensitive: false,
                 ground: true,
             }),
             None => controls::bar(raised, banner_size.width, banner_size.height).into(),
@@ -532,6 +533,7 @@ impl<'a> View<'a> {
                 fit: Fit::Cover,
                 radius: 18.0,
                 covered: false,
+                sensitive: false,
                 ground: true,
             }),
             None => container(

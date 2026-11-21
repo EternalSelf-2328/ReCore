@@ -56,6 +56,16 @@ fn text(value: &Value) -> Option<String> {
 /// attached picture.
 const EMBED_WIDTH: u64 = 360;
 const EMBED_HEIGHT: u64 = 270;
+/// The embed flags that make its media sensitive: explicit, gore and
+/// self-harm content. Discord covers it until clicked.
+const SENSITIVE: u64 = (1 << 4) | (1 << 6) | (1 << 7);
+
+/// Covers the pictures added since `first`, as sensitive content.
+fn mark_sensitive(pictures: &mut [Attachment], first: usize) {
+    for picture in &mut pictures[first..] {
+        picture.sensitive = true;
+    }
+}
 
 /// A picture of an embed as an attachment, when Discord's proxy has it.
 fn picture(value: &Value, shown: Shown, thumbnail: bool) -> Option<Attachment> {
@@ -76,6 +86,7 @@ fn picture(value: &Value, shown: Shown, thumbnail: bool) -> Option<Attachment> {
         size: None,
         url: proxy.into(),
         image: !matches!(shown, Shown::Poster(_)),
+        audio: false,
         dimensions,
         preview_url: Some(preview_url),
         view_url: scaled_url(value, VIEW_WIDTH, VIEW_HEIGHT, animated),
@@ -85,6 +96,7 @@ fn picture(value: &Value, shown: Shown, thumbnail: bool) -> Option<Attachment> {
         animated: crate::message::animated(value),
         shown,
         spoiler: false,
+        sensitive: false,
         description: None,
     })
 }
@@ -108,6 +120,7 @@ fn icon(value: &Value, shown: Shown) -> Option<Attachment> {
         size: None,
         url: proxy.into(),
         image: true,
+        audio: false,
         dimensions: None,
         preview_url: Some(preview.clone()),
         view_url: Some(preview),
@@ -117,6 +130,7 @@ fn icon(value: &Value, shown: Shown) -> Option<Attachment> {
         animated: false,
         shown,
         spoiler: false,
+        sensitive: false,
         description: None,
     })
 }
@@ -167,6 +181,8 @@ pub fn parse(embeds: &Value) -> Parsed {
     for embed in embeds.as_array().into_iter().flatten() {
         let kind = embed["type"].as_str().unwrap_or("rich");
         let url = text(&embed["url"]);
+        let sensitive = embed["flags"].as_u64().unwrap_or_default() & SENSITIVE != 0;
+        let first_picture = parsed.pictures.len();
         match kind {
             // A linked image or GIF: Discord puts the picture in the thumbnail.
             "image" | "gifv" => {
@@ -189,6 +205,9 @@ pub fn parse(embeds: &Value) -> Parsed {
                     parsed.pictures.push(picture);
                     parsed.hides.extend(url);
                 }
+                if sensitive {
+                    mark_sensitive(&mut parsed.pictures, first_picture);
+                }
                 continue;
             }
             "rich" | "article" | "link" | "video" => {}
@@ -208,6 +227,9 @@ pub fn parse(embeds: &Value) -> Parsed {
             parsed
                 .pictures
                 .extend(picture(&embed["image"], Shown::Embed(index), false));
+            if sensitive {
+                mark_sensitive(&mut parsed.pictures, first_picture);
+            }
             continue;
         }
         let index = parsed.embeds.len();
@@ -253,6 +275,14 @@ pub fn parse(embeds: &Value) -> Parsed {
         parsed
             .pictures
             .extend(icon(&embed["footer"], Shown::FooterIcon(index)));
+        if sensitive {
+            // Author and footer icons aren't the content flagged; only the
+            // pictures of it are.
+            let icons = parsed.pictures.len();
+            for picture in &mut parsed.pictures[first_picture..icons] {
+                picture.sensitive = true;
+            }
+        }
         let footer = text(&embed["footer"]["text"]);
         let when = embed["timestamp"].as_str().and_then(iso_ms).map(date);
         parsed.embeds.push(Embed {

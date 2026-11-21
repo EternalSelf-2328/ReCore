@@ -291,8 +291,7 @@ pub(crate) fn write_server_order(folders: &[&[u64]]) -> String {
 
 /// Base64 settings holding only a server list. An entry with an empty `id`
 /// is a server outside any folder.
-#[cfg(test)]
-pub(crate) fn write_server_list(entries: &[Folder]) -> String {
+pub fn write_server_list(entries: &[Folder]) -> String {
     let mut message = Vec::new();
     for entry in entries {
         let packed: Vec<u8> = entry

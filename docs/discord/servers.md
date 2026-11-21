@@ -222,12 +222,19 @@ expired invite (10006, 50020), a ban (40007), too many servers (30001), a
 full server (30019) and paused invites (40069).
 
 When the answer has `show_verification_form`, the server asks new members
-to fill in its form, such as accepting its rules, before they may talk.
-ReCore doesn't show forms or onboarding questions yet, so the dialog says
-so and opens the channel in Discord's web app, where the form waits. A voice
-channel's invite joins the server and opens the channel without joining the
-call. Discord's client also sends `invite_instance_id` from a message's
-invite card, which ReCore doesn't show yet, so it leaves that out.
+to fill in its form, such as accepting its rules, before they may talk. The
+dialog asks `GET /guilds/{server}/member-verification` and shows each
+question as Discord's form does: the rules with an "I agree" tick, a text
+field, or a list of choices. Send answers it with `PUT
+/guilds/{server}/requests/@me` and `form_fields`, each carrying its label,
+`required`, `values` and `response`, then opens the invite's channel once
+the server lists. A required question left unanswered keeps Send off, and a
+refusal stays in the dialog. Discord's onboarding questions after the form
+aren't shown yet. A voice channel's invite joins the server and opens the
+channel without joining the call. An invite in a message shows Discord's
+card with a Join Server button, which opens this dialog with its code
+instead of the browser. Discord's client also sends `invite_instance_id`
+from that card, which ReCore leaves out.
 
 ## Event links
 
@@ -682,6 +689,20 @@ forum's `default_auto_archive_duration` (three days without one),
 message, whose id is the post's; the post opens beside the forum. What was
 written stays while other rooms show; closing the form after writing asks
 first.
+
+## Server folders
+
+The rail groups servers into the folders the account's settings keep
+(`guild_folders` in `PreloadedUserSettings`), in their order. A folder's menu
+offers Edit folder to an online account. Its dialog names the folder, offers
+Discord's nine colours and the default, and lists every server with a tick
+for those it holds. Save sends the whole list with `PATCH
+/users/@me/settings-proto/1`, one `GuildFolder` per folder and one for each
+server outside any (`settings::write_server_list`), and the gateway's
+USER_SETTINGS_PROTO_UPDATE puts it on the rail. Delete Folder moves its
+servers out and leaves them where they are. A server's own menu offers
+Create folder to an online account, which opens the same dialog with that
+server ticked and no id; Discord gives the new folder the next number.
 
 ## Leaving a server
 

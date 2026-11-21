@@ -1047,3 +1047,124 @@ async fn lists_who_reacted_as_discords_client_does() {
     let removed = self::control(server, "GET", "/_control/reactor-removals", "");
     assert!(removed.contains(&format!("🎉 {}", rest[1].id)), "{removed}");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "starts testing/fake_discord.ts with bun; run scripts/test-fake-discord"]
+async fn reports_a_message_and_lists_discords_reasons() {
+    let Fixture {
+        _fake,
+        discord,
+        server,
+        guild,
+        general,
+        bob,
+        ..
+    } = Fixture::start("reports_a_message").await;
+    let latest = discord
+        .history(&guild, &general, Span::Latest)
+        .await
+        .unwrap()
+        .messages;
+    let message = latest
+        .iter()
+        .find(|message| message.author_id == bob)
+        .expect("Bob wrote in #general");
+    let reasons = discord.report_reasons(&general, &message.id).await.unwrap();
+    assert_eq!(reasons[0].label, "Harassment");
+    assert_eq!(reasons[1].reason, 2);
+    discord
+        .report_message(&general, &message.id, reasons[1].reason)
+        .await
+        .unwrap();
+    let reports: serde_json::Value =
+        serde_json::from_str(&control(server, "GET", "/_control/reports", "")).unwrap();
+    assert_eq!(reports[0]["message_id"], message.id);
+    assert_eq!(reports[0]["reason"], 2);
+    assert_eq!(reports[0]["channel_id"], general);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "starts testing/fake_discord.ts with bun; run scripts/test-fake-discord"]
+async fn deletes_messages_at_once() {
+    let Fixture {
+        _fake,
+        discord,
+        server,
+        guild,
+        general,
+        ..
+    } = Fixture::start("deletes_messages_at_once").await;
+    let latest = discord
+        .history(&guild, &general, Span::Latest)
+        .await
+        .unwrap()
+        .messages;
+    let ids: Vec<String> = latest
+        .iter()
+        .rev()
+        .take(2)
+        .map(|message| message.id.clone())
+        .collect();
+    discord.bulk_delete(&general, &ids).await.unwrap();
+    let sent: serde_json::Value =
+        serde_json::from_str(&control(server, "GET", "/_control/bulk-deletes", "")).unwrap();
+    assert_eq!(sent[0]["ids"], serde_json::json!(ids));
+    // Both left the channel's history.
+    let after = discord
+        .history(&guild, &general, Span::Latest)
+        .await
+        .unwrap();
+    assert!(
+        after
+            .messages
+            .iter()
+            .all(|message| !ids.contains(&message.id))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "starts testing/fake_discord.ts with bun; run scripts/test-fake-discord"]
+async fn lists_mentions_and_saves_messages_for_later() {
+    let Fixture {
+        _fake,
+        discord,
+        server,
+        general,
+        ..
+    } = Fixture::start("lists_mentions_and_saves").await;
+    post_control(server, "/_control/mention", "");
+    let mentions = discord.recent_mentions().await.unwrap();
+    let mention = mentions
+        .iter()
+        .find(|message| message.channel_id == general)
+        .expect("Bob mentioned Alice in #general");
+    assert!(
+        mention.mention_everyone
+            || mention
+                .mentions
+                .iter()
+                .any(|id| id == "1400000000000000001")
+    );
+    discord.delete_mention(&mention.id).await.unwrap();
+    let acknowledged: serde_json::Value = serde_json::from_str(&control(
+        server,
+        "GET",
+        "/_control/acknowledged-mentions",
+        "",
+    ))
+    .unwrap();
+    assert_eq!(acknowledged[0], mention.id);
+
+    discord
+        .save_message(&general, &mention.id, true)
+        .await
+        .unwrap();
+    let saved = discord.saved_messages().await.unwrap();
+    assert_eq!(saved.len(), 1);
+    assert_eq!(saved[0].0.id, mention.id);
+    discord
+        .save_message(&general, &mention.id, false)
+        .await
+        .unwrap();
+    assert!(discord.saved_messages().await.unwrap().is_empty());
+}

@@ -104,6 +104,7 @@ pub enum Tab {
     #[default]
     Unreads,
     Mentions,
+    Saved,
 }
 
 /// The inbox popout while it's open: its tab and its rows.
@@ -126,6 +127,12 @@ pub struct InboxRow {
     pub place: String,
     pub picture: Option<String>,
     pub mentions: u64,
+    /// A message row's room and item, which a click opens; none for a
+    /// channel with unreads.
+    pub room: Option<String>,
+    pub item: Option<String>,
+    /// A message row's text.
+    pub body: Option<String>,
 }
 
 /// The press that may move the window, and where it was.
@@ -236,13 +243,39 @@ pub fn update(app: &mut App, event: Event) -> Task<Message> {
                 inbox.tab = tab;
             }
             inbox_sync(app);
-            Task::none()
+            let load = match tab {
+                Tab::Mentions => Some(recore_core::application::Action::LoadRecentMentions),
+                Tab::Saved => Some(recore_core::application::Action::LoadSavedMessages),
+                Tab::Unreads => None,
+            };
+            match load {
+                Some(action) => {
+                    app.client.dispatch(action);
+                    app.sync()
+                }
+                None => Task::none(),
+            }
         }
-        Event::InboxOpen(room) => {
+        Event::InboxOpen(id) => {
+            let row = app
+                .inbox
+                .as_ref()
+                .and_then(|inbox| inbox.rows.iter().find(|row| row.id == id))
+                .cloned();
             app.inbox = None;
-            app.client
-                .dispatch(recore_core::application::Action::SwitchTo(room));
-            app.sync()
+            match row {
+                Some(row) => {
+                    if let (Some(room), Some(item)) = (row.room, row.item) {
+                        app.client
+                            .dispatch(recore_core::application::Action::JumpInRoom { room, item });
+                    } else {
+                        app.client
+                            .dispatch(recore_core::application::Action::SwitchTo(id));
+                    }
+                    app.sync()
+                }
+                None => Task::none(),
+            }
         }
         Event::InboxScrolled(scroll) => {
             if let Some(inbox) = &mut app.inbox {
@@ -337,7 +370,6 @@ pub fn inbox_sync(app: &mut App) {
         return;
     };
     let state = app.client.state();
-    let mentions_only = inbox.tab == Tab::Mentions;
     // Each channel's server, found once.
     let places: std::collections::HashMap<&str, &str> = state
         .servers
@@ -349,27 +381,57 @@ pub fn inbox_sync(app: &mut App) {
                 .map(|channel| (channel.as_str(), server.name.as_str()))
         })
         .collect();
-    let rows: Vec<InboxRow> = state
-        .rooms
-        .iter()
-        .filter(|room| !room.request && !room.unlisted)
-        .filter(|room| room.mentions > 0 || (!mentions_only && room.unread > 0 && !room.muted))
-        .map(|room| InboxRow {
-            id: room.id.clone(),
-            name: if room.direct {
-                room.name.clone()
-            } else {
-                format!("#{}", room.name)
-            },
-            avatar_name: room.name.clone(),
-            place: places
-                .get(room.id.as_str())
-                .map(|place| (*place).to_owned())
-                .unwrap_or_default(),
-            picture: room.direct.then(|| room.avatar.clone()).flatten(),
-            mentions: room.mentions,
-        })
-        .collect();
+    let message_row = |message: &recore_core::chat::InboxMessage| InboxRow {
+        id: message.item.clone(),
+        name: message.author.clone(),
+        avatar_name: message.author.clone(),
+        place: format!("#{}", message.channel),
+        picture: message.avatar.clone(),
+        mentions: 0,
+        room: Some(message.room.clone()),
+        item: Some(message.item.clone()),
+        body: Some(message.body.clone()),
+    };
+    let rows: Vec<InboxRow> = match inbox.tab {
+        Tab::Mentions => state
+            .recent_mentions
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(message_row)
+            .collect(),
+        Tab::Saved => state
+            .saved_messages
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(message_row)
+            .collect(),
+        Tab::Unreads => state
+            .rooms
+            .iter()
+            .filter(|room| !room.request && !room.unlisted)
+            .filter(|room| room.mentions > 0 || (room.unread > 0 && !room.muted))
+            .map(|room| InboxRow {
+                id: room.id.clone(),
+                name: if room.direct {
+                    room.name.clone()
+                } else {
+                    format!("#{}", room.name)
+                },
+                avatar_name: room.name.clone(),
+                place: places
+                    .get(room.id.as_str())
+                    .map(|place| (*place).to_owned())
+                    .unwrap_or_default(),
+                picture: room.direct.then(|| room.avatar.clone()).flatten(),
+                mentions: room.mentions,
+                room: None,
+                item: None,
+                body: None,
+            })
+            .collect(),
+    };
     if rows != inbox.rows {
         inbox.rows = rows;
     }
@@ -735,7 +797,8 @@ pub fn inbox_view(app: &App) -> Option<Element<'_, Message>> {
         text("Inbox").size(16).font(BOLD()).color(theme.text),
         Space::new().width(Length::Fill),
         tab("Unreads", Tab::Unreads, 80.0),
-        tab("Mentions", Tab::Mentions, 92.0),
+        tab("Mentions", Tab::Mentions, 80.0),
+        tab("For Later", Tab::Saved, 80.0),
     ]
     .spacing(8)
     .padding([0, 16])
@@ -746,6 +809,7 @@ pub fn inbox_view(app: &App) -> Option<Element<'_, Message>> {
             text(match inbox.tab {
                 Tab::Unreads => "Unread messages from your unmuted channels show up here.",
                 Tab::Mentions => "Nothing mentions you right now.",
+                Tab::Saved => "Messages you save for later show up here.",
             })
             .size(14)
             .color(theme.muted)
@@ -811,6 +875,9 @@ fn inbox_line<'a>(app: &'a App, entry: &'a InboxRow) -> Element<'a, Message> {
             .font(BOLD())
             .color(theme.text)
     ];
+    if let Some(body) = &entry.body {
+        names = names.push(elide(body.as_str()).size(12).color(theme.secondary));
+    }
     if !entry.place.is_empty() {
         names = names.push(elide(entry.place.as_str()).size(12).color(theme.muted));
     }

@@ -206,11 +206,16 @@ pub fn message_content<'a>(
         content = content.push(container(stickers).padding(Padding::ZERO.top(4)));
     }
     for (at, (index, attachment)) in files(message, Placement::Message).enumerate() {
-        // A voice message's recording is its first attachment.
+        // A voice message's recording is its first attachment, and so is a
+        // sound file sent on its own.
         if at == 0
             && let Some(voice) = &message.voice
         {
             content = content.push(crate::playback::voice_card(ctx, message, voice));
+            continue;
+        }
+        if at == 0 && attachment.audio {
+            content = content.push(crate::playback::audio_card(ctx, message, attachment));
             continue;
         }
         content = content.push(

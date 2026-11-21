@@ -1847,6 +1847,25 @@ impl Discord {
         self.api.crosspost(channel, id).await
     }
 
+    /// The reasons Discord offers for reporting `message` in `channel`.
+    pub async fn report_reasons(
+        &self,
+        channel: &str,
+        message: &str,
+    ) -> Result<Vec<crate::api::ReportReason>> {
+        self.api.report_reasons(channel, message).await
+    }
+
+    /// Reports `message` in `channel` for `reason`, as its report dialog does.
+    pub async fn report_message(&self, channel: &str, message: &str, reason: i64) -> Result<()> {
+        self.api.report_message(channel, message, reason).await
+    }
+
+    /// Deletes `messages` in `channel` at once, as Discord's bulk delete does.
+    pub async fn bulk_delete(&self, channel: &str, messages: &[String]) -> Result<()> {
+        self.api.bulk_delete(channel, messages).await
+    }
+
     /// Pins a message, or unpins it. The gateway's MESSAGE_UPDATE says so too.
     pub async fn pin(&self, channel: &str, id: &str, pinned: bool) -> Result<()> {
         self.api.pin(channel, id, pinned).await
@@ -4249,6 +4268,66 @@ impl Discord {
         self.api
             .set_frecency_settings(&soundboard::write_favorites(favorites))
             .await
+    }
+
+    /// Keeps `folders` as the account's server list, with every server it
+    /// places, as Discord's Folders page does. The gateway's
+    /// USER_SETTINGS_PROTO_UPDATE carries it back.
+    pub async fn set_server_folders(&self, folders: &[settings::Folder]) -> Result<()> {
+        self.api
+            .set_user_settings(&settings::write_server_list(folders))
+            .await
+    }
+
+    /// The membership screening form of `guild`, as Discord sends it.
+    pub async fn member_verification(&self, guild: &str) -> Result<serde_json::Value> {
+        self.api.member_verification(guild).await
+    }
+
+    /// Sends a new member's answers to `guild`'s membership screening form.
+    pub async fn submit_join_request(
+        &self,
+        guild: &str,
+        fields: &serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        self.api.submit_join_request(guild, fields).await
+    }
+
+    /// The messages that mentioned this account recently, newest first.
+    pub async fn recent_mentions(&self) -> Result<Vec<crate::message::Message>> {
+        let answer = self.api.recent_mentions(25).await?;
+        Ok(answer
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(crate::message::parse)
+            .collect())
+    }
+
+    /// Acknowledges a mention, as Discord's inbox does.
+    pub async fn delete_mention(&self, message: &str) -> Result<()> {
+        self.api.delete_mention(message).await
+    }
+
+    /// The messages this account saved for later.
+    pub async fn saved_messages(&self) -> Result<Vec<(crate::message::Message, String)>> {
+        let answer = self.api.saved_messages().await?;
+        Ok(answer["results"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|saved| {
+                Some((
+                    crate::message::parse(&saved["message"])?,
+                    saved["save_data"]["channel_id"].as_str()?.to_owned(),
+                ))
+            })
+            .collect())
+    }
+
+    /// Saves a message for later, or takes it out.
+    pub async fn save_message(&self, channel: &str, message: &str, save: bool) -> Result<()> {
+        self.api.save_message(channel, message, save).await
     }
 
     /// Sets how loud the soundboard plays, from 0 to 100, for every client

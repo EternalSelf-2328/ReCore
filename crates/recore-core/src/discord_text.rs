@@ -383,7 +383,7 @@ impl Chat {
         };
         let Some(url) = url else {
             let _ = events.send(Event::VoiceMessage(Some(VoicePlayback {
-                error: Some("This voice message is no longer available.".into()),
+                error: Some("This sound is no longer available.".into()),
                 ..playback
             })));
             return;
