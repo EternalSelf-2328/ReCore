@@ -634,8 +634,10 @@ fn guild_ids_has(data: &[u8], number: u64, guild: &str) -> bool {
             && match value {
                 Field::Fixed64(id) => id == wanted,
                 Field::Bytes(packed) => packed
-                    .chunks_exact(8)
-                    .any(|bytes| u64::from_le_bytes(bytes.try_into().unwrap()) == wanted),
+                    .as_chunks::<8>()
+                    .0
+                    .iter()
+                    .any(|bytes| u64::from_le_bytes(*bytes) == wanted),
                 _ => false,
             }
     })
@@ -947,7 +949,7 @@ mod tests {
             .unwrap();
         assert!(message(&written, 11).is_some(), "the status stays");
         let kept = message(&written, PRIVACY).unwrap();
-        assert_eq!(guild_ids_has(kept, RESTRICTED_GUILDS, "10"), false);
+        assert!(!guild_ids_has(kept, RESTRICTED_GUILDS, "10"));
         assert!(guild_ids_has(kept, MESSAGE_REQUEST_RESTRICTED_GUILDS, "10"));
         assert!(guild_ids_has(kept, ACTIVITY_RESTRICTED_GUILDS, "10"));
         assert!(
