@@ -2,7 +2,7 @@
 //! held-back requests open.
 
 use super::*;
-use crate::application::SoundboardInput;
+use crate::application::{DiscoveryInput, SoundboardInput};
 use crate::chat::{
     GuildSettings, MfaMethod, PickedPicture, PickedSound, RoleAction, RoleDetail, RoleManager,
     RoleMember, ServerPicture, ServerProfile, ServerRoles, ServerSettingsAction,
@@ -242,6 +242,65 @@ fn privacy_saves_each_switch_at_once_and_puts_back_a_refusal() {
 }
 
 #[test]
+fn discovery_lists_a_server_only_as_its_owner_asks() {
+    let mut app = managing();
+    app.state.discord_online = true;
+    app.dispatch(Action::OpenServerSettings("discord:10".into()));
+    app.dispatch(Action::ServerSettingsSection(SettingsSection::Discovery));
+    let settings = crate::chat::DiscoverySettings {
+        sufficient: true,
+        safe_environment: true,
+        ..crate::chat::DiscoverySettings::default()
+    };
+    app.apply(Event::ServerSettingsLoaded {
+        server: "discord:10".into(),
+        section: SettingsSection::Discovery,
+        result: Ok(ServerSettingsPage::Discovery(settings.clone())),
+    });
+    // Bob owns it.
+    assert!(
+        app.dispatch(Action::Discovery(DiscoveryInput::Set(true)))
+            .is_empty()
+    );
+    change_server(&mut app, |server| server.owner_id = Some("1".into()));
+    let effects = app.dispatch(Action::Discovery(DiscoveryInput::Set(true)));
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::Backend(Command::Discord(
+            DiscordCommand::SettingsAction {
+                action: ServerSettingsAction::Discovery(crate::chat::DiscoveryAction::SetEnabled(
+                    true
+                )),
+                ..
+            }
+        ))]
+    ));
+    app.apply(Event::ServerSettingsActionDone {
+        server: "discord:10".into(),
+        action: ServerSettingsAction::Discovery(crate::chat::DiscoveryAction::SetEnabled(true)),
+        result: Ok(ServerSettingsPage::Discovery(
+            crate::chat::DiscoverySettings {
+                enabled: true,
+                ..settings
+            },
+        )),
+    });
+    let page = match app
+        .state
+        .server_settings
+        .as_ref()
+        .unwrap()
+        .page
+        .as_ref()
+        .unwrap()
+    {
+        crate::application::SettingsPage::Discovery(page) => page,
+        _ => panic!("not Discovery"),
+    };
+    assert!(page.settings.enabled && !page.saving);
+}
+
+#[test]
 fn server_settings_open_only_with_a_page_she_may_change() {
     use MenuChoice::*;
     let mut app = discord_server();
@@ -290,6 +349,7 @@ fn server_settings_open_only_with_a_page_she_may_change() {
             SettingsSection::Invites,
             SettingsSection::Integrations,
             SettingsSection::AutoMod,
+            SettingsSection::Discovery,
             SettingsSection::Safety,
             SettingsSection::Privacy
         ]

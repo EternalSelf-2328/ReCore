@@ -216,9 +216,10 @@ pub(super) fn command(
                         .server_privacy(&guild)
                         .await
                         .map(|privacy| ServerSettingsPage::Privacy(privacy_settings(privacy))),
-                    SettingsSection::Discovery => {
-                        Err(anyhow::anyhow!("ReCore can't show that page yet"))
-                    }
+                    SettingsSection::Discovery => discord
+                        .discovery(&guild)
+                        .await
+                        .map(|found| ServerSettingsPage::Discovery(discovery(found))),
                 };
                 let result = result.map_err(|error| {
                     tracing::warn!(
@@ -501,7 +502,12 @@ async fn settings_action(
             let saved = discord.set_server_privacy(guild, desired).await?;
             Ok(ServerSettingsPage::Privacy(privacy_settings(saved)))
         }
-        _ => anyhow::bail!("ReCore can't change that yet"),
+        ServerSettingsAction::Discovery(action) => {
+            use crate::chat::DiscoveryAction;
+            let DiscoveryAction::SetEnabled(enabled) = action;
+            let found = discord.set_discovery(guild, enabled).await?;
+            Ok(ServerSettingsPage::Discovery(discovery(found)))
+        }
     }
 }
 
@@ -570,6 +576,31 @@ fn privacy_settings(privacy: recore_discord::server_settings::Privacy) -> Privac
         dms: privacy.dms,
         message_requests: privacy.message_requests,
         activity: privacy.activity,
+    }
+}
+
+/// A server's Discovery as its page shows it.
+fn discovery(found: recore_discord::server_settings::Discovery) -> crate::chat::DiscoverySettings {
+    crate::chat::DiscoverySettings {
+        enabled: found.enabled,
+        sufficient: found.sufficient,
+        sufficient_without_grace: found.sufficient_without_grace,
+        safe_environment: found.safe_environment,
+        healthy: found.healthy,
+        health_score_pending: found.health_score_pending,
+        size: found.size,
+        protected: found.protected,
+        valid_rules_channel: found.valid_rules_channel,
+        retention_healthy: found.retention_healthy,
+        engagement_healthy: found.engagement_healthy,
+        age: found.age,
+        minimum_size: found.minimum_size,
+        minimum_age: found.minimum_age,
+        grace_period_end: found.grace_period_end,
+        keywords: found.keywords,
+        about: found.about,
+        published: found.published,
+        disabled: found.disabled,
     }
 }
 

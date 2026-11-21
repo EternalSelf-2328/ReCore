@@ -13,6 +13,7 @@
 //! controls are in its module.
 
 mod automod;
+mod discovery;
 mod expressions;
 mod integrations;
 mod moderation;
@@ -32,10 +33,10 @@ use iced::{
 };
 use recore_core::{
     application::{
-        Action, AppState, AuditInput, AutoModInput, BanInput, EmojiInput, IntegrationInput,
-        InviteInput, MemberInput, OwnershipInput, PrivacyInput, RoleInput, ServerSettings,
-        SettingsChoice, SettingsPage, SettingsText, SettingsToggle, SoundboardInput, StickerInput,
-        WebhookInput,
+        Action, AppState, AuditInput, AutoModInput, BanInput, DiscoveryInput, EmojiInput,
+        IntegrationInput, InviteInput, MemberInput, OwnershipInput, PrivacyInput, RoleInput,
+        ServerSettings, SettingsChoice, SettingsPage, SettingsText, SettingsToggle,
+        SoundboardInput, StickerInput, WebhookInput,
     },
     chat::{ServerPicture, SettingsSection},
 };
@@ -130,6 +131,7 @@ pub enum Event {
     Integrations(IntegrationInput),
     AutoMod(AutoModInput),
     Privacy(PrivacyInput),
+    Discovery(DiscoveryInput),
     Ownership(OwnershipInput),
 }
 
@@ -298,6 +300,7 @@ impl Screen {
                 Action::AutoMod(input)
             }
             Event::Privacy(input) => Action::Privacy(input),
+            Event::Discovery(input) => Action::Discovery(input),
             Event::Ownership(input) => Action::Ownership(input),
         };
         cx.dispatch(action);
@@ -427,6 +430,7 @@ impl<'a> View<'a> {
                 }
                 SettingsPage::AutoMod(page) => (self.automod_page(core, page, screen), false),
                 SettingsPage::Privacy(page) => (self.privacy_page(core, page, screen), false),
+                SettingsPage::Discovery(page) => (self.discovery_page(core, page, screen), false),
             };
             fill = fills;
             page = page.push(view);
@@ -517,6 +521,8 @@ impl<'a> View<'a> {
                     "PEOPLE"
                 }
                 SettingsSection::Webhooks | SettingsSection::Integrations => "APPS",
+                SettingsSection::Discovery => "COMMUNITY",
+                SettingsSection::Privacy => "PRIVACY",
                 SettingsSection::Safety
                 | SettingsSection::AuditLog
                 | SettingsSection::Bans

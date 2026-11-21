@@ -1587,3 +1587,45 @@ async fn keeps_server_privacy_as_discords_client_does() {
         serde_json::from_str(&control(server, "GET", "/_control/settings", "")).unwrap();
     assert!(settings["settings"].as_str().unwrap().len() > 10);
 }
+
+/// Discovery in Server Settings: reading "Server"'s Discovery requirements
+/// and metadata, and listing it only as its owner, then taking it out;
+/// part of [`talks_to_the_fake_server`], whose session it shares.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "starts testing/fake_discord.ts with bun; run scripts/test-fake-discord"]
+async fn lists_a_server_in_discovery_as_its_owner_does() {
+    let fixture = Fixture::start("lists_a_server_in_discovery_as_its_owner_does").await;
+    let discord = &fixture.discord;
+    let server = fixture.server;
+    let guild = fixture.guild.as_str();
+    let found = discord.discovery(guild).await.unwrap();
+    assert!(!found.enabled);
+    assert!(found.sufficient && found.safe_environment && found.size);
+    assert_eq!(found.keywords, ["cozy", "chat"]);
+    assert_eq!(found.about, "A small server for talking.");
+    assert!(!found.published);
+    assert_eq!(found.minimum_size, Some(500));
+
+    // Bob owns it, so only taking it out, which isn't listed, is left.
+    assert!(discord.set_discovery(guild, true).await.is_err());
+
+    post_control(
+        server,
+        "/_control/guild",
+        &format!(r#"{{"owner": "{}"}}"#, "1400000000000000001"),
+    );
+    let listed = discord.set_discovery(guild, true).await.unwrap();
+    assert!(listed.enabled && listed.sufficient);
+    let listed_again = discord.discovery(guild).await.unwrap();
+    assert!(listed_again.enabled);
+
+    let out = discord.set_discovery(guild, false).await.unwrap();
+    assert!(!out.enabled);
+    let changes: serde_json::Value =
+        serde_json::from_str(&control(server, "GET", "/_control/discovery-changes", "")).unwrap();
+    assert_eq!(
+        changes,
+        serde_json::json!([{"action": "enable"}, {"action": "disable"}])
+    );
+    post_control(server, "/_control/guild-reset", "");
+}

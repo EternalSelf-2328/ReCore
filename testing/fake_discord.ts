@@ -2753,6 +2753,7 @@ function resetGuild() {
   integrationChanges.length = 0;
   serverRules.splice(0, serverRules.length, ...SERVER_RULES());
   ruleChanges.length = 0;
+  discoveryChanges.length = 0;
   revokedInvites.clear();
   Object.assign(mfa, { on: false, methods: ["totp"], code: "123456" });
   mfa.tickets.clear();
@@ -4171,6 +4172,11 @@ const SERVER_RULES = (): AutoModRule[] => [
 const serverRules = SERVER_RULES();
 /** What Alice asked of "Server"'s AutoMod, as she sent it. */
 const ruleChanges: unknown[] = [];
+
+// --- Discovery ---------------------------------------------------------------
+
+/** Whether "Server" is listed in Discovery, as its features say. */
+const discoveryChanges: unknown[] = [];
 /** What the CDN serves for a sound: Discord's as MP3, the server's as Ogg. */
 const soundFiles = {
   mp3: readFileSync(new URL("soundboard-tone.mp3", fixtures)),
@@ -6676,6 +6682,40 @@ async function api(req: Request, path: string, origin: string): Promise<Response
     }
   }
 
+  // Discovery in Server Settings. GET /guilds/{id}/discovery-requirements
+  // answers that "Server" meets them, and GET /guilds/{id}/discovery-metadata
+  // its keywords, description and unpublished landing page, both with
+  // Manage Server. PATCH /guilds/{id} with `features` lists the server in
+  // Discovery with DISCOVERABLE, or takes it out, as only its owner may;
+  // GET /_control/discovery-changes lists each change.
+  if (method === "GET" && (m = path.match(/^\/guilds\/(\d+)\/discovery-requirements$/))) {
+    if (m[1] !== GUILD) return notFound("Unknown Guild", 10004);
+    if (!aliceMay(5)) return json({ message: "Missing Permissions", code: 50013 }, 403);
+    return json({
+      guild_id: GUILD, safe_environment: true, healthy: true, health_score_pending: false,
+      size: true, nsfw_properties: {}, protected: true, sufficient: true,
+      sufficient_without_grace_period: true, valid_rules_channel: true,
+      retention_healthy: true, engagement_healthy: true, age: true,
+      minimum_age: 30, minimum_size: 500,
+      health_score: {
+        avg_nonnew_participators: "120", avg_nonnew_communicators: "40",
+        num_intentful_joiners: "30", perc_ret_w1_intentful: 0.5,
+      },
+      grace_period_end_date: null,
+    });
+  }
+  if (method === "GET" && (m = path.match(/^\/guilds\/(\d+)\/discovery-metadata$/))) {
+    if (m[1] !== GUILD) return notFound("Unknown Guild", 10004);
+    if (!aliceMay(5)) return json({ message: "Missing Permissions", code: 50013 }, 403);
+    return json({
+      guild_id: GUILD, primary_category_id: 1, keywords: ["cozy", "chat"],
+      emoji_discoverability_enabled: true, partner_actioned_timestamp: null,
+      partner_application_timestamp: null, is_published: false,
+      reasons_to_join: [],
+      social_links: null, about: "A small server for talking.", category_ids: [],
+    });
+  }
+
   // "Server" itself: Engagement and Boost Perks in Server Settings. A
   // banner needs boost level 2 or BANNER, a GIF one level 3 or
   // ANIMATED_BANNER, and an invite background level 1 or INVITE_SPLASH;
@@ -6692,6 +6732,17 @@ async function api(req: Request, path: string, origin: string): Promise<Response
       const channel = (id: unknown, type: number) =>
         id === null || guildChannels().some((known: any) => known.id === id && known.type === type);
       const changes: Partial<typeof serverSettings> = {};
+      if ("features" in body) {
+        // Discovery is the owner's, as Discord's client decides.
+        if (serverSettings.owner !== ALICE) return json({ message: "Missing Permissions", code: 50013 }, 403);
+        const asked: string[] = Array.isArray(body.features)
+          ? body.features.filter((feature: unknown) => typeof feature === "string")
+          : [];
+        const was = serverSettings.features.includes("DISCOVERABLE");
+        const now = asked.includes("DISCOVERABLE");
+        changes.features = asked;
+        if (was !== now) discoveryChanges.push({ action: now ? "enable" : "disable" });
+      }
       if ("system_channel_id" in body) {
         if (!channel(body.system_channel_id, 0)) return invalid("system_channel_id", "CHANNEL_TYPE_INVALID", "Invalid channel type");
         changes.system_channel_id = body.system_channel_id;
@@ -9802,6 +9853,9 @@ const server = Bun.serve<SocketData>({
     if (path === "/_control/webhook-changes") return Response.json(webhookChanges);
     if (path === "/_control/integration-changes") return Response.json(integrationChanges);
     if (path === "/_control/rule-changes") return Response.json(ruleChanges);
+    if (path === "/_control/discovery-changes") return Response.json(discoveryChanges);
+    if (path === "/_control/discovery")
+      return Response.json({ enabled: serverSettings.features.includes("DISCOVERABLE"), features: serverSettings.features });
     if (path === "/_control/privacy") {
       // The three privacy lists, as her settings keep them.
       const found = protoFields(Buffer.from(settings, "base64")).find(([number]) => number === 8);

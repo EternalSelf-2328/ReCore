@@ -19,6 +19,7 @@ mod audit_log;
 mod automod;
 mod bans;
 mod boost;
+mod discovery;
 mod engagement;
 mod expressions;
 mod integrations;
@@ -43,6 +44,7 @@ pub use audit_log::{
 pub use automod::{AutoModInput, AutoModPage};
 pub use bans::{BANS_BATCH, BANS_PER_PAGE, BanInput, BansPage};
 pub use boost::BoostPage;
+pub use discovery::{DiscoveryInput, DiscoveryPage};
 pub use engagement::{AFK_TIMEOUTS, BOOSTED, EngagementPage, SETUP_TIPS, WELCOME, WELCOME_STICKER};
 pub use expressions::{
     EMOJI_NAME_LIMIT, EmojiInput, EmojiPage, EmojiUpload, ExpressionRules, LEVEL_BOOSTS,
@@ -107,6 +109,7 @@ pub enum Page {
     Integrations(Box<IntegrationsPage>),
     AutoMod(Box<AutoModPage>),
     Privacy(PrivacyPage),
+    Discovery(DiscoveryPage),
 }
 
 /// A switch of a settings page: one of Engagement's system messages, by
@@ -162,7 +165,8 @@ impl ServerSettings {
             | Page::Webhooks(_)
             | Page::Integrations(_)
             | Page::AutoMod(_)
-            | Page::Privacy(_) => None,
+            | Page::Privacy(_)
+            | Page::Discovery(_) => None,
         }
     }
 
@@ -182,6 +186,7 @@ impl ServerSettings {
                 | SettingsSection::Integrations
                 | SettingsSection::AutoMod
                 | SettingsSection::Privacy
+                | SettingsSection::Discovery
         )
     }
 
@@ -203,7 +208,8 @@ impl ServerSettings {
             | Page::Webhooks(_)
             | Page::Integrations(_)
             | Page::AutoMod(_)
-            | Page::Privacy(_) => None,
+            | Page::Privacy(_)
+            | Page::Discovery(_) => None,
         }
     }
 
@@ -274,6 +280,7 @@ impl Application {
         }
         if self.may(server, Permission::ManageServer) {
             sections.push(SettingsSection::AutoMod);
+            sections.push(SettingsSection::Discovery);
         }
         // Discord's Moderation.
         if self.may(server, Permission::ManageServer) {
@@ -625,16 +632,12 @@ impl Application {
                 self.privacy_saved(server, change, result);
             }
             ServerSettingsAction::Discovery(_) => {
-                if let Some(settings) = self
-                    .state
-                    .server_settings
-                    .as_mut()
-                    .filter(|settings| settings.server == server)
-                {
-                    if let Err(error) = result {
-                        settings.error = Some(error);
-                    }
-                }
+                let result = match result {
+                    Ok(ServerSettingsPage::Discovery(settings)) => Ok(settings),
+                    Ok(_) => Ok(crate::chat::DiscoverySettings::default()),
+                    Err(error) => Err(error),
+                };
+                self.discovery_changed(server, result);
             }
         }
     }
@@ -1002,7 +1005,8 @@ impl Application {
                 | Page::Webhooks(_)
                 | Page::Integrations(_)
                 | Page::AutoMod(_)
-                | Page::Privacy(_),
+                | Page::Privacy(_)
+                | Page::Discovery(_),
             )
             | None => {}
         }
@@ -1094,7 +1098,8 @@ impl Application {
                 | Page::Webhooks(_)
                 | Page::Integrations(_)
                 | Page::AutoMod(_)
-                | Page::Privacy(_),
+                | Page::Privacy(_)
+                | Page::Discovery(_),
             )
             | None => {}
         }
@@ -1191,6 +1196,9 @@ impl Page {
             }
             (SettingsSection::Privacy, ServerSettingsPage::Privacy(settings)) => {
                 Self::Privacy(PrivacyPage::new(settings))
+            }
+            (SettingsSection::Discovery, ServerSettingsPage::Discovery(settings)) => {
+                Self::Discovery(DiscoveryPage::new(settings))
             }
             (SettingsSection::Roles, ServerSettingsPage::Roles(roles)) => {
                 Self::Roles(Box::new(RolesPage::new(roles)))
