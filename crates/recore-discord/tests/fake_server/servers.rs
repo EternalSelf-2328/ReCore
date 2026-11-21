@@ -1409,6 +1409,12 @@ async fn keeps_webhooks_as_discords_client_does() {
     let discord = &fixture.discord;
     let server = fixture.server;
     let guild = fixture.guild.as_str();
+    // Manage Webhooks, which her roles leave to her Mods.
+    post_control(
+        server,
+        "/_control/grant-permission",
+        r#"{"permission": 29}"#,
+    );
     let hooks = discord.guild_webhooks(guild).await.unwrap();
     assert_eq!(hooks.len(), 2);
     assert_eq!(hooks[0].name, "Bob's bot");

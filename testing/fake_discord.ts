@@ -2421,7 +2421,7 @@ const SERVER_ROLES = () => [
   serverRole(BOTS, "Bots", 0, 2),
   // Crew may manage channels, the server and pin messages, and add emoji
   // and stickers.
-  serverRole(CREW, "Crew", bit(4) + bit(5) + bit(29) + bit(51) + bit(43), 3),
+  serverRole(CREW, "Crew", bit(4) + bit(5) + bit(51) + bit(43), 3),
   serverRole(STAFF, "Staff", MODERATION, 4),
   serverRole(LEADS, "Leads", 0, 5),
 ];
@@ -2437,11 +2437,16 @@ function rank(user: string): number {
 
 /** A member's permissions in "Server", as a BigInt: everything for the owner and administrators,
  * and only viewing channels and reading their history for others while timed out. */
+/** Permissions `/_control/grant-permission` gave Alice beyond her roles, for
+ *  a test of a page her roles don't open. */
+let grantedPermissions = 0n;
+
 function serverPermissions(user: string): bigint {
   const all = (1n << 53n) - 1n;
   if (user === serverSettings.owner) return all;
   let held = BigInt(EVERYONE);
   for (const id of memberRoles.get(user) ?? []) held |= BigInt(serverRoles.find((role) => role.id === id)?.permissions ?? "0");
+  if (user === ALICE) held |= grantedPermissions;
   if (held & (1n << 3n)) return all;
   const until = timeouts.get(user);
   return until !== undefined && Date.parse(until) > Date.now() ? held & BigInt(bit(10) + bit(16)) : held;
@@ -2754,6 +2759,7 @@ function resetGuild() {
   serverRules.splice(0, serverRules.length, ...SERVER_RULES());
   ruleChanges.length = 0;
   discoveryChanges.length = 0;
+  grantedPermissions = 0n;
   revokedInvites.clear();
   Object.assign(mfa, { on: false, methods: ["totp"], code: "123456" });
   mfa.tickets.clear();
@@ -10540,6 +10546,16 @@ const server = Bun.serve<SocketData>({
       const { properties } = guild();
       dispatch("GUILD_UPDATE", { ...properties, roles: serverRoles, emojis: guild().emojis });
       return new Response(`Server is at boost level ${serverSettings.premium_tier}\n`);
+    }
+    if (req.method === "POST" && path === "/_control/grant-permission") {
+      const body: any = await req.json().catch(() => ({}));
+      const permission = Number(body.permission);
+      if (!Number.isInteger(permission) || permission < 0 || permission > 52) {
+        return new Response("permission is a bit from 0 to 52\n", { status: 400 });
+      }
+      if (body.grant === false) grantedPermissions &= ~(1n << BigInt(permission));
+      else grantedPermissions |= 1n << BigInt(permission);
+      return new Response(`Alice ${body.grant === false ? "lost" : "gained"} permission ${permission}\n`);
     }
     if (req.method === "POST" && path === "/_control/guild-reset") {
       const hadMfa = serverSettings.alice_mfa;
