@@ -782,6 +782,9 @@ fn delete_server_ends_the_owners_sidebar_and_asks_for_the_name() {
     let (mut app, _folder) = discord_server(0, |server, _| {
         server.owner_id = Some("1".into());
     });
+    // The newer pages make the column longer than the test window.
+    app.shell.frame.height = 1200.0;
+    crate::window_bar::fit_window(&mut app);
     open_settings(&mut app);
     assert!(shows(&app, "Delete Server"));
     interact(&mut app, |ui| {

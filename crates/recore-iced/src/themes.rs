@@ -1652,7 +1652,9 @@ mod tests {
             "#,
         )
         .unwrap();
-        let themes = Themes::read(folder.path(), &Layout::read(folder.path()));
+        let mut layout = Layout::read(folder.path());
+        layout.theme = Some("css:ornate".into());
+        let themes = Themes::read(folder.path(), &layout);
         let shown = themes.find("css:ornate").expect("its colours");
         assert_eq!(shown.stage, crate::style::hex(0x0a0b0c));
         assert_eq!(shown.raised, crate::style::hex(0x0d0e0f));

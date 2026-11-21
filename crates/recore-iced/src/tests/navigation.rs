@@ -835,7 +835,7 @@ fn a_busy_servers_tooltip_lists_its_voice_channels_under_the_pointer() {
     // to the channel's faces.
     let below_name = |tile: Point| {
         Rectangle::new(
-            Point::new(tile.x + 44.0, tile.y + 36.0),
+            Point::new(tile.x + 44.0, tile.y + 46.0),
             Size::new(160.0, 8.0),
         )
     };

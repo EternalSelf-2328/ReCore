@@ -127,6 +127,7 @@ fn a_servers_menu_shows_and_changes_its_notifications() {
             "Mute server",
             "Notification settings",
             "Hide muted channels",
+            "Server settings",
             "Edit server profile",
             "Leave server",
             "Copy link",
@@ -198,6 +199,7 @@ fn a_servers_menu_shows_and_changes_its_notifications() {
     assert_eq!(
         labels(&app),
         [
+            "Server settings",
             "Notification settings",
             "Edit server profile",
             "Hide muted channels",
