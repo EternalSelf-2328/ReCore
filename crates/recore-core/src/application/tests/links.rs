@@ -237,6 +237,176 @@ fn an_invite_link_opens_the_server_or_the_dialog() {
 
 #[test]
 #[cfg(feature = "discord")]
+fn a_joined_server_asks_its_onboarding_questions() {
+    let mut app = discord_server();
+    app.dispatch(Action::OpenJoinServer);
+    app.dispatch(Action::FindInvite("new".into()));
+    app.apply(Event::InviteResolved {
+        code: "new".into(),
+        result: Ok(invite_to("new", "30", "31")),
+    });
+    app.dispatch(Action::JoinServer);
+    let effects = app.apply(Event::ServerJoined {
+        code: "new".into(),
+        result: Ok(chat::JoinedServer {
+            server: "discord:30".into(),
+            room: "discord:30:31".into(),
+            form: false,
+        }),
+    });
+    assert!(app.state.join.is_none());
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::Backend(Command::Discord(
+            DiscordCommand::GuildOnboarding { room }
+        ))] if room == "discord:30:31"
+    ));
+    assert!(
+        app.state
+            .onboarding
+            .as_ref()
+            .is_some_and(|form| form.loading)
+    );
+
+    app.apply(Event::GuildOnboarding {
+        room: "discord:30:31".into(),
+        result: Ok(chat::OnboardingForm {
+            room: "discord:30:31".into(),
+            enabled: true,
+            prompts: vec![
+                chat::OnboardingPrompt {
+                    id: "200".into(),
+                    title: "What brings you here?".into(),
+                    required: true,
+                    options: vec![
+                        chat::OnboardingOption {
+                            id: "201".into(),
+                            title: "Chatting".into(),
+                            ..Default::default()
+                        },
+                        chat::OnboardingOption {
+                            id: "202".into(),
+                            title: "Events".into(),
+                            ..Default::default()
+                        },
+                    ],
+                    ..Default::default()
+                },
+                chat::OnboardingPrompt {
+                    id: "210".into(),
+                    title: "Which updates?".into(),
+                    single_select: true,
+                    options: vec![
+                        chat::OnboardingOption {
+                            id: "211".into(),
+                            title: "Server news".into(),
+                            ..Default::default()
+                        },
+                        chat::OnboardingOption {
+                            id: "212".into(),
+                            title: "Nothing extra".into(),
+                            ..Default::default()
+                        },
+                    ],
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }),
+    });
+    let form = app.state.onboarding.as_ref().unwrap();
+    assert_eq!(form.prompts.len(), 2);
+    assert!(!form.ready(), "the required question has no answer");
+    assert!(
+        app.dispatch(Action::SubmitOnboarding { skip: false })
+            .is_empty()
+    );
+
+    // A multiple-choice question may hold several options, and one chosen
+    // again is taken back.
+    app.dispatch(Action::AnswerOnboarding {
+        prompt: 0,
+        option: 0,
+    });
+    app.dispatch(Action::AnswerOnboarding {
+        prompt: 0,
+        option: 1,
+    });
+    assert_eq!(
+        app.state.onboarding.as_ref().unwrap().prompts[0]
+            .selected
+            .len(),
+        2
+    );
+    app.dispatch(Action::AnswerOnboarding {
+        prompt: 0,
+        option: 0,
+    });
+    assert_eq!(
+        app.state.onboarding.as_ref().unwrap().prompts[0].selected,
+        ["202"]
+    );
+    // A single-choice question replaces its answer.
+    app.dispatch(Action::AnswerOnboarding {
+        prompt: 1,
+        option: 0,
+    });
+    app.dispatch(Action::AnswerOnboarding {
+        prompt: 1,
+        option: 1,
+    });
+    assert_eq!(
+        app.state.onboarding.as_ref().unwrap().prompts[1].selected,
+        ["212"]
+    );
+    let effects = app.dispatch(Action::SubmitOnboarding { skip: false });
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::Backend(Command::Discord(
+            DiscordCommand::SubmitOnboarding { room, body }
+        ))] if room == "discord:30:31"
+            && body["onboarding_responses"] == serde_json::json!(["202", "212"])
+    ));
+    app.apply(Event::OnboardingSubmitted {
+        room: "discord:30:31".into(),
+        result: Ok(()),
+    });
+    assert!(app.state.onboarding.is_none());
+}
+
+#[test]
+#[cfg(feature = "discord")]
+fn onboarding_this_account_answered_is_not_asked_again() {
+    let mut app = discord_server();
+    app.state.onboarding = Some(chat::OnboardingForm {
+        room: "discord:30:31".into(),
+        loading: true,
+        ..Default::default()
+    });
+    app.apply(Event::GuildOnboarding {
+        room: "discord:30:31".into(),
+        result: Ok(chat::OnboardingForm {
+            room: "discord:30:31".into(),
+            enabled: true,
+            prompts: vec![chat::OnboardingPrompt {
+                id: "200".into(),
+                title: "What brings you here?".into(),
+                options: vec![chat::OnboardingOption {
+                    id: "201".into(),
+                    title: "Chatting".into(),
+                    ..Default::default()
+                }],
+                selected: vec!["201".into()],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }),
+    });
+    assert!(app.state.onboarding.is_none());
+}
+
+#[test]
+#[cfg(feature = "discord")]
 fn an_unknown_invite_says_so() {
     let mut app = discord_server();
     app.dispatch(Action::OpenJoinServer);

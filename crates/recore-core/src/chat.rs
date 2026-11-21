@@ -2192,6 +2192,85 @@ impl VerificationForm {
     }
 }
 
+/// A server's onboarding questions, which its new members answer after
+/// joining.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct OnboardingForm {
+    /// The room joining opened, whose server the answers go back to.
+    pub room: String,
+    pub loading: bool,
+    /// Whether the server turned its onboarding questions on.
+    pub enabled: bool,
+    pub prompts: Vec<OnboardingPrompt>,
+    pub submitting: bool,
+    pub error: Option<String>,
+}
+
+/// One question of [`OnboardingForm`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct OnboardingPrompt {
+    pub id: String,
+    pub title: String,
+    /// Whether only one option may be chosen.
+    pub single_select: bool,
+    pub required: bool,
+    pub options: Vec<OnboardingOption>,
+    /// The ids of the options chosen.
+    pub selected: Vec<String>,
+}
+
+/// One option of an [`OnboardingPrompt`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct OnboardingOption {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    /// A Unicode emoji shown before the title; custom emoji have no text
+    /// form here.
+    pub emoji: Option<String>,
+}
+
+impl OnboardingPrompt {
+    /// Whether this option is chosen.
+    pub fn chosen(&self, option: &str) -> bool {
+        self.selected.iter().any(|chosen| chosen == option)
+    }
+}
+
+impl OnboardingForm {
+    /// Whether the server asks anything: its questions are on, and at least
+    /// one of them has options.
+    pub fn asked(&self) -> bool {
+        self.enabled && self.prompts.iter().any(|prompt| !prompt.options.is_empty())
+    }
+
+    /// Whether any question has an answer, as a member who finished has.
+    pub fn answered(&self) -> bool {
+        self.prompts
+            .iter()
+            .any(|prompt| !prompt.selected.is_empty())
+    }
+
+    /// Whether every required question is answered.
+    pub fn ready(&self) -> bool {
+        !self.loading
+            && !self.submitting
+            && self
+                .prompts
+                .iter()
+                .filter(|prompt| prompt.required)
+                .all(|prompt| !prompt.selected.is_empty())
+    }
+
+    /// The option ids chosen, question by question.
+    pub fn responses(&self) -> Vec<String> {
+        self.prompts
+            .iter()
+            .flat_map(|prompt| prompt.selected.iter().cloned())
+            .collect()
+    }
+}
+
 /// A message in the inbox: one that mentioned this account, or one it saved
 /// for later.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -3147,6 +3226,17 @@ pub enum DiscordCommand {
     SubmitJoinRequest {
         room: String,
         fields: serde_json::Value,
+    },
+    /// The onboarding questions of the server `room` is in;
+    /// [`Event::GuildOnboarding`] follows.
+    GuildOnboarding {
+        room: String,
+    },
+    /// Send a new member's answers to the server `room` is in;
+    /// [`Event::OnboardingSubmitted`] follows.
+    SubmitOnboarding {
+        room: String,
+        body: serde_json::Value,
     },
     /// The messages that mentioned this account recently;
     /// [`Event::RecentMentions`] follows.
@@ -4929,6 +5019,17 @@ pub enum Event {
     },
     /// Whether a membership screening form was sent, or why not.
     JoinRequestSubmitted {
+        room: String,
+        result: Result<(), String>,
+    },
+    /// The onboarding questions a joined server asks, or why they didn't
+    /// come.
+    GuildOnboarding {
+        room: String,
+        result: Result<OnboardingForm, String>,
+    },
+    /// Whether onboarding answers were sent, or why not.
+    OnboardingSubmitted {
         room: String,
         result: Result<(), String>,
     },

@@ -1508,6 +1508,20 @@ impl Api {
             .await
     }
 
+    /// The onboarding questions of `guild`, as a new member answers them.
+    pub async fn guild_onboarding(&self, guild: &str) -> Result<Value> {
+        let path = format!("/guilds/{guild}/onboarding");
+        self.json(self.request(Method::GET, &path)).await
+    }
+
+    /// Sends a new member's answers to `guild`'s onboarding questions. It
+    /// answers nothing when no option was chosen, as skipping does.
+    pub async fn submit_onboarding(&self, guild: &str, body: &Value) -> Result<()> {
+        let path = format!("/guilds/{guild}/onboarding-responses");
+        self.empty(with_json(self.request(Method::POST, &path), body))
+            .await
+    }
+
     /// The messages that mentioned this account in the last seven days, at
     /// most `limit`.
     pub async fn recent_mentions(&self, limit: u32) -> Result<Value> {

@@ -595,6 +595,9 @@ pub struct AppState {
     pub invite: Option<InviteDialog>,
     /// Join a Server, while it's open.
     pub join: Option<JoinDialog>,
+    /// The onboarding questions of a server just joined, while they're
+    /// open over it.
+    pub onboarding: Option<chat::OnboardingForm>,
     /// The application a clicked authorization link opened, while its
     /// dialog is open.
     pub oauth: Option<OAuthDialog>,
@@ -2277,6 +2280,17 @@ pub enum Action {
     /// Send the membership screening form as answered.
     SubmitVerification,
     CloseJoin,
+    /// Choose or unchose an onboarding option, by its question and option.
+    AnswerOnboarding {
+        prompt: usize,
+        option: usize,
+    },
+    /// Send the onboarding answers, or skip the questions with `skip`.
+    SubmitOnboarding {
+        skip: bool,
+    },
+    /// Close a joined server's onboarding questions without answering.
+    CloseOnboarding,
     /// Open a clicked authorization link, by its query; pick the
     /// server it installs to, by its Discord id; authorize it; or
     /// close its dialog.
@@ -4077,6 +4091,12 @@ impl Application {
                 self.state.join = None;
                 vec![]
             }
+            Action::AnswerOnboarding { prompt, option } => self.answer_onboarding(prompt, option),
+            Action::SubmitOnboarding { skip } => self.submit_onboarding(skip),
+            Action::CloseOnboarding => {
+                self.state.onboarding = None;
+                vec![]
+            }
             Action::OpenEventLink { guild, event } => self.open_event_link(guild, event),
             Action::ToggleEventInterest => self.toggle_event_interest(),
             Action::CloseEvent => {
@@ -4705,8 +4725,16 @@ impl Application {
                     let server = discord::parse_room(&room)
                         .map(|(guild, _)| discord::server_id(guild))
                         .unwrap_or_default();
-                    return self.open_joined(&server, room);
+                    let mut effects = self.open_joined(&server, room.clone());
+                    effects.extend(self.fetch_onboarding(room));
+                    return effects;
                 }
+            }
+            Event::GuildOnboarding { room, result } => {
+                return self.guild_onboarding(room, result);
+            }
+            Event::OnboardingSubmitted { room, result } => {
+                return self.onboarding_submitted(room, result);
             }
             Event::RecentMentions(result) => {
                 if let Ok(mentions) = result {

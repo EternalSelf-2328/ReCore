@@ -1323,6 +1323,61 @@ async fn reads_and_sends_a_membership_screening_form() {
     assert_eq!(sent[0]["fields"], answers);
 }
 
+/// A server's onboarding questions after joining: off at first, then its
+/// prompts, one kept out of onboarding, and the answers a new member sends.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "starts testing/fake_discord.ts with bun; run scripts/test-fake-discord"]
+async fn answers_a_servers_onboarding_questions() {
+    let Fixture {
+        _fake,
+        discord,
+        server,
+        guild,
+        ..
+    } = Fixture::start("answers_a_servers_onboarding_questions").await;
+    let off = discord.guild_onboarding(&guild).await.unwrap();
+    assert_eq!(off["enabled"].as_bool(), Some(false));
+    assert_eq!(off["prompts"][2]["in_onboarding"].as_bool(), Some(false));
+    post_control(server, "/_control/onboarding", "");
+    let onboarding = discord.guild_onboarding(&guild).await.unwrap();
+    assert_eq!(onboarding["enabled"].as_bool(), Some(true));
+    let prompts = onboarding["prompts"].as_array().unwrap();
+    assert_eq!(prompts[0]["title"], "What brings you here?");
+    assert_eq!(prompts[0]["options"][0]["title"], "Chatting");
+    let body = serde_json::json!({
+        "onboarding_responses": ["201", "211"],
+        "onboarding_prompts_seen": {"200": 1, "210": 1},
+        "onboarding_responses_seen": {"201": 1, "211": 1},
+    });
+    discord.submit_onboarding(&guild, &body).await.unwrap();
+    let sent: serde_json::Value = serde_json::from_str(&control(
+        server,
+        "GET",
+        "/_control/onboarding-responses",
+        "",
+    ))
+    .unwrap();
+    assert_eq!(sent[0]["guild"], guild);
+    assert_eq!(sent[0]["responses"], serde_json::json!(["201", "211"]));
+    assert_eq!(sent[0]["prompts_seen"]["200"], 1);
+    // The answers stand: fetching again says what she chose.
+    let again = discord.guild_onboarding(&guild).await.unwrap();
+    assert_eq!(again["responses"], serde_json::json!(["201", "211"]));
+    // Skipping chooses nothing, and Discord answers with no body at all.
+    discord
+        .submit_onboarding(&guild, &serde_json::json!({"onboarding_responses": []}))
+        .await
+        .unwrap();
+    let sent: serde_json::Value = serde_json::from_str(&control(
+        server,
+        "GET",
+        "/_control/onboarding-responses",
+        "",
+    ))
+    .unwrap();
+    assert_eq!(sent[1]["responses"], serde_json::json!([]));
+}
+
 /// Soundboard in Server Settings: listing "Server"'s sounds with who added
 /// each, adding her own with Create Expressions, renaming and deleting it,
 /// and not touching Bob's; part of [`talks_to_the_fake_server`], whose

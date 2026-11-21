@@ -252,7 +252,11 @@
 // its X-Context-Properties and session. POST /_control/invite-captcha makes
 // the next join ask for an hCaptcha, as the QR ticket's does, and POST
 // /_control/invite-form makes it answer that the server has a form to fill
-// in first.
+// in first. GET /guilds/{id}/onboarding holds the server's onboarding
+// questions, one of them hidden from onboarding, and POST
+// /guilds/{id}/onboarding-responses takes a new member's answers; POST
+// /_control/onboarding turns the questions on, "off" turns them off, and
+// GET /_control/onboarding-responses lists the answers sent.
 // Authorizing Alien App from its link previews and authorizes the same
 // way: GET /oauth2/authorize shows it, POST /oauth2/authorize makes it and
 // answers the `location` to go to next, and GET
@@ -1925,6 +1929,11 @@ const acknowledgedMentions: string[] = [];
 
 /** Each membership screening form Alice sent, as GET /_control/join-requests lists them. */
 const joinRequests: any[] = [];
+
+/** Whether "Server" asks its new members onboarding questions. */
+let onboardingEnabled = false;
+/** Each onboarding answer Alice sent, as GET /_control/onboarding-responses lists them. */
+const onboardingResponses: any[] = [];
 /** Discord's answer while it indexes what's searched: 202, with the
  *  Retry-After its client reads. */
 const stillIndexing = () =>
@@ -6051,6 +6060,79 @@ async function api(req: Request, path: string, origin: string): Promise<Response
     });
   }
 
+  // A server's onboarding questions, which new members answer after they
+  // join; the last answer stands in for theirs. One question is hidden from
+  // onboarding and only appears in community customization.
+  if (method === "GET" && path.match(/^\/guilds\/(\d+)\/onboarding$/)) {
+    const last = onboardingResponses.at(-1);
+    const onboardingPrompts = [
+      {
+        id: "200",
+        type: 0,
+        title: "What brings you here?",
+        single_select: false,
+        required: true,
+        in_onboarding: true,
+        options: [
+          { id: "201", title: "Chatting", description: "Say hello in #general", emoji: { id: null, name: "💬", animated: false }, role_ids: [], channel_ids: [GENERAL] },
+          { id: "202", title: "Events", description: "Hear what is on", emoji: { id: null, name: "📅", animated: false }, role_ids: [], channel_ids: [] },
+        ],
+      },
+      {
+        id: "210",
+        type: 0,
+        title: "Which updates do you want?",
+        single_select: true,
+        required: false,
+        in_onboarding: true,
+        options: [
+          { id: "211", title: "Server news", description: null, emoji: { id: null, name: "📣", animated: false }, role_ids: [], channel_ids: [] },
+          { id: "212", title: "Nothing extra", description: null, emoji: { id: null, name: "🔇", animated: false }, role_ids: [], channel_ids: [] },
+        ],
+      },
+      {
+        id: "220",
+        type: 0,
+        title: "A question for community customization only",
+        single_select: true,
+        required: false,
+        in_onboarding: false,
+        options: [
+          { id: "221", title: "Hidden", description: null, emoji: { id: null, name: "🙈", animated: false }, role_ids: [], channel_ids: [] },
+        ],
+      },
+    ];
+    return json({
+      guild_id: path.match(/^\/guilds\/(\d+)\/onboarding$/)![1],
+      prompts: onboardingPrompts,
+      default_channel_ids: [GENERAL],
+      enabled: onboardingEnabled,
+      below_requirements: false,
+      mode: 0,
+      responses: last?.responses ?? [],
+      onboarding_prompts_seen: last?.prompts_seen ?? {},
+      onboarding_responses_seen: last?.responses_seen ?? {},
+    });
+  }
+  if (method === "POST" && (m = path.match(/^\/guilds\/(\d+)\/onboarding-responses$/))) {
+    const body: any = await req.json().catch(() => ({}));
+    const known = new Set(["201", "202", "211", "212", "221"]);
+    const responses: string[] = Array.isArray(body.onboarding_responses)
+      ? body.onboarding_responses.filter((option: unknown) => typeof option === "string" && known.has(option))
+      : [];
+    const promptsSeen = body.onboarding_prompts_seen && typeof body.onboarding_prompts_seen === "object" ? body.onboarding_prompts_seen : {};
+    const responsesSeen = body.onboarding_responses_seen && typeof body.onboarding_responses_seen === "object" ? body.onboarding_responses_seen : {};
+    onboardingResponses.push({ guild: m[1], responses, prompts_seen: promptsSeen, responses_seen: responsesSeen });
+    if (responses.length === 0) return empty();
+    return json({
+      guild_id: m[1],
+      user_id: ALICE,
+      onboarding_responses: responses,
+      onboarding_prompts_seen: promptsSeen,
+      onboarding_responses_seen: responsesSeen,
+    });
+  }
+
   if ((m = path.match(/^\/guilds\/(\d+)\/profile$/))) {
     if (m[1] === PRIVATE_GUILD && method === "GET") return json({ message: "Missing Access", code: 50001 }, 403);
     if (m[1] !== GUILD) return notFound("Unknown Guild", 10004);
@@ -9141,7 +9223,7 @@ const GENERIC_CONTROLS = new Set([
   "stream-move", "sessions", "other-session", "cookies", "list-requests", "audit-log", "slow", "gateway-reconnect", "qr-scan",
   "qr-confirm", "qr-captcha", "qr-cancel", "qr-expire", "voice-audio", "video", "stream-codec", "reactor-pages",
   "reactor-removals", "thread-searches", "thread-creates", "thread-members", "typed", "acks", "invites",
-  "invite-joins", "invite-captcha", "invite-form", "event-interest", "gift-redeems", "oauth-authorizations", "mfa", "soundboard-sends", "custom-call-sounds",
+  "invite-joins", "invite-captcha", "invite-form", "onboarding", "onboarding-responses", "event-interest", "gift-redeems", "oauth-authorizations", "mfa", "soundboard-sends", "custom-call-sounds",
   "login", "logins",
 ]);
 
@@ -9610,6 +9692,7 @@ const server = Bun.serve<SocketData>({
     if (path === "/_control/acknowledged-mentions") return Response.json(acknowledgedMentions);
     if (path === "/_control/saved-messages") return Response.json(savedMessages);
     if (path === "/_control/join-requests") return Response.json(joinRequests);
+    if (path === "/_control/onboarding-responses") return Response.json(onboardingResponses);
     if (req.method === "GET") {
       if (/^\/(icons|avatars|banners|embed\/avatars|guilds)\//.test(path)) mediaRequests.avatars++;
       if (/^\/(attachments|media\/attachments|external)\//.test(path)) mediaRequests.previews++;
@@ -10583,6 +10666,10 @@ const server = Bun.serve<SocketData>({
     if (req.method === "POST" && path === "/_control/invite-form") {
       inviteForm = true;
       return new Response("the next join by an invite has a form to fill in\n");
+    }
+    if (req.method === "POST" && path === "/_control/onboarding") {
+      onboardingEnabled = (await req.text()).trim() !== "off";
+      return new Response(onboardingEnabled ? "Server onboarding is on\n" : "Server onboarding is off\n");
     }
     if (req.method === "POST" && path === "/_control/rejoin") {
       if (!leftServer) return new Response("Alice is in Server\n", { status: 400 });

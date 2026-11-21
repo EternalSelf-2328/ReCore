@@ -215,7 +215,144 @@ impl Application {
                 DiscordCommand::MemberVerification { room },
             ))];
         }
-        self.open_joined(&joined.server, joined.room)
+        let mut effects = self.open_joined(&joined.server, joined.room.clone());
+        effects.extend(self.fetch_onboarding(joined.room));
+        effects
+    }
+
+    /// Asks the server joining opened for its onboarding questions, which
+    /// show over the server once they come.
+    pub(super) fn fetch_onboarding(&mut self, room: String) -> Vec<Effect> {
+        if self.state.preview {
+            return vec![];
+        }
+        self.state.onboarding = Some(crate::chat::OnboardingForm {
+            room: room.clone(),
+            loading: true,
+            ..Default::default()
+        });
+        vec![Effect::Backend(Command::Discord(
+            DiscordCommand::GuildOnboarding { room },
+        ))]
+    }
+
+    /// The onboarding questions arrived, or why they didn't. A server that
+    /// asks nothing, or whose answers this account already gave, is left
+    /// alone.
+    pub(super) fn guild_onboarding(
+        &mut self,
+        room: String,
+        result: Result<crate::chat::OnboardingForm, String>,
+    ) -> Vec<Effect> {
+        let Some(form) = self
+            .state
+            .onboarding
+            .as_mut()
+            .filter(|form| form.loading && form.room == room)
+        else {
+            return vec![];
+        };
+        let found = match result {
+            Ok(found) => found,
+            Err(_) => {
+                self.state.onboarding = None;
+                return vec![];
+            }
+        };
+        if !found.asked() || found.answered() {
+            self.state.onboarding = None;
+            return vec![];
+        }
+        *form = found;
+        vec![]
+    }
+
+    /// Chooses or unchoses an onboarding option.
+    pub(super) fn answer_onboarding(&mut self, prompt: usize, option: usize) -> Vec<Effect> {
+        let Some(form) = self.state.onboarding.as_mut() else {
+            return vec![];
+        };
+        let Some(prompt) = form.prompts.get_mut(prompt) else {
+            return vec![];
+        };
+        let Some(choice) = prompt.options.get(option).map(|option| option.id.clone()) else {
+            return vec![];
+        };
+        if prompt.single_select {
+            prompt.selected.clear();
+            prompt.selected.push(choice);
+        } else if let Some(chosen) = prompt
+            .selected
+            .iter()
+            .position(|selected| selected == &choice)
+        {
+            prompt.selected.remove(chosen);
+        } else {
+            prompt.selected.push(choice);
+        }
+        form.error = None;
+        vec![]
+    }
+
+    /// Sends the onboarding answers, or skips a server that requires none.
+    pub(super) fn submit_onboarding(&mut self, skip: bool) -> Vec<Effect> {
+        let Some(form) = self.state.onboarding.as_mut() else {
+            return vec![];
+        };
+        if form.loading || form.submitting || (!skip && !form.ready()) {
+            return vec![];
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|since| since.as_millis() as u64)
+            .unwrap_or_default();
+        let prompts_seen: serde_json::Map<String, serde_json::Value> = form
+            .prompts
+            .iter()
+            .map(|prompt| (prompt.id.clone(), serde_json::Value::from(now)))
+            .collect();
+        let responses_seen: serde_json::Map<String, serde_json::Value> = form
+            .prompts
+            .iter()
+            .flat_map(|prompt| prompt.selected.iter())
+            .map(|option| (option.clone(), serde_json::Value::from(now)))
+            .collect();
+        let responses = if skip { Vec::new() } else { form.responses() };
+        let room = form.room.clone();
+        form.submitting = true;
+        form.error = None;
+        vec![Effect::Backend(Command::Discord(
+            DiscordCommand::SubmitOnboarding {
+                room,
+                body: serde_json::json!({
+                    "onboarding_responses": responses,
+                    "onboarding_prompts_seen": prompts_seen,
+                    "onboarding_responses_seen": responses_seen,
+                }),
+            },
+        ))]
+    }
+
+    /// Whether onboarding answers were sent, or why not.
+    pub(super) fn onboarding_submitted(
+        &mut self,
+        room: String,
+        result: Result<(), String>,
+    ) -> Vec<Effect> {
+        let Some(form) = self
+            .state
+            .onboarding
+            .as_mut()
+            .filter(|form| form.room == room)
+        else {
+            return vec![];
+        };
+        form.submitting = false;
+        match result {
+            Ok(()) => self.state.onboarding = None,
+            Err(why) => form.error = Some(why),
+        }
+        vec![]
     }
 
     /// The membership screening form arrived, or why it didn't.

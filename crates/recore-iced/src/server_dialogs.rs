@@ -92,6 +92,11 @@ pub enum Event {
     VerificationText(usize, String),
     VerificationChoice(usize, u64),
     SubmitVerification,
+    /// An onboarding question's option, by their indexes.
+    OnboardingChoice(usize, usize),
+    SubmitOnboarding,
+    SkipOnboarding,
+    CloseOnboarding,
     OpenCaptcha,
     CloseJoin,
     ChannelName(String),
@@ -275,6 +280,10 @@ impl Dialogs {
                 Action::AnswerVerification(VerificationAnswer::Choice(index, choice))
             }
             Event::SubmitVerification => Action::SubmitVerification,
+            Event::OnboardingChoice(prompt, option) => Action::AnswerOnboarding { prompt, option },
+            Event::SubmitOnboarding => Action::SubmitOnboarding { skip: false },
+            Event::SkipOnboarding => Action::SubmitOnboarding { skip: true },
+            Event::CloseOnboarding => Action::CloseOnboarding,
             Event::OpenCaptcha => Action::OpenJoinCaptcha,
             Event::CloseJoin => Action::CloseJoin,
             Event::ChannelName(name) => {
@@ -407,6 +416,9 @@ impl<'a> View<'a> {
         }
         if state.channel_dialog.is_some() {
             return self.channel_dialog_view();
+        }
+        if state.onboarding.as_ref().is_some_and(|form| !form.loading) {
+            return self.onboarding_view();
         }
         if state.join.is_some() {
             return self.join_server_view();
@@ -643,6 +655,103 @@ impl<'a> View<'a> {
             .into(),
         );
         Some(self.cx.look.framed(body, WIDE, message(Event::CloseJoin)))
+    }
+
+    /// A server just joined asks what its new member is here for: each
+    /// question's options, and Finish or Skip.
+    fn onboarding_view(self) -> Option<Element<'a, Message>> {
+        let form = self.cx.state.onboarding.as_ref()?;
+        let theme = self.cx.look.theme;
+        let mut body = vec![
+            self.cx
+                .look
+                .dialog_head("Welcome!", message(Event::CloseOnboarding)),
+            form::note(
+                theme,
+                "Tell this server a little about yourself. Your answers are saved to your account.",
+            )
+            .into(),
+        ];
+        for (index, prompt) in form.prompts.iter().enumerate() {
+            let title = if prompt.required {
+                format!("{} *", prompt.title)
+            } else {
+                prompt.title.clone()
+            };
+            body.push(form::heading(theme, title).into());
+            for (choice, option) in prompt.options.iter().enumerate() {
+                let chosen = prompt.chosen(&option.id);
+                let (ground, ink, detail) = if chosen {
+                    (theme.accent, theme.on_accent, theme.on_accent)
+                } else {
+                    (theme.sidebar, theme.text, theme.muted)
+                };
+                let label = match &option.emoji {
+                    Some(emoji) => format!("{emoji} {}", option.title),
+                    None => option.title.clone(),
+                };
+                let mut content: Vec<Element<'a, Message>> =
+                    vec![text(label).size(14).color(ink).into()];
+                if !option.description.is_empty() {
+                    content.push(
+                        text(option.description.as_str())
+                            .size(12)
+                            .color(detail)
+                            .into(),
+                    );
+                }
+                body.push(
+                    button(column(content).spacing(2))
+                        .padding([6, 10])
+                        .width(Length::Fill)
+                        .on_press(message(Event::OnboardingChoice(index, choice)))
+                        .style(move |_, _| button::Style {
+                            background: Some(ground.into()),
+                            border: crate::style::round(6),
+                            ..Default::default()
+                        })
+                        .into(),
+                );
+            }
+        }
+        if let Some(error) = &form.error {
+            body.push(form::note_in(error.as_str(), theme.danger).into());
+        }
+        let required = form.prompts.iter().any(|prompt| prompt.required);
+        let mut buttons = row![
+            action(
+                theme,
+                "Cancel",
+                Kind::Ghost,
+                Some(message(Event::CloseOnboarding))
+            ),
+            iced::widget::Space::new().width(Length::Fill),
+        ]
+        .spacing(8);
+        if !required {
+            buttons = buttons.push(action(
+                theme,
+                "Skip",
+                Kind::Ghost,
+                (!form.loading && !form.submitting).then(|| message(Event::SkipOnboarding)),
+            ));
+        }
+        buttons = buttons.push(action(
+            theme,
+            if form.submitting {
+                "Sending..."
+            } else {
+                "Finish"
+            },
+            Kind::Primary,
+            form.ready().then(|| message(Event::SubmitOnboarding)),
+        ));
+        body.push(buttons.into());
+        Some(
+            self.cx
+                .look
+                .framed(body, WIDE, message(Event::CloseOnboarding)),
+        )
     }
 
     /// Join a Server, or the dialog a clicked invite link opens: the field

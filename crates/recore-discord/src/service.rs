@@ -4541,6 +4541,16 @@ impl Discord {
         self.api.submit_join_request(guild, fields).await
     }
 
+    /// The onboarding questions of `guild`, as a new member answers them.
+    pub async fn guild_onboarding(&self, guild: &str) -> Result<serde_json::Value> {
+        self.api.guild_onboarding(guild).await
+    }
+
+    /// Sends a new member's answers to `guild`'s onboarding questions.
+    pub async fn submit_onboarding(&self, guild: &str, body: &serde_json::Value) -> Result<()> {
+        self.api.submit_onboarding(guild, body).await
+    }
+
     /// The messages that mentioned this account recently, newest first.
     pub async fn recent_mentions(&self) -> Result<Vec<crate::message::Message>> {
         let answer = self.api.recent_mentions(25).await?;

@@ -287,6 +287,56 @@ fn join_a_server_shows_the_invites_server_and_a_link_opens_it() {
 }
 
 #[test]
+fn a_joined_server_asks_its_onboarding_questions_over_it() {
+    use recore_core::chat::{OnboardingForm, OnboardingOption, OnboardingPrompt};
+
+    let (mut app, _folder) = discord_server(0, |_, _| {});
+    change(&mut app, |state| {
+        state.onboarding = Some(OnboardingForm {
+            room: "discord:10:13".into(),
+            enabled: true,
+            prompts: vec![OnboardingPrompt {
+                id: "200".into(),
+                title: "What brings you here?".into(),
+                required: true,
+                options: vec![
+                    OnboardingOption {
+                        id: "201".into(),
+                        title: "Chatting".into(),
+                        emoji: Some("💬".into()),
+                        ..Default::default()
+                    },
+                    OnboardingOption {
+                        id: "202".into(),
+                        title: "Events".into(),
+                        emoji: Some("📅".into()),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        });
+    });
+    for words in [
+        "Welcome!",
+        "What brings you here? *",
+        "💬 Chatting",
+        "📅 Events",
+        "Finish",
+    ] {
+        assert!(shows(&app, words), "{words}");
+    }
+    assert!(!shows(&app, "Skip"), "a required question has no Skip");
+    interact(&mut app, |ui| {
+        ui.click("💬 Chatting").expect("Chatting");
+    });
+    let form = app.client.state().onboarding.clone().expect("open");
+    assert_eq!(form.prompts[0].selected, ["201"]);
+    assert!(shows(&app, "Finish"), "still open to send or cancel");
+}
+
+#[test]
 fn browse_channels_opens_from_a_community_servers_list_and_searches() {
     use recore_core::application::{Action, Navigation};
     let (mut app, _folder) = super::server::discord_server(0, |server, _| {

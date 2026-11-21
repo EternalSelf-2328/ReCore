@@ -45,9 +45,13 @@ Escape closes it.
 - Join a Server, from the rail's button or a clicked invite link: the
   field (Join's alone; Enter finds the invite), the server once found
   with its icon and who is online, how joining goes (looking up, joining,
-  already in it, a captcha or a form to finish in the browser), and Find
-  Invite, Join Server or Open Server; Open the captcha again and Open in
-  browser go through the core to `browser.rs`.
+  already in it, or a captcha), and Find Invite, Join Server or Open
+  Server; Open the captcha again and Open in browser go through the core
+  to `browser.rs`. A joined server's membership form follows in the same
+  frame (`state.join.verification`): the rules with a tick, text fields
+  and choices, then Send. Its onboarding questions follow over the
+  server it opened (`state.onboarding`): each prompt's options, Finish,
+  or Skip when the server requires no answer.
 - Create channel (Text or Voice) and Create category, in the server or
   the category the menu was for, Duplicate channel with its name to change,
   and Delete channel or category in red, which Delete Channel in the

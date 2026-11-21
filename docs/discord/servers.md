@@ -229,8 +229,23 @@ field, or a list of choices. Send answers it with `PUT
 /guilds/{server}/requests/@me` and `form_fields`, each carrying its label,
 `required`, `values` and `response`, then opens the invite's channel once
 the server lists. A required question left unanswered keeps Send off, and a
-refusal stays in the dialog. Discord's onboarding questions after the form
-aren't shown yet. A voice channel's invite joins the server and opens the
+refusal stays in the dialog.
+
+Once the form is sent, and for a server without one, ReCore asks `GET
+/guilds/{server}/onboarding`. When the server turned its questions on, it
+shows them over the server it just opened, as Discord's client does: each
+prompt's title and options, one choice or several, with Discord's emoji
+before an option when it is a Unicode one. Finish answers with `POST
+/guilds/{server}/onboarding-responses` and `onboarding_responses`, the
+option ids chosen, `onboarding_prompts_seen` and
+`onboarding_responses_seen`, all the prompts and chosen options stamped
+with the time they were seen. A server with no required question offers
+Skip, which sends no choices; Cancel closes the questions unanswered, and
+the server stays joined either way. Prompts Discord keeps out of onboarding
+(`in_onboarding: false`) aren't shown, and a server whose questions this
+account already answered asks nothing again.
+
+A voice channel's invite joins the server and opens the
 channel without joining the call. An invite in a message shows Discord's
 card with a Join Server button, which opens this dialog with its code
 instead of the browser. Discord's client also sends `invite_instance_id`
@@ -427,7 +442,7 @@ as they were. Turned off with no channel or category followed, the same
 body follows every text and voice channel the account sees, in
 `channel_overrides`, so the list doesn't empty; Discord's client does that
 too unless the account finished the server's onboarding, and adds the
-onboarding's default channels, which ReCore doesn't fetch.
+onboarding's default channels. ReCore does neither.
 
 `ChatRoom::unlisted` marks a channel left out, and each thread of it, worked
 out with the pinned channels when the server's snapshot changes, rather than a

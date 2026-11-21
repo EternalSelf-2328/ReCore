@@ -140,6 +140,58 @@ pub fn command(
             });
             return;
         }
+        Command::Discord(DiscordCommand::GuildOnboarding { room }) => {
+            let room = room.clone();
+            let (Ok(discord), Some((guild, _))) = (discord, discord::parse_room(&room)) else {
+                let _ = events.send(Event::GuildOnboarding {
+                    room,
+                    result: Err(NOT_DISCORD.into()),
+                });
+                return;
+            };
+            let (discord, guild, events) = (discord.clone(), guild.to_owned(), events.clone());
+            tokio::spawn(async move {
+                let result = discord
+                    .guild_onboarding(&guild)
+                    .await
+                    .map(|onboarding| onboarding_form(&room, &onboarding))
+                    .map_err(|error| {
+                        tracing::warn!(
+                            error = format!("{error:#}"),
+                            "could not fetch onboarding questions"
+                        );
+                        error.to_string()
+                    });
+                let _ = events.send(Event::GuildOnboarding { room, result });
+            });
+            return;
+        }
+        Command::Discord(DiscordCommand::SubmitOnboarding { room, body }) => {
+            let room = room.clone();
+            let body = body.clone();
+            let (Ok(discord), Some((guild, _))) = (discord, discord::parse_room(&room)) else {
+                let _ = events.send(Event::OnboardingSubmitted {
+                    room,
+                    result: Err(NOT_DISCORD.into()),
+                });
+                return;
+            };
+            let (discord, guild, events) = (discord.clone(), guild.to_owned(), events.clone());
+            tokio::spawn(async move {
+                let result = discord
+                    .submit_onboarding(&guild, &body)
+                    .await
+                    .map_err(|error| {
+                        tracing::warn!(
+                            error = format!("{error:#}"),
+                            "could not send onboarding answers"
+                        );
+                        error.to_string()
+                    });
+                let _ = events.send(Event::OnboardingSubmitted { room, result });
+            });
+            return;
+        }
         Command::Discord(DiscordCommand::RecentMentions) => {
             let Ok(discord) = discord else {
                 let _ = events.send(Event::RecentMentions(Err(NOT_DISCORD.into())));
@@ -1296,6 +1348,63 @@ fn verification_form(room: &str, form: &serde_json::Value) -> crate::chat::Verif
     crate::chat::VerificationForm {
         room: room.to_owned(),
         fields,
+        ..Default::default()
+    }
+}
+
+/// A server's onboarding questions as the dialog shows them.
+fn onboarding_form(room: &str, form: &serde_json::Value) -> crate::chat::OnboardingForm {
+    let responses: Vec<&str> = form["responses"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|option| option.as_str())
+        .collect();
+    let prompts = form["prompts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|prompt| prompt["in_onboarding"].as_bool().unwrap_or(true))
+        .map(|prompt| {
+            let options: Vec<crate::chat::OnboardingOption> = prompt["options"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|option| {
+                    let emoji = option["emoji"]["name"]
+                        .as_str()
+                        .filter(|_| option["emoji"]["id"].is_null())
+                        .map(str::to_owned);
+                    crate::chat::OnboardingOption {
+                        id: option["id"].as_str().unwrap_or_default().to_owned(),
+                        title: option["title"].as_str().unwrap_or_default().to_owned(),
+                        description: option["description"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_owned(),
+                        emoji,
+                    }
+                })
+                .collect();
+            let selected = options
+                .iter()
+                .filter(|option| responses.iter().any(|id| id == &option.id))
+                .map(|option| option.id.clone())
+                .collect();
+            crate::chat::OnboardingPrompt {
+                id: prompt["id"].as_str().unwrap_or_default().to_owned(),
+                title: prompt["title"].as_str().unwrap_or_default().to_owned(),
+                single_select: prompt["single_select"].as_bool().unwrap_or(false),
+                required: prompt["required"].as_bool().unwrap_or(false),
+                options,
+                selected,
+            }
+        })
+        .collect();
+    crate::chat::OnboardingForm {
+        room: room.to_owned(),
+        enabled: form["enabled"].as_bool().unwrap_or(false),
+        prompts,
         ..Default::default()
     }
 }
