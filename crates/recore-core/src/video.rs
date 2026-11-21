@@ -170,7 +170,11 @@ impl<'a> Video<'a> {
     /// Opens the file's first video, when it has one ReCore can decode, and
     /// with `sound`, its sound.
     pub fn open(source: impl Source + 'a, sound: bool) -> Option<Self> {
-        let threads = std::thread::available_parallelism().map_or(1, |cores| cores.get().min(4));
+        // Frame-parallel decoding has diminishing returns past eight
+        // threads and costs a context of its own for each; eight keeps a
+        // 4K file ahead of its clock on a 16-core machine without leaving
+        // the rest of the window short.
+        let threads = std::thread::available_parallelism().map_or(1, |cores| cores.get().min(8));
         Self::open_with(source, sound, threads)
     }
 

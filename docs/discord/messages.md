@@ -348,7 +348,12 @@ ReCore is back, rather than showing an error.
   which moving back to it would hold up while playing. MP4, MOV and WebM
   play, with H264, VP8, VP9 or AV1 pictures in 4:2:0, 4:2:2 or 4:4:4 at
   8 or 10 bits, or 4:2:0 at 12, and AAC, Opus, MP3, Vorbis or FLAC sound;
-  HEVC, which iPhones record, doesn't, as libwebrtc's FFmpeg lacks it.
+  HEVC, which iPhones record, doesn't, as libwebrtc's FFmpeg lacks it. Its
+  decoder spreads a picture over up to eight threads and keeps two used
+  frames to fill again, so a playing video allocates no frame after its
+  first few. A file with no sound leaves the speakers closed, and a
+  download or decode that fails partway stops with an error rather than
+  looking like the end.
   A WebM's transparency shows, at 8 bits: it's a second video, in each block's
   BlockAdditional, whose brightness is the picture's alpha, which
   `native/video.c` decodes with a second libvpx decoder when a packet has one.
@@ -365,7 +370,8 @@ ReCore is back, rather than showing an error.
   whole file, which then downloads from its start as it comes. It goes
   when the video stops, as when its channel, or its thread beside the
   channel, closes. Sound plays on the
-  call's speakers through `audio_io.rs`, on Linux and Windows. Over the
+  call's speakers through `audio_io.rs`, on Linux and Windows, on a
+  playback-priority thread as a call's sound is. Over the
   mute button a slider sets how loud, as does the wheel; its travel is
   squared, so its middle sounds about half as loud. Turning it to nothing
   mutes, and unmuting brings back the level it had. The next video plays as

@@ -37,6 +37,9 @@ const RATE: u32 = 48_000;
 const CHANNELS: usize = 2;
 /// How far ahead the decoder fills its queues.
 const QUEUED_PICTURES: usize = 8;
+/// Empty pictures kept for the decoder to fill again: enough to bridge the
+/// queue's turnover without holding a second queue's memory.
+const SPARE_PICTURES: usize = 2;
 const QUEUED_SOUND_MS: u64 = 2_000;
 /// How far ahead the decoder keeps sound while the pictures' queue is full.
 const SOUND_AHEAD_MS: u64 = 500;
@@ -282,11 +285,17 @@ struct State {
     /// Bumped by each move, so what was queued before it goes.
     generation: u64,
     pictures: VecDeque<Picture>,
+    /// The pixels of pictures already shown, for the decoder to fill again,
+    /// so a playing video doesn't allocate a frame for each one.
+    spare: Vec<Vec<u8>>,
     sound: VecDeque<Sound>,
     /// Frames of sound queued.
     sound_frames: usize,
     /// The decoder reached the end of the file.
     ended: bool,
+    /// The file has no sound ReCore can play, so the sound thread stops
+    /// rather than write silence for the whole video.
+    silent: bool,
     /// A move the decoder hasn't made yet.
     seek: Option<u64>,
     /// After a move, the next picture shows even while paused.
@@ -315,9 +324,11 @@ impl Shared {
             state: Mutex::new(State {
                 generation: 0,
                 pictures: VecDeque::new(),
+                spare: Vec::new(),
                 sound: VecDeque::new(),
                 sound_frames: 0,
                 ended: false,
+                silent: false,
                 seek: None,
                 show_next: true,
                 size,
@@ -436,6 +447,7 @@ fn show(
 ) -> Result<()> {
     let mut opened = false;
     let mut finished = false;
+    let mut due = Vec::with_capacity(QUEUED_PICTURES);
     while !stop.load(Ordering::Relaxed) {
         let wait = {
             let state = shared.lock();
@@ -456,21 +468,15 @@ fn show(
             Err(channel::RecvTimeoutError::Disconnected) => break,
         }
         let mut state = shared.lock();
-        if let Some(error) = state.failed.take() {
-            anyhow::bail!(error);
-        }
-        if let Some(at) = progress.needed() {
-            report(Report::Needs { at });
-        }
-        if !opened && let Some(file) = &state.opened {
-            opened = true;
-            report(Report::Opened {
-                duration_ms: file.duration_ms,
-                width: file.width,
-                height: file.height,
-                sound: file.sound,
-            });
-        }
+        let failed = state.failed.take();
+        let opened_now = if opened {
+            None
+        } else {
+            state
+                .opened
+                .as_ref()
+                .map(|file| (file.duration_ms, file.width, file.height, file.sound))
+        };
         // The clock waits while there's nothing to play.
         let now = state.clock.now();
         let waiting = state.pictures.is_empty()
@@ -480,35 +486,66 @@ fn show(
         state.clock.run(running);
         let now = state.clock.now();
         let mut shown = false;
+        due.clear();
         while let Some(picture) = state.pictures.front() {
-            let due = state.show_next || (state.playing && picture.time <= now);
-            if !due {
+            let due_now = state.show_next || (state.playing && picture.time <= now);
+            if !due_now {
                 break;
             }
             // A picture whose successor is due too came too late to show.
             let late =
                 !state.show_next && state.pictures.get(1).is_some_and(|next| next.time <= now);
-            let picture = state.pictures.pop_front().expect("a picture");
+            let mut picture = state.pictures.pop_front().expect("a picture");
             shown = true;
             if !late && writer.fits(picture.width, picture.height) {
                 state.show_next = false;
                 state.shown = Some(picture.time);
-                writer.write_timed(picture.width, picture.height, picture.time, |pixels| {
-                    pixels.copy_from_slice(&picture.rgba);
-                });
+                due.push(picture);
+            } else if state.spare.len() < SPARE_PICTURES {
+                // The pixels go back to the decoder, which fills them again
+                // instead of allocating a frame a picture.
+                state.spare.push(std::mem::take(&mut picture.rgba));
+            }
+        }
+        let ended =
+            state.ended && state.pictures.is_empty() && state.sound.is_empty() && state.playing;
+        if ended {
+            state.playing = false;
+            state.clock.run(false);
+        }
+        drop(state);
+        if let Some(error) = failed {
+            anyhow::bail!(error);
+        }
+        if let Some((duration_ms, width, height, sound)) = opened_now {
+            opened = true;
+            report(Report::Opened {
+                duration_ms,
+                width,
+                height,
+                sound,
+            });
+        }
+        if let Some(at) = progress.needed() {
+            report(Report::Needs { at });
+        }
+        // The frame copies and the pipe writes happen outside the state
+        // lock the decoder and the sound thread need.
+        for mut picture in due.drain(..) {
+            writer.write_timed(picture.width, picture.height, picture.time, |pixels| {
+                pixels.copy_from_slice(&picture.rgba);
+            });
+            let mut state = shared.lock();
+            if state.spare.len() < SPARE_PICTURES {
+                state.spare.push(std::mem::take(&mut picture.rgba));
             }
         }
         if shown {
             shared.changed.notify_all();
         }
-        if state.ended && state.pictures.is_empty() && state.sound.is_empty() && state.playing {
-            state.playing = false;
-            state.clock.run(false);
-            shared.changed.notify_all();
-            if !finished {
-                finished = true;
-                report(Report::Finished);
-            }
+        if ended && !finished {
+            finished = true;
+            report(Report::Finished);
         }
     }
     Ok(())
@@ -557,7 +594,11 @@ fn take(shared: &Shared, progress: &Progress, control: Control) {
 fn move_to(shared: &Shared, state: &mut State, time_ms: u64) {
     state.generation += 1;
     state.seek = Some(time_ms);
-    state.pictures.clear();
+    while let Some(picture) = state.pictures.pop_front() {
+        if state.spare.len() < SPARE_PICTURES {
+            state.spare.push(picture.rgba);
+        }
+    }
     state.sound.clear();
     state.sound_frames = 0;
     state.ended = false;
@@ -578,12 +619,17 @@ fn decode(download: Download, sound: bool, shared: &Shared) {
     let mut resampler = video
         .sound
         .map(|(rate, channels)| Resampler::new(rate, channels));
-    shared.lock().opened = Some(Opened {
-        duration_ms: video.duration_ms,
-        width: video.width,
-        height: video.height,
-        sound: resampler.is_some(),
-    });
+    {
+        let mut state = shared.lock();
+        state.opened = Some(Opened {
+            duration_ms: video.duration_ms,
+            width: video.width,
+            height: video.height,
+            sound: resampler.is_some(),
+        });
+        state.silent = resampler.is_none();
+        shared.changed.notify_all();
+    }
     // Pictures and sound before a move's time are decoded, not shown.
     let mut skip_until = 0;
     let mut last_picture = 0;
@@ -663,9 +709,16 @@ fn decode(download: Download, sound: bool, shared: &Shared) {
                     continue;
                 }
                 queued = true;
-                drop(state);
                 let (width, height) = fit(video.width, video.height, size.0, size.1);
-                let mut rgba = vec![0; width as usize * height as usize * 4];
+                let length = width as usize * height as usize * 4;
+                let mut rgba = state.spare.pop().unwrap_or_default();
+                // After a resize, a much larger frame is dropped rather than
+                // kept at its old size.
+                if rgba.capacity() > length.saturating_mul(2) {
+                    rgba = Vec::new();
+                }
+                drop(state);
+                rgba.resize(length, 0);
                 if let Err(error) = video.picture(&mut rgba, width, height) {
                     tracing::debug!(
                         error = format!("{error:#}"),
@@ -681,6 +734,8 @@ fn decode(download: Download, sound: bool, shared: &Shared) {
                         height,
                         rgba,
                     });
+                } else if state.spare.len() < SPARE_PICTURES {
+                    state.spare.push(rgba);
                 }
             }
             Ok(Next::Sound(time)) => {
@@ -714,7 +769,7 @@ fn decode(download: Download, sound: bool, shared: &Shared) {
             Err(_) if shared.interrupt.load(Ordering::Relaxed) => {}
             Err(error) => {
                 tracing::debug!(error = format!("{error:#}"), "the video stopped decoding");
-                state.ended = true;
+                state.failed = Some(format!("the video stopped playing: {error:#}"));
             }
         }
     }
@@ -722,6 +777,7 @@ fn decode(download: Download, sound: bool, shared: &Shared) {
 
 /// The sound thread: plays queued sound when the clock reaches it.
 fn play_sound(mut output: Output<f32>, shared: &Shared) {
+    crate::audio_io::raise_thread_priority("video");
     // 10 ms at a time.
     let frames = RATE as usize / 100;
     let mut generation = None;
@@ -730,7 +786,7 @@ fn play_sound(mut output: Output<f32>, shared: &Shared) {
     loop {
         let latency = output.latency().as_millis() as u64;
         let mut state = shared.lock();
-        if state.stop {
+        if state.stop || state.silent {
             return;
         }
         if !state.playing || state.clock.since.is_none() || generation != Some(state.generation) {
@@ -880,7 +936,10 @@ fn stereo(frame: &[f32]) -> [f32; 2] {
         [left, right] => [*left, *right],
         [left, right, centre, rest @ ..] => {
             let (back_left, back_right) = match rest {
+                // 5.1 and wider place LFE before the surrounds; 5.0 and quad
+                // have the surrounds right after the centre.
                 [_, back_left, back_right, ..] => (*back_left, *back_right),
+                [back_left, back_right, ..] => (*back_left, *back_right),
                 _ => (0.0, 0.0),
             };
             [
@@ -922,6 +981,11 @@ mod tests {
         assert_eq!(stereo(&[0.1, 0.2]), [0.1, 0.2]);
         let [left, right] = stereo(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
         assert!(left > 0.0 && right == 0.0);
+        // 5.0, without a low-frequency channel, keeps its surrounds.
+        let [left, right] = stereo(&[0.0, 0.0, 0.0, 1.0, 0.0]);
+        assert!(left > 0.0 && right == 0.0);
+        let [left, right] = stereo(&[0.0, 0.0, 0.0, 0.0, 1.0]);
+        assert!(left == 0.0 && right > 0.0);
     }
 
     #[test]
