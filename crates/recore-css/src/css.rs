@@ -1403,8 +1403,65 @@ impl Vars {
     }
 }
 
+/// The resolved custom properties a palette reads. [`Vars`] applies the
+/// theme's own root cascade; [`crate::semantic::SemanticVars`] reads the
+/// computed style the CSS engine settled, so a palette can be built from
+/// either without copying its values.
+pub trait Variables {
+    /// The value `name` settled to, before `var()` substitution.
+    fn get(&self, name: &str) -> Option<&str>;
+
+    /// Whether the theme names `name` at all.
+    fn contains(&self, name: &str) -> bool;
+
+    /// `value` with its `var()`s filled in, or `None` when one has no value.
+    fn resolve<'a>(&'a self, value: &'a str) -> Option<Cow<'a, str>>;
+
+    /// The folder or web address `name` came from, for relative files.
+    fn origin(&self, _name: &str) -> Option<&str> {
+        None
+    }
+
+    /// The colour `name` settles to, after `var()` substitution.
+    fn color(&self, name: &str, light: bool) -> Option<Rgba> {
+        let value = self.resolve(self.get(name)?)?;
+        parse_color(&value, light)
+    }
+
+    /// The colour of the first of `names` that resolves.
+    fn first_color(&self, names: &[&str], light: bool) -> Option<Rgba> {
+        names.iter().find_map(|name| self.color(name, light))
+    }
+}
+
+impl Variables for Vars {
+    fn get(&self, name: &str) -> Option<&str> {
+        Vars::get(self, name)
+    }
+
+    fn contains(&self, name: &str) -> bool {
+        Vars::contains(self, name)
+    }
+
+    fn resolve<'a>(&'a self, value: &'a str) -> Option<Cow<'a, str>> {
+        Vars::resolve(self, value)
+    }
+
+    fn origin(&self, name: &str) -> Option<&str> {
+        Vars::origin(self, name)
+    }
+
+    fn color(&self, name: &str, light: bool) -> Option<Rgba> {
+        Vars::color(self, name, light)
+    }
+
+    fn first_color(&self, names: &[&str], light: bool) -> Option<Rgba> {
+        Vars::first_color(self, names, light)
+    }
+}
+
 /// The closing parenthesis of `var(`'s arguments.
-fn matching_paren(text: &str) -> Option<usize> {
+pub(crate) fn matching_paren(text: &str) -> Option<usize> {
     let mut depth = 0u32;
     let mut quote: Option<char> = None;
     let mut escaped = false;

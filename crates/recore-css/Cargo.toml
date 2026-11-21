@@ -14,3 +14,8 @@ workspace = true
 doctest = false
 
 [dependencies]
+# The CSS engine: parsing, selectors, cascade, inheritance, custom
+# properties and taffy layout for a theme's synthetic regions. The semantic
+# layer reads the computed values and the chosen theme's page DisplayList;
+# iced paints it. See docs/themes.md.
+style-engine = { version = "1.0.0", default-features = false, features = ["layout"] }

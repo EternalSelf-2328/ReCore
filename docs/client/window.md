@@ -210,7 +210,9 @@ own, which a stream hands to the event loop as messages; nothing polls.
 `theme.rs` holds the theme every widget paints with: one struct of the
 theme's colours, which `themes.rs` fills from the
 core's palettes (`recore_core::theme`, see [themes](../themes.md)), turned
-into iced's colour type once (`themes::theme`), plus the colours
+into iced's colour type once (`themes::theme`), plus the panel gap, the
+channel and member list widths a CSS flex/grid page names, and the page paint image
+`css_paint.rs` draws once, with the colours
 `Theme::worked_out` works out from them
 (the menu's ground and outline, the composer's ground and placeholder, a
 destructive row's text, the selection, a mention's colour) and iced's own

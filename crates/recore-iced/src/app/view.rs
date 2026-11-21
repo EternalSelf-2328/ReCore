@@ -184,6 +184,21 @@ impl App {
             }
             None => base,
         };
+        // A CSS theme's page paint sits under the native panels; the panels
+        // and the frame's gaps decide how much of it shows.
+        let base: Element<'_, Message> = match &self.themes.paint {
+            Some(paint) if self.themes.background_picture.is_none() => stack![
+                image(paint.clone())
+                    .content_fit(ContentFit::Fill)
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+                base
+            ]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into(),
+            _ => base,
+        };
         // After the boot signal, the screen unfolds from its power-on line.
         let base: Element<'_, Message> = match self.reveal {
             Some(start) if self.themes.motion() == crate::themes::Motion::Full => {
@@ -720,6 +735,8 @@ impl App {
     /// Shows the window in `theme` without keeping it, as the theme
     /// editor shows what's edited.
     pub fn show_theme(&mut self, theme: Theme) {
+        self.layout.theme_sidebar_width = theme.sidebar_width;
+        self.layout.theme_members_width = theme.members_width;
         self.win.pictures.clear_filtered();
         if theme == self.theme {
             return;

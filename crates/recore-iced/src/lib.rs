@@ -50,6 +50,7 @@ mod control_file;
 mod controls;
 mod conversation;
 mod css_animation;
+mod css_paint;
 mod ctx;
 mod desktop;
 mod slot;
