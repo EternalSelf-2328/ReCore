@@ -24,6 +24,10 @@ const RELEASES: &str = "https://api.github.com/repos/leriart/ReCore/releases?per
 /// Where a release's page is, for the browser to open: only this project's.
 const PAGES: &str = "https://github.com/leriart/ReCore/releases/";
 
+/// The changelog shipped inside the app. About shows the running version's
+/// section; the release workflow publishes the same section.
+const CHANGELOG: &str = include_str!("../CHANGELOG.md");
+
 /// A SemVer version, as `scripts/set-version` allows them: a core of three
 /// numbers and a dotted prerelease part. Build metadata is dropped, as it
 /// doesn't take part in precedence.
@@ -285,6 +289,37 @@ pub fn notes_of(body: &str) -> String {
     notes
 }
 
+/// The bundled changelog's entries for `version`, as plain lines for About.
+/// A nightly reads its base version's section; a version the changelog
+/// doesn't name is empty.
+pub fn changelog(version: &str) -> String {
+    let wanted = version
+        .split('-')
+        .next()
+        .unwrap_or(version)
+        .trim()
+        .trim_start_matches('v');
+    let mut section = String::new();
+    let mut inside = false;
+    for line in CHANGELOG.lines() {
+        if let Some(title) = line.strip_prefix("## ") {
+            if inside {
+                break;
+            }
+            let title = title.trim().trim_start_matches('v');
+            if title.split_whitespace().next() == Some(wanted) {
+                inside = true;
+            }
+            continue;
+        }
+        if inside {
+            section.push_str(line);
+            section.push('\n');
+        }
+    }
+    notes_of(&section)
+}
+
 /// Whether `kind` is a Conventional Commits prefix such as `fix` or `feat(ui)!`.
 fn is_commit_kind(kind: &str) -> bool {
     const TYPES: [&str; 11] = [
@@ -518,6 +553,16 @@ mod tests {
         let long = format!("- {}\n", "word ".repeat(50)).repeat(40);
         assert!(notes_of(&long).chars().count() <= NOTES_LIMIT);
         assert!(!notes_of(&long).ends_with(' '));
+    }
+
+    #[test]
+    fn the_bundled_changelog_reads_the_running_versions_section() {
+        let notes = changelog("0.5.5");
+        assert!(notes.contains("style-engine"));
+        assert!(notes.contains("Discovery"));
+        assert!(!notes.contains("0.5.4"));
+        assert_eq!(changelog("0.5.5-nightly.20261121.1"), notes);
+        assert_eq!(changelog("99.0.0"), "");
     }
 
     #[test]

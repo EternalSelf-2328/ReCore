@@ -202,8 +202,9 @@ own, which a stream hands to the event loop as messages; nothing polls.
   release shows in About with its notes, Update and restart (which
   downloads and checks it, its progress shown and Cancel offered, then
   ends the window so `main` finishes it), View release and Skip this
-  version, and as a banner under Settings' sections. A look nobody asked
-  for tells of a newer release once in a notification that opens About.
+  version, and as a banner under Settings' sections. About also shows the
+  running version's bundled changelog. A look nobody asked for tells of a
+  newer release once in a notification that opens About.
 
 ## Theme
 

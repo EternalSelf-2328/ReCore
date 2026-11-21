@@ -389,6 +389,7 @@ fn launch(
                     tone: build.channel().tone(),
                     summary: build.summary(),
                     version: build.version().to_owned(),
+                    changelog: update::changelog(build.version()),
                 }
             },
         },

@@ -111,9 +111,9 @@ recording. Each change is kept at once in
 - Activity: sharing what is played, watched or listened to (Discord keeps
   it), and the games named by hand, added, edited and removed, which
   detection takes at once.
-- About: the build with Copy version, the update switches, the releases
-  (Updates in [the window](window.md#the-window-and-the-desktop)), and
-  the links.
+- About: the build with Copy version, the bundled changelog for this
+  version, the update switches, the releases (Updates in [the
+  window](window.md#the-window-and-the-desktop)), and the links.
 
 A setting that came with an update has a NEW tag after its name, and its
 page's row in the list one too, until Settings leaves that page; what was

@@ -120,8 +120,10 @@ source snapshot is identical in every job, so the release carries one copy.
 
 The site's **Releases** section reads
 `api.github.com/repos/leriart/ReCore/releases`, so it shows the new release
-without a site rebuild. The release notes are the annotated tag's message plus
-the commits since the previous tag.
+without a site rebuild. The release notes are the annotated tag's message,
+the version's section from `CHANGELOG.md`, and the commits since the previous
+tag in a folded list. `CHANGELOG.md` is also a release asset and is included
+in each package.
 
 Stable updates need `SHA256SUMS.txt.minisig`. The stable key never leaves the
 maintainer's machine, so add it as `STABLE_SIGNING_KEY` in the `release`
@@ -234,14 +236,24 @@ About then says to update through that package manager.
 
 ### What's new
 
-The text comes from the release's own description on GitHub, which the release
-workflow writes: for a stable release a summary and a "What's new" list, for a
-nightly the commits since the previous nightly. `update::notes_of` makes plain
-lines of it: it leaves out the Install section, the folded "Other changes", the
-link to the full comparison and the footer, and it takes the `feat(scope):`
-before a commit line and the `by @name in <sha>` after it off. Only the newest
-stable release and the newest nightly keep their text in memory. The release's
-page has the rest.
+`CHANGELOG.md` holds the human-written changes for each stable release. The
+app embeds it: About shows the running version's section under CHANGELOG, so a
+new install can read what changed without being offered an update.
+`update::changelog` extracts that section and `update::notes_of` makes plain
+lines of it.
+
+The release workflow writes the same section into the release's "What's new",
+follows it with the commits since the previous tag in a folded list, and
+uploads `CHANGELOG.md` beside the packages. For a nightly, the app falls back
+to its base stable version's section; the release page uses the commits since
+the previous nightly.
+
+The text from an available release still comes from the release's own
+description on GitHub. `update::notes_of` leaves out the Install section, the
+folded commit list, the link to the full comparison and the footer, and it
+takes the `feat(scope):` before a commit line and the `by @name in <sha>`
+after it off. Only the newest stable release and the newest nightly keep their
+text in memory. The release's page has the rest.
 
 ### Updating itself
 

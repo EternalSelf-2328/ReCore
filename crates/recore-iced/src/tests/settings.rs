@@ -30,6 +30,16 @@ fn stored(folder: &tempfile::TempDir) -> serde_json::Value {
     .expect("JSON")
 }
 
+#[test]
+fn about_shows_the_bundled_changelog_for_this_version() {
+    let (mut app, _folder) = preview();
+    app.build.version = "0.5.5".into();
+    app.build.changelog = "CSS themes use style-engine".into();
+    open(&mut app, Section::About);
+    assert!(shows(&app, "CHANGELOG · 0.5.5"));
+    assert!(shows(&app, "CSS themes use style-engine"));
+}
+
 /// Settings open moving, once: their motion starts as they open, stays
 /// through what's done in them, and turns to closing as they close, the
 /// Settings closed kept, taking nothing, until they've been drawn going.

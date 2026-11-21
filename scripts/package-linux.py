@@ -71,6 +71,7 @@ def main():
         doc = appdir / "usr/share/doc/recore"
         doc.mkdir(parents=True)
         shutil.copy2(ROOT / "LICENSE", doc / "LICENSE")
+        shutil.copy2(ROOT / "CHANGELOG.md", doc / "CHANGELOG.md")
         (doc / "SOURCE.txt").write_text(
             f"The source code of this build of ReCore {version} is published with it:\n\n"
             f"  https://github.com/leriart/ReCore/releases/tag/v{version}\n"

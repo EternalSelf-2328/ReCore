@@ -20,6 +20,7 @@ rustPlatform.buildRustPackage {
     root = ../.;
     fileset = lib.fileset.unions [
       ../Cargo.toml ../Cargo.lock ../build.rs ../src ../crates ../vendor ../packaging ../themes
+      ../CHANGELOG.md
       # A workspace member, which cargo reads even though the build leaves it out.
       ../testing/hosts/Cargo.toml ../testing/tray_host.rs ../testing/record_host.rs
     ];
@@ -64,6 +65,7 @@ rustPlatform.buildRustPackage {
     install -Dm644 packaging/linux/${id}.desktop -t "$out/share/applications"
     install -Dm644 packaging/linux/${id}.metainfo.xml -t "$out/share/metainfo"
     install -Dm644 themes/*.theme.css -t "$out/share/recore/themes"
+    install -Dm644 CHANGELOG.md "$out/share/doc/recore/CHANGELOG.md"
     # The GPU, audio and screen capture libraries are loaded at runtime, and
     # NixOS keeps the GPU driver's in /run/opengl-driver.
     wrapProgram "$out/bin/recore" \

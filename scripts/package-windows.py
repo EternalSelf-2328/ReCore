@@ -141,6 +141,7 @@ def main():
         shutil.copy2(executable, package / "recore.exe")
         shutil.copytree(ROOT / "themes", package / "themes")
         shutil.copy2(ROOT / "LICENSE", package / "LICENSE.txt")
+        shutil.copy2(ROOT / "CHANGELOG.md", package / "CHANGELOG.md")
         # The source snapshot goes beside the packages, on the release page,
         # rather than into every install; SOURCE.txt says where.
         source_url = f"https://github.com/leriart/ReCore/releases/tag/v{version}{flavour['suffix']}"

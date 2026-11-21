@@ -144,27 +144,11 @@ impl<'a> Page<'a> {
             UpdateStatus::Available | UpdateStatus::Skipped
         );
         if offered && !shown.notes.is_empty() {
-            let sidebar = theme.sidebar;
-            parts.push(
-                column![
-                    form::heading(
-                        theme,
-                        format!("WHAT'S NEW IN {}", shown.latest.to_uppercase())
-                    ),
-                    container(
-                        scroll_view(
-                            container(text(shown.notes.clone()).size(13).color(theme.secondary))
-                                .padding(12)
-                        )
-                        .style(scrollbar(theme))
-                    )
-                    .max_height(NOTES_MOST)
-                    .width(Length::Fill)
-                    .style(move |_| crate::style::rounded(sidebar, 8.0))
-                ]
-                .spacing(8)
-                .into(),
-            );
+            parts.push(notes_block(
+                theme,
+                format!("WHAT'S NEW IN {}", shown.latest.to_uppercase()),
+                &shown.notes,
+            ));
         }
         if !shown.installing {
             let mut buttons = Vec::new();
@@ -226,6 +210,29 @@ impl<'a> Page<'a> {
         }
         parts
     }
+}
+
+/// A release's notes in a recessed panel, under `title`.
+pub(super) fn notes_block<'a>(
+    theme: &crate::theme::Theme,
+    title: String,
+    notes: &str,
+) -> Element<'a, Message> {
+    let sidebar = theme.sidebar;
+    column![
+        form::heading(theme, title),
+        container(
+            scroll_view(
+                container(text(notes.to_owned()).size(13).color(theme.secondary)).padding(12)
+            )
+            .style(scrollbar(theme))
+        )
+        .max_height(NOTES_MOST)
+        .width(Length::Fill)
+        .style(move |_| crate::style::rounded(sidebar, 8.0))
+    ]
+    .spacing(8)
+    .into()
 }
 
 fn update_message(event: Event) -> Message {

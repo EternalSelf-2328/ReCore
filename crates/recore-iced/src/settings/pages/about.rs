@@ -69,6 +69,13 @@ impl<'a> Page<'a> {
             ),
         );
         let mut parts = vec![form::title(theme, "About"), card];
+        if !build.changelog.is_empty() {
+            parts.push(crate::settings::updates::notes_block(
+                theme,
+                format!("CHANGELOG · {}", build.version),
+                &build.changelog,
+            ));
+        }
         parts.extend(self.updates_part());
         let checks = prefs.check_for_updates.unwrap_or(true);
         parts.push(

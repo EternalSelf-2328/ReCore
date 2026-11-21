@@ -147,6 +147,7 @@ def main():
         # The client looks in Contents/Resources/themes for a bundle.
         shutil.copytree(ROOT / "themes", resources / "themes")
         shutil.copy2(ROOT / "LICENSE", resources / "LICENSE")
+        shutil.copy2(ROOT / "CHANGELOG.md", resources / "CHANGELOG.md")
         (resources / "SOURCE.txt").write_text(
             f"The source code of this build of ReCore {version}"
             + (", with the exact source of\nthe libraries it includes under the AGPL," if rtc else "")

@@ -752,4 +752,6 @@ pub struct Build {
     pub summary: String,
     /// Its version, such as `0.4.1` or `0.5.0-nightly.20261107.12`.
     pub version: String,
+    /// The running version's bundled changelog, as plain lines for About.
+    pub changelog: String,
 }

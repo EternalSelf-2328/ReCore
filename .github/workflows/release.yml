@@ -205,6 +205,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir release
+          # The changelog is a release asset too; read it from the commit the
+          # build used, since this job sparse-checks out only what it needs.
+          if ! git show "$COMMIT:CHANGELOG.md" > release/CHANGELOG.md 2>/dev/null; then
+            rm -f release/CHANGELOG.md
+          fi
           # Both jobs produce the same source snapshot; keep one.
           cmp "dist/linux/ReCore-$VERSION-source.zip" "dist/windows/ReCore-$VERSION-source.zip"
           cp dist/linux/ReCore-* dist/linux/recore-*.pkg.tar.zst release/
@@ -241,6 +246,23 @@ jobs:
           set -euo pipefail
           previous=$(git describe --tags --abbrev=0 "$COMMIT^" 2>/dev/null || true)
           body=$(git tag -l --format='%(contents)' "$TAG")
+          changelog=$(
+            git show "$COMMIT:CHANGELOG.md" 2>/dev/null |
+            python3 -c '
+          import re
+          import sys
+
+          version = sys.argv[1]
+          text = sys.stdin.read()
+          heading = re.search(r"^##\s+v?" + re.escape(version) + r"(?:\s|$).*$", text, re.MULTILINE)
+          if not heading:
+              raise SystemExit(1)
+          start = heading.end()
+          following = re.search(r"^##\s", text[start:], re.MULTILINE)
+          end = start + following.start() if following else len(text)
+          print(text[start:end].strip())
+          ' "$VERSION"
+          ) || changelog=""
           {
             echo "ReCore $TAG."
             echo
@@ -254,11 +276,22 @@ jobs:
             echo "- **Linux:** the AppImage, and the Arch package for \`pacman -U\`."
             echo "- **macOS:** Apple Silicon and Intel ZIPs and DMGs; drag \`ReCore.app\` to Applications. These builds are ad-hoc signed, not notarised."
             echo "- **Source:** the snapshot used for this build."
+            echo "- **Changelog:** \`CHANGELOG.md\`, also shown in Settings > About."
             echo
             echo "## What's new"
             echo
+            if [[ -n "$changelog" ]]; then
+              echo "$changelog"
+            else
+              echo "No changelog entry was found for this version; see the commits below."
+            fi
+            echo
             if [[ -n "$previous" ]]; then
+              echo "<details><summary>Commits since $previous</summary>"
+              echo
               git log --no-merges --pretty='- `%h` %s' "$previous..$COMMIT" | head -120
+              echo
+              echo "</details>"
               echo
               echo "All changes: https://github.com/$GH_REPO/compare/$previous...$TAG"
             else
