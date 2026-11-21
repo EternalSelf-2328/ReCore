@@ -69,7 +69,8 @@ def main():
         del contents
 
         doc = appdir / "usr/share/doc/recore"
-        doc.mkdir(parents=True)
+        # nix/package.nix installs the changelog here, so this may exist.
+        doc.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / "LICENSE", doc / "LICENSE")
         shutil.copy2(ROOT / "CHANGELOG.md", doc / "CHANGELOG.md")
         (doc / "SOURCE.txt").write_text(
