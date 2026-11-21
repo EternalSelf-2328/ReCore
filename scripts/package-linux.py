@@ -72,7 +72,11 @@ def main():
         # nix/package.nix installs the changelog here, so this may exist.
         doc.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / "LICENSE", doc / "LICENSE")
-        shutil.copy2(ROOT / "CHANGELOG.md", doc / "CHANGELOG.md")
+        # nix/package.nix already installs a read-only copy; keep it rather
+        # than trying to overwrite it.
+        changelog = doc / "CHANGELOG.md"
+        if not changelog.is_file():
+            shutil.copy2(ROOT / "CHANGELOG.md", changelog)
         (doc / "SOURCE.txt").write_text(
             f"The source code of this build of ReCore {version} is published with it:\n\n"
             f"  https://github.com/leriart/ReCore/releases/tag/v{version}\n"
