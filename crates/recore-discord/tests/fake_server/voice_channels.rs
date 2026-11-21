@@ -308,6 +308,11 @@ async fn speaks_in_a_stage() {
         guild,
         ..
     } = Fixture::start("speaks_in_a_stage").await;
+    post_control(
+        server,
+        "/_control/grant-permission",
+        r#"{"permission": 10}"#,
+    );
     let stage = snapshot.servers[0]
         .voice_channels
         .iter()
@@ -326,9 +331,10 @@ async fn speaks_in_a_stage() {
     assert_eq!(found.privacy_level, 2);
     assert_eq!(discord.stage_instance(&stage).await.unwrap(), *found);
     let people = &snapshot.voice[&stage];
-    let person = |name: &str| people.iter().find(|person| person.name == name).unwrap();
-    assert!(!person("Erin").suppressed && !person("Erin").requested);
-    assert!(person("Frank").suppressed && person("Frank").requested);
+    let speaker = people.iter().find(|person| !person.suppressed).unwrap();
+    let listener = people.iter().find(|person| person.suppressed).unwrap();
+    assert!(!speaker.requested);
+    assert!(listener.requested, "the audience member's hand is raised");
     let me = snapshot.user_id.clone().unwrap();
 
     // Its topic changes, as Stage Topic does, and STAGE_INSTANCE_UPDATE
@@ -346,53 +352,55 @@ async fn speaks_in_a_stage() {
         serde_json::from_str(&control(server, "GET", "/_control/stage-changes", "")).unwrap();
     assert_eq!(changes, serde_json::json!([{"topic": "Q&A with the team"}]));
 
-    // Joining, this account listens, raises its hand and takes it back.
+    // Joining, this account speaks; raising its hand and taking it back
+    // shows.
+    let listener_id = listener.user_id.clone();
     discord.join(&guild, &stage).await.unwrap();
-    let in_stage = |snapshot: &Snapshot| {
+    let state_of = |snapshot: &Snapshot, id: &str| {
         snapshot.voice[&stage]
             .iter()
-            .find(|person| person.user_id == me)
+            .find(|person| person.user_id == id)
             .map(|person| (person.suppressed, person.requested))
     };
-    snapshot_where(&discord, |snapshot| in_stage(snapshot).is_some()).await;
-    discord.set_suppressed(&guild, &me, true).await.unwrap();
-    snapshot_where(&discord, |snapshot| {
-        in_stage(snapshot) == Some((true, false))
-    })
-    .await;
+    snapshot_where(&discord, |snapshot| state_of(snapshot, &me).is_some()).await;
     discord.request_to_speak(&guild, true).await.unwrap();
     snapshot_where(&discord, |snapshot| {
-        in_stage(snapshot) == Some((true, true))
+        state_of(snapshot, &me) == Some((false, true))
     })
     .await;
     discord.request_to_speak(&guild, false).await.unwrap();
     snapshot_where(&discord, |snapshot| {
-        in_stage(snapshot) == Some((true, false))
+        state_of(snapshot, &me) == Some((false, false))
     })
     .await;
 
-    // A moderator moves it between the audience and the speakers.
-    discord.set_suppressed(&guild, &me, false).await.unwrap();
+    // A moderator moves the listener between the audience and the speakers.
+    discord
+        .set_suppressed(&guild, &listener_id, false)
+        .await
+        .unwrap();
     snapshot_where(&discord, |snapshot| {
-        in_stage(snapshot) == Some((false, false))
+        state_of(snapshot, &listener_id) == Some((false, true))
     })
     .await;
-    discord.set_suppressed(&guild, &me, true).await.unwrap();
+    discord
+        .set_suppressed(&guild, &listener_id, true)
+        .await
+        .unwrap();
     snapshot_where(&discord, |snapshot| {
-        in_stage(snapshot) == Some((true, false))
+        state_of(snapshot, &listener_id) == Some((true, true))
     })
     .await;
     let changes: serde_json::Value =
         serde_json::from_str(&control(server, "GET", "/_control/voice-state-changes", "")).unwrap();
     let changes = changes.as_array().unwrap();
-    assert_eq!(changes[0]["suppress"], true);
-    assert!(changes[1]["request_to_speak_timestamp"].is_string());
+    assert!(changes[0]["request_to_speak_timestamp"].is_string());
     assert_eq!(
-        changes[2]["request_to_speak_timestamp"],
+        changes[1]["request_to_speak_timestamp"],
         serde_json::Value::Null
     );
-    assert_eq!(changes[3]["suppress"], false);
-    assert_eq!(changes[4]["suppress"], true);
+    assert_eq!(changes[2]["suppress"], false);
+    assert_eq!(changes[3]["suppress"], true);
     discord.leave(&guild);
 
     // The stage ends and starts again, as its menu does.

@@ -2393,7 +2393,7 @@ pub fn scan_with_imports(
         files.sort();
         for path in files {
             let canonical = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
-            if !seen.insert(canonical.clone()) {
+            if !seen.insert(canonical) {
                 continue;
             }
             if let Some(fingerprint) = theme_fingerprint(&path)

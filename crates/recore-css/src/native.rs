@@ -1079,14 +1079,14 @@ fn duration_of(value: &str) -> Option<u32> {
     for token in color::split_top(value, ',') {
         for token in color::split_top(token, ' ') {
             let token = token.trim();
-            if let Some(ms) = token.strip_suffix("ms") {
-                if let Ok(ms) = ms.trim().parse::<f32>() {
-                    return Some(ms.max(0.0).round() as u32);
-                }
-            } else if let Some(seconds) = token.strip_suffix('s') {
-                if let Ok(seconds) = seconds.trim().parse::<f32>() {
-                    return Some((seconds.max(0.0) * 1000.0).round() as u32);
-                }
+            if let Some(ms) = token.strip_suffix("ms")
+                && let Ok(ms) = ms.trim().parse::<f32>()
+            {
+                return Some(ms.max(0.0).round() as u32);
+            } else if let Some(seconds) = token.strip_suffix('s')
+                && let Ok(seconds) = seconds.trim().parse::<f32>()
+            {
+                return Some((seconds.max(0.0) * 1000.0).round() as u32);
             }
         }
     }

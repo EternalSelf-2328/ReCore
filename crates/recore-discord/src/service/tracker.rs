@@ -2227,7 +2227,7 @@ mod tests {
             ]}],
         });
         let mut tracker = Tracker::from_ready("1".into(), &ready, Default::default());
-        let stage = snapshot_stage(&tracker);
+        let stage = snapshot_stage(&mut tracker);
         assert_eq!(stage.topic, "Launch");
         assert_eq!(stage.privacy_level, 2);
 
@@ -2261,7 +2261,7 @@ mod tests {
             &Event::StageInstanceUpdate,
             &json!({"id": "12", "channel_id": "11", "topic": "Q&A", "privacy_level": 2}),
         ));
-        assert_eq!(snapshot_stage(&tracker).topic, "Q&A");
+        assert_eq!(snapshot_stage(&mut tracker).topic, "Q&A");
         assert!(
             !tracker.apply(
                 &Event::StageInstanceUpdate,
@@ -2280,7 +2280,7 @@ mod tests {
             &Event::StageInstanceCreate,
             &json!({"id": "13", "channel_id": "11", "topic": "Again", "privacy_level": 2}),
         ));
-        assert_eq!(snapshot_stage(&tracker).id, "13");
+        assert_eq!(snapshot_stage(&mut tracker).id, "13");
 
         // Leaving the server takes its stage with it.
         tracker.apply(&Event::GuildDelete, &json!({"id": "10"}));

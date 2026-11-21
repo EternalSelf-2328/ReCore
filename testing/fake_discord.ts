@@ -7665,7 +7665,14 @@ async function api(req: Request, path: string, origin: string): Promise<Response
     const found: any[] = [];
     for (const list of messages.values()) {
       for (const message of list) {
-        if ((message.mentions ?? []).includes(ALICE) || message.mention_everyone) {
+        const content = String(message.content ?? "");
+        if (
+          (message.mentions ?? []).includes(ALICE) ||
+          message.mention_everyone ||
+          content.includes(`<@${ALICE}>`) ||
+          content.includes("@everyone") ||
+          content.includes("@here")
+        ) {
           found.push(message);
         }
       }
