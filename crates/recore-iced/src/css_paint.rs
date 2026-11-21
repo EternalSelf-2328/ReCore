@@ -296,3 +296,33 @@ fn line(
         (cx + cos * length / 2.0, cy + sin * length / 2.0),
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use recore_css::paint_engine::css::{
+        property::{ColorStop, GradientKind},
+        value::Angle,
+    };
+
+    fn stop(red: f32) -> ColorStop {
+        ColorStop {
+            color: ColorValue::Absolute(AlphaColor::new([red, 0.0, 0.0, 1.0])),
+            position: None,
+        }
+    }
+
+    #[test]
+    fn unpositioned_stops_become_finite_positions() {
+        let gradient = Gradient {
+            kind: GradientKind::Linear(Angle(180.0)),
+            repeating: false,
+            stops: vec![stop(1.0), stop(0.5), stop(0.0)],
+            hints: Vec::new(),
+        };
+        let stops = stops(&gradient).expect("three stops");
+        assert!(stops.iter().all(|(at, _)| at.is_finite()));
+        assert_eq!(stops.first().unwrap().0, 0.0);
+        assert_eq!(stops.last().unwrap().0, 1.0);
+    }
+}
