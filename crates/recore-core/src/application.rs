@@ -100,16 +100,16 @@ pub use server_settings::{
     AuditLine, AuditLogPage, AuditRow, AuditSpan, AuditWords, BANS_BATCH, BANS_PER_PAGE, BOOSTED,
     BanInput, BansPage, BoostPage, DEFAULT_ROLE_COLOR, DESCRIPTION_LIMIT, DeleteAsk,
     EMOJI_NAME_LIMIT, EmojiInput, EmojiPage, EmojiUpload, EngagementPage, ExpressionRules,
-    FILTER_ALL, HIGHEST_VERIFICATION, InviteInput, InvitesPage, LEVEL_BOOSTS, MEMBER_PAGE_SIZES,
-    MEMBER_SORTS, MEMBERS_CHUNK, MemberInput, MembersPage, MfaRule, Ownership, OwnershipInput,
-    PAUSE_HOURS, Page as SettingsPage, PermissionGroup, PermissionInfo, PermissionLock,
-    ProfilePage, ROLE_COLORS, ROLE_NAME_LIMIT, ROLE_PERMISSIONS, RoleConfirm, RoleDraft, RoleInput,
-    RoleLock, RoleRules, RoleTab, RolesPage, SETUP_TIPS, SOUND_FILE_LIMIT, SOUND_NAME_LIMIT,
-    STICKER_DESCRIPTION_LIMIT, STICKER_NAME_LIMIT, SafetyChoice, SafetyPage, SecurityDraft,
-    ServerSettings, SettingsChoice, SettingsText, SettingsToggle, SoundDraft, SoundboardInput,
-    SoundboardPage, StickerCard, StickerDraft, StickerInput, StickersPage, TransferAsk,
-    WEBHOOK_NAME_LIMIT, WELCOME, WELCOME_STICKER, WebhookDraft, WebhookInput, WebhooksPage,
-    emoji_name,
+    FILTER_ALL, HIGHEST_VERIFICATION, IntegrationInput, IntegrationsPage, InviteInput, InvitesPage,
+    LEVEL_BOOSTS, MEMBER_PAGE_SIZES, MEMBER_SORTS, MEMBERS_CHUNK, MemberInput, MembersPage,
+    MfaRule, Ownership, OwnershipInput, PAUSE_HOURS, Page as SettingsPage, PermissionGroup,
+    PermissionInfo, PermissionLock, ProfilePage, ROLE_COLORS, ROLE_NAME_LIMIT, ROLE_PERMISSIONS,
+    RoleConfirm, RoleDraft, RoleInput, RoleLock, RoleRules, RoleTab, RolesPage, SETUP_TIPS,
+    SOUND_FILE_LIMIT, SOUND_NAME_LIMIT, STICKER_DESCRIPTION_LIMIT, STICKER_NAME_LIMIT,
+    SafetyChoice, SafetyPage, SecurityDraft, ServerSettings, SettingsChoice, SettingsText,
+    SettingsToggle, SoundDraft, SoundboardInput, SoundboardPage, StickerCard, StickerDraft,
+    StickerInput, StickersPage, TransferAsk, WEBHOOK_NAME_LIMIT, WELCOME, WELCOME_STICKER,
+    WebhookDraft, WebhookInput, WebhooksPage, emoji_name,
 };
 pub use slash::{CommandDraft, CommandRow, OptionDraft};
 pub use stickers::{FREQUENT_STICKERS, ServerStickers, StickerPicker, StickerPicture, StickerUse};
@@ -2402,6 +2402,8 @@ pub enum Action {
     Soundboard(SoundboardInput),
     /// Something done on Webhooks in a server's settings.
     Webhooks(WebhookInput),
+    /// Something done on Integrations in a server's settings.
+    Integrations(IntegrationInput),
     /// Something done on Soundboard or another page of a server's settings
     /// that acts at once.
     ServerSettingsAction(chat::ServerSettingsAction),
@@ -2918,7 +2920,8 @@ fn pictures_on_screen<'a>(
                     | server_settings::Page::AuditLog(_)
                     | server_settings::Page::Bans(_)
                     | server_settings::Page::Soundboard(_)
-                    | server_settings::Page::Webhooks(_),
+                    | server_settings::Page::Webhooks(_)
+                    | server_settings::Page::Integrations(_),
                 )
                 | None => (None, None),
             };
@@ -4167,6 +4170,7 @@ impl Application {
             Action::AuditLog(input) => self.audit_log_input(input),
             Action::Soundboard(input) => self.soundboard_input(input),
             Action::Webhooks(input) => self.webhook_input(input),
+            Action::Integrations(input) => self.integration_input(input),
             Action::ServerSettingsAction(action) => self.settings_action_input(action),
             Action::PickSoundFile(path) => {
                 vec![Effect::Backend(Command::Discord(

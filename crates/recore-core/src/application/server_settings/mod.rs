@@ -20,6 +20,7 @@ mod bans;
 mod boost;
 mod engagement;
 mod expressions;
+mod integrations;
 mod invites;
 mod members;
 mod ownership;
@@ -45,6 +46,7 @@ pub use expressions::{
     STICKER_DESCRIPTION_LIMIT, STICKER_NAME_LIMIT, StickerCard, StickerDraft, StickerInput,
     StickersPage, emoji_name,
 };
+pub use integrations::{IntegrationInput, IntegrationsPage};
 pub use invites::{InviteInput, InvitesPage, PAUSE_HOURS, SecurityDraft};
 pub use members::{MEMBER_PAGE_SIZES, MEMBER_SORTS, MEMBERS_CHUNK, MemberInput, MembersPage};
 pub use ownership::{DeleteAsk, Ownership, OwnershipInput, TransferAsk};
@@ -98,6 +100,7 @@ pub enum Page {
     Bans(Box<BansPage>),
     Soundboard(Box<SoundboardPage>),
     Webhooks(Box<WebhooksPage>),
+    Integrations(Box<IntegrationsPage>),
 }
 
 /// A switch of a settings page: one of Engagement's system messages, by
@@ -150,7 +153,8 @@ impl ServerSettings {
             | Page::AuditLog(_)
             | Page::Bans(_)
             | Page::Soundboard(_)
-            | Page::Webhooks(_) => None,
+            | Page::Webhooks(_)
+            | Page::Integrations(_) => None,
         }
     }
 
@@ -167,6 +171,7 @@ impl ServerSettings {
                 | SettingsSection::Bans
                 | SettingsSection::Soundboard
                 | SettingsSection::Webhooks
+                | SettingsSection::Integrations
         )
     }
 
@@ -185,7 +190,8 @@ impl ServerSettings {
             | Page::AuditLog(_)
             | Page::Bans(_)
             | Page::Soundboard(_)
-            | Page::Webhooks(_) => None,
+            | Page::Webhooks(_)
+            | Page::Integrations(_) => None,
         }
     }
 
@@ -241,6 +247,9 @@ impl Application {
         }
         if self.may(server, Permission::ManageWebhooks) {
             sections.push(SettingsSection::Webhooks);
+        }
+        if self.may(server, Permission::ManageServer) {
+            sections.push(SettingsSection::Integrations);
         }
         // Discord's Moderation.
         if self.may(server, Permission::ManageServer) {
@@ -566,8 +575,17 @@ impl Application {
                 };
                 self.webhooks_changed(server, done, result, webhooks);
             }
-            ServerSettingsAction::Integrations(_)
-            | ServerSettingsAction::AutoMod(_)
+            ServerSettingsAction::Integrations(_done) => {
+                let (result, integrations) = match result {
+                    Ok(ServerSettingsPage::Integrations(integrations)) => {
+                        (Ok(()), Some(integrations))
+                    }
+                    Ok(_) => (Ok(()), None),
+                    Err(error) => (Err(error), None),
+                };
+                self.integrations_changed(server, result, integrations);
+            }
+            ServerSettingsAction::AutoMod(_)
             | ServerSettingsAction::Privacy(_)
             | ServerSettingsAction::Discovery(_) => {
                 if let Some(settings) = self
@@ -944,7 +962,8 @@ impl Application {
                 | Page::AuditLog(_)
                 | Page::Bans(_)
                 | Page::Soundboard(_)
-                | Page::Webhooks(_),
+                | Page::Webhooks(_)
+                | Page::Integrations(_),
             )
             | None => {}
         }
@@ -1033,7 +1052,8 @@ impl Application {
                 | Page::AuditLog(_)
                 | Page::Bans(_)
                 | Page::Soundboard(_)
-                | Page::Webhooks(_),
+                | Page::Webhooks(_)
+                | Page::Integrations(_),
             )
             | None => {}
         }
@@ -1121,6 +1141,9 @@ impl Page {
             }
             (SettingsSection::Webhooks, ServerSettingsPage::Webhooks(webhooks)) => {
                 Self::Webhooks(Box::new(WebhooksPage::new(webhooks)))
+            }
+            (SettingsSection::Integrations, ServerSettingsPage::Integrations(integrations)) => {
+                Self::Integrations(Box::new(IntegrationsPage::new(integrations)))
             }
             (SettingsSection::Roles, ServerSettingsPage::Roles(roles)) => {
                 Self::Roles(Box::new(RolesPage::new(roles)))

@@ -6,8 +6,8 @@
 use recore_discord::{
     mfa,
     server_settings::{
-        Ban as DiscordBan, GuildSettings as DiscordSettings, ServerProfile as DiscordProfile,
-        Sound as DiscordSound, Webhook as DiscordWebhook,
+        Ban as DiscordBan, GuildSettings as DiscordSettings, Integration as DiscordIntegration,
+        ServerProfile as DiscordProfile, Sound as DiscordSound, Webhook as DiscordWebhook,
     },
 };
 use serde_json::{Map, Value};
@@ -18,9 +18,9 @@ use super::{
     *,
 };
 use crate::chat::{
-    Ban, BansAction, GuildSettings, MfaMethod, PickedSound, RoleMember, ServerPicture,
-    ServerProfile, ServerSettingsAction, ServerSettingsChange, ServerSettingsPage, ServerSound,
-    ServerWebhook, SettingsSection,
+    Ban, BansAction, GuildSettings, MfaMethod, PickedSound, RoleMember, ServerIntegration,
+    ServerPicture, ServerProfile, ServerSettingsAction, ServerSettingsChange, ServerSettingsPage,
+    ServerSound, ServerWebhook, SettingsSection,
 };
 
 /// A server icon as Discord's client crops it, and its preview at the
@@ -196,8 +196,17 @@ pub(super) fn command(
                             )
                         })
                     }
-                    SettingsSection::Integrations
-                    | SettingsSection::AutoMod
+                    SettingsSection::Integrations => {
+                        discord
+                            .guild_integrations(&guild)
+                            .await
+                            .map(|integrations| {
+                                ServerSettingsPage::Integrations(
+                                    integrations.into_iter().map(integration).collect(),
+                                )
+                            })
+                    }
+                    SettingsSection::AutoMod
                     | SettingsSection::Privacy
                     | SettingsSection::Discovery => {
                         Err(anyhow::anyhow!("ReCore can't show that page yet"))
@@ -398,6 +407,20 @@ async fn settings_action(
                 webhooks.into_iter().map(webhook).collect(),
             ))
         }
+        ServerSettingsAction::Integrations(action) => {
+            use crate::chat::IntegrationAction;
+            match action {
+                IntegrationAction::Delete(id) => {
+                    discord
+                        .stepping_up(|| discord.delete_integration(guild, &id))
+                        .await?;
+                }
+            }
+            let integrations = discord.guild_integrations(guild).await?;
+            Ok(ServerSettingsPage::Integrations(
+                integrations.into_iter().map(integration).collect(),
+            ))
+        }
         _ => anyhow::bail!("ReCore can't change that yet"),
     }
 }
@@ -427,6 +450,19 @@ fn webhook(webhook: DiscordWebhook) -> ServerWebhook {
         url: webhook.url,
         creator: webhook.creator,
         application: webhook.application,
+    }
+}
+
+/// An integration as Integrations shows it.
+fn integration(integration: DiscordIntegration) -> ServerIntegration {
+    ServerIntegration {
+        id: integration.id,
+        name: integration.name,
+        kind: integration.kind,
+        enabled: integration.enabled,
+        account: integration.account,
+        subscriber_count: integration.subscriber_count,
+        synced: integration.synced,
     }
 }
 

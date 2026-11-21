@@ -2749,6 +2749,8 @@ function resetGuild() {
   soundboardChanges.length = 0;
   serverWebhooks.splice(0, serverWebhooks.length, ...SERVER_WEBHOOKS());
   webhookChanges.length = 0;
+  serverIntegrations.splice(0, serverIntegrations.length, ...SERVER_INTEGRATIONS());
+  integrationChanges.length = 0;
   revokedInvites.clear();
   Object.assign(mfa, { on: false, methods: ["totp"], code: "123456" });
   mfa.tickets.clear();
@@ -4108,6 +4110,32 @@ const SERVER_WEBHOOKS = (): ServerWebhook[] => [
 const serverWebhooks = SERVER_WEBHOOKS();
 /** What Alice asked of "Server"'s webhooks, as she sent it. */
 const webhookChanges: unknown[] = [];
+
+// --- Integrations ------------------------------------------------------------
+
+type ServerIntegration = {
+  id: string; name: string; type: string; enabled: boolean;
+  account: { id: string; name: string }; subscriber_count?: number;
+  synced_at?: string | null; application?: { id: string; name: string };
+};
+const INTEGRATION_BOT = "1400000000000000700";
+const INTEGRATION_TWITCH = "1400000000000000701";
+/** "Server"'s integrations: a Discord app and a Twitch channel. */
+const SERVER_INTEGRATIONS = (): ServerIntegration[] => [
+  {
+    id: INTEGRATION_BOT, name: "Helper", type: "discord", enabled: true,
+    account: { id: "1400000000000000702", name: "Helper" },
+    application: { id: "1400000000000000702", name: "Helper" }, synced_at: null,
+  },
+  {
+    id: INTEGRATION_TWITCH, name: "alice_tv", type: "twitch", enabled: true,
+    account: { id: "alice_tv", name: "alice_tv" }, subscriber_count: 12,
+    synced_at: iso(Date.now() - 3_600_000),
+  },
+];
+const serverIntegrations = SERVER_INTEGRATIONS();
+/** What Alice removed from "Server"'s integrations. */
+const integrationChanges: unknown[] = [];
 /** What the CDN serves for a sound: Discord's as MP3, the server's as Ogg. */
 const soundFiles = {
   mp3: readFileSync(new URL("soundboard-tone.mp3", fixtures)),
@@ -6363,6 +6391,27 @@ async function api(req: Request, path: string, origin: string): Promise<Response
       logAudit(90, sticker.id, { changes: [{ key: "name", new_value: name }] });
       changed();
       return json(wireSticker(sticker, true), 201);
+    }
+    return json({ message: "405: Method Not Allowed", code: 0 }, 405);
+  }
+
+  // Integrations in Server Settings. GET /guilds/{id}/integrations lists
+  // "Server"'s Discord app and Twitch channel, and DELETE
+  // /guilds/{id}/integrations/{id} removes one, both with Manage Server,
+  // sending GUILD_INTEGRATIONS_UPDATE. GET /_control/integration-changes
+  // lists what Alice removed.
+  if ((m = path.match(/^\/guilds\/(\d+)\/integrations(?:\/(\d+))?$/))) {
+    if (m[1] !== GUILD) return notFound("Unknown Guild", 10004);
+    if (!aliceMay(5)) return json({ message: "Missing Permissions", code: 50013 }, 403);
+    if (method === "GET" && !m[2]) return json(serverIntegrations);
+    if (method === "DELETE" && m[2]) {
+      const found = serverIntegrations.find((integration) => integration.id === m[2]);
+      if (!found) return notFound("Unknown Integration", 10036);
+      serverIntegrations.splice(serverIntegrations.indexOf(found), 1);
+      integrationChanges.push({ action: "delete", id: found.id, name: found.name });
+      logAudit(82, found.id);
+      dispatch("GUILD_INTEGRATIONS_UPDATE", { guild_id: GUILD });
+      return new Response(null, { status: 204 });
     }
     return json({ message: "405: Method Not Allowed", code: 0 }, 405);
   }
@@ -9659,6 +9708,7 @@ const server = Bun.serve<SocketData>({
     if (path === "/_control/soundboard-sends") return Response.json(soundboardSends);
     if (path === "/_control/soundboard-changes") return Response.json(soundboardChanges);
     if (path === "/_control/webhook-changes") return Response.json(webhookChanges);
+    if (path === "/_control/integration-changes") return Response.json(integrationChanges);
     if (path === "/_control/custom-call-sounds") return Response.json(customCallSounds);
     if (req.method === "POST" && path === "/_control/soundboard-play") {
       const who = url.searchParams.get("user") ?? "bob";

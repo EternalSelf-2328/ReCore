@@ -13,6 +13,7 @@
 //! controls are in its module.
 
 mod expressions;
+mod integrations;
 mod moderation;
 mod ownership;
 pub(crate) mod people;
@@ -29,9 +30,9 @@ use iced::{
 };
 use recore_core::{
     application::{
-        Action, AppState, AuditInput, BanInput, EmojiInput, InviteInput, MemberInput,
-        OwnershipInput, RoleInput, ServerSettings, SettingsChoice, SettingsPage, SettingsText,
-        SettingsToggle, SoundboardInput, StickerInput, WebhookInput,
+        Action, AppState, AuditInput, BanInput, EmojiInput, IntegrationInput, InviteInput,
+        MemberInput, OwnershipInput, RoleInput, ServerSettings, SettingsChoice, SettingsPage,
+        SettingsText, SettingsToggle, SoundboardInput, StickerInput, WebhookInput,
     },
     chat::{ServerPicture, SettingsSection},
 };
@@ -122,6 +123,7 @@ pub enum Event {
     Webhooks(WebhookInput),
     /// Copy a webhook's URL.
     CopyWebhook(String),
+    Integrations(IntegrationInput),
     Ownership(OwnershipInput),
 }
 
@@ -283,6 +285,7 @@ impl Screen {
                 Action::Webhooks(input)
             }
             Event::CopyWebhook(url) => return iced::clipboard::write(url),
+            Event::Integrations(input) => Action::Integrations(input),
             Event::Ownership(input) => Action::Ownership(input),
         };
         cx.dispatch(action);
@@ -404,6 +407,9 @@ impl<'a> View<'a> {
                 SettingsPage::Stickers(page) => (self.stickers_page(core, page), false),
                 SettingsPage::Soundboard(page) => (self.soundboard_page(core, page, screen), false),
                 SettingsPage::Webhooks(page) => (self.webhooks_page(core, page, screen), false),
+                SettingsPage::Integrations(page) => {
+                    (self.integrations_page(core, page, screen), false)
+                }
             };
             fill = fills;
             page = page.push(view);
@@ -492,7 +498,7 @@ impl<'a> View<'a> {
                 SettingsSection::Members | SettingsSection::Roles | SettingsSection::Invites => {
                     "PEOPLE"
                 }
-                SettingsSection::Webhooks => "APPS",
+                SettingsSection::Webhooks | SettingsSection::Integrations => "APPS",
                 SettingsSection::Safety | SettingsSection::AuditLog | SettingsSection::Bans => {
                     "MODERATION"
                 }

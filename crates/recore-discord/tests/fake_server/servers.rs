@@ -1438,3 +1438,38 @@ async fn keeps_webhooks_as_discords_client_does() {
         ])
     );
 }
+
+/// Integrations in Server Settings: listing "Server"'s Discord app and
+/// Twitch channel, and removing one with Manage Server; part of
+/// [`talks_to_the_fake_server`], whose session it shares.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "starts testing/fake_discord.ts with bun; run scripts/test-fake-discord"]
+async fn removes_server_integrations_as_discords_client_does() {
+    let fixture = Fixture::start("removes_server_integrations_as_discords_client_does").await;
+    let discord = &fixture.discord;
+    let server = fixture.server;
+    let guild = fixture.guild.as_str();
+    let integrations = discord.guild_integrations(guild).await.unwrap();
+    assert_eq!(
+        integrations
+            .iter()
+            .map(|integration| integration.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Helper", "alice_tv"]
+    );
+    assert_eq!(integrations[1].kind, "twitch");
+    assert_eq!(integrations[1].subscriber_count, Some(12));
+    assert!(integrations[1].synced.is_some());
+
+    discord
+        .delete_integration(guild, &integrations[1].id)
+        .await
+        .unwrap();
+    assert_eq!(discord.guild_integrations(guild).await.unwrap().len(), 1);
+    let changes: serde_json::Value =
+        serde_json::from_str(&control(server, "GET", "/_control/integration-changes", "")).unwrap();
+    assert_eq!(
+        changes,
+        serde_json::json!([{"action": "delete", "id": integrations[1].id, "name": "alice_tv"}])
+    );
+}
