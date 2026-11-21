@@ -1127,6 +1127,20 @@ impl Application {
 
     /// Opens the dialog that sets a voice channel's status, as its menu's
     /// Set Status does.
+    /// Sets a stage channel's topic, which STAGE_INSTANCE_UPDATE shows.
+    pub(super) fn set_stage_topic(&mut self, room: String, topic: String) -> Vec<Effect> {
+        let topic = topic.trim().to_owned();
+        let stage = self.state.rooms.iter().any(|known| {
+            known.id == room && known.voice && known.mark.kind == chat::MarkKind::Stage
+        });
+        if !stage || !self.state.discord_online || topic.is_empty() || topic.chars().count() > 120 {
+            return vec![];
+        }
+        vec![Effect::Backend(Command::Discord(
+            DiscordCommand::SetStageTopic { room, topic },
+        ))]
+    }
+
     pub(super) fn open_voice_status(&mut self, room: String) -> Vec<Effect> {
         if !self
             .menu_choices(&room)

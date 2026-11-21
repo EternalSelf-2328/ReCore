@@ -66,6 +66,96 @@ fn undeafening_leaves_the_mute_as_it_was() {
 }
 
 #[test]
+fn a_stage_shows_its_topic_speakers_and_audience_with_a_request() {
+    use recore_core::chat::{MarkKind, VoicePerson};
+    let (mut app, _folder) = preview();
+    {
+        let state = &mut app.client.app.state;
+        let room = state
+            .rooms
+            .iter_mut()
+            .find(|room| room.id == "lounge")
+            .map(std::sync::Arc::make_mut)
+            .unwrap();
+        room.mark.kind = MarkKind::Stage;
+        room.people = vec![
+            VoicePerson {
+                id: "@alice:test".into(),
+                name: "Alice".into(),
+                suppressed: true,
+                requested: false,
+                ..Default::default()
+            },
+            VoicePerson {
+                id: "@bob:test".into(),
+                name: "Bob".into(),
+                suppressed: false,
+                ..Default::default()
+            },
+            VoicePerson {
+                id: "@carol:test".into(),
+                name: "Carol".into(),
+                suppressed: true,
+                requested: true,
+                ..Default::default()
+            },
+        ];
+        state.discord_user = Some("@alice:test".into());
+        state
+            .stage_topics
+            .insert("lounge".into(), "Launch day".into());
+        state.voice.room = Some("lounge".into());
+        state.voice.phase = voice::Phase::Connected;
+        state.selected = Some("lounge".into());
+        state.voice_chat = false;
+    }
+    let _ = app.sync();
+    assert!(crate::call::stage::voice_here(&app));
+    let (speakers, audience) = crate::call::stage::stage_lists(&app);
+    assert_eq!(
+        speakers
+            .iter()
+            .map(|person| person.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Bob"]
+    );
+    assert_eq!(
+        audience
+            .iter()
+            .map(|person| person.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Alice", "Carol"]
+    );
+    assert_eq!(
+        crate::call::stage::request_label(&app),
+        Some("Request to Speak")
+    );
+    let _ = crate::call::update(&mut app, Event::Speak);
+    assert!(shows(&app, "Launch day"));
+    assert!(shows(&app, "Speakers"));
+    assert!(shows(&app, "Audience"));
+    assert!(shows(&app, "Request to Speak"));
+
+    // With this account's hand up, the button takes the request back.
+    let room = app
+        .client
+        .app
+        .state
+        .rooms
+        .iter_mut()
+        .find(|room| room.id == "lounge")
+        .map(std::sync::Arc::make_mut)
+        .unwrap();
+    room.people[0].requested = true;
+    let _ = app.sync();
+    assert_eq!(
+        crate::call::stage::request_label(&app),
+        Some("Cancel Request")
+    );
+    assert!(shows(&app, "Cancel Request"));
+}
+
+#[test]
 fn the_docks_noise_toggle_turns_back_on_the_kind_last_used() {
     let (mut app, folder) = preview();
     let stored = || {
@@ -485,6 +575,8 @@ fn the_call_this_account_is_in_lists_it_first_under_its_channel() {
         streaming: false,
         video: false,
         elsewhere: false,
+        suppressed: false,
+        requested: false,
     };
     // Discord lists a channel's people by name; this account is among them.
     let you = app.client.state().voice.participants[0].person.clone();

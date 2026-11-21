@@ -11,7 +11,7 @@ use serde_json::Value;
 
 use super::{
     Account, BlockedUser, Conversation, DO_NOT_DISTURB, Friend, FriendRequest, Live, Preview,
-    Snapshot, Status, VoiceMember, VoiceServer, marks::Published, now_ms, server,
+    Snapshot, StageInstance, Status, VoiceMember, VoiceServer, marks::Published, now_ms, server,
 };
 use crate::{
     activity::{self, Activities},
@@ -101,6 +101,11 @@ struct VoiceEntry {
     server_deafened: bool,
     streaming: bool,
     video: bool,
+    /// Suppressed in a stage: in the audience rather than speaking.
+    suppressed: bool,
+    /// When they asked to speak in a stage, in Unix milliseconds; 0 for no
+    /// raised hand.
+    requested: u64,
 }
 
 /// The account's servers and voice channels, kept current from gateway events.
@@ -133,6 +138,9 @@ pub(super) struct Tracker {
     /// seconds, by channel id; shared with snapshots while it stays the
     /// same.
     voice_started: Arc<HashMap<String, u64>>,
+    /// Each stage channel's stage instance, by channel id; shared with
+    /// snapshots while it stays the same.
+    stage_instances: Arc<HashMap<String, StageInstance>>,
     /// The calls in DMs and group DMs, by channel id, with whom each rings.
     calls: HashMap<String, Vec<String>>,
     /// This account's roles, by server id.
@@ -236,6 +244,7 @@ impl Tracker {
             names,
             voice: HashMap::new(),
             voice_started: Arc::default(),
+            stage_instances: Arc::default(),
             calls: HashMap::new(),
             my_roles: HashMap::new(),
             unreads: Unreads::from_ready(ready),
@@ -283,6 +292,12 @@ impl Tracker {
             tracker.put_private(channel);
         }
         tracker.learn_members(&ready["guilds"], &ready["merged_members"]);
+        // READY lists each of the account's servers' stage instances.
+        for guild in ready["guilds"].as_array().into_iter().flatten() {
+            for stage in guild["stage_instances"].as_array().into_iter().flatten() {
+                tracker.put_stage_instance(stage);
+            }
+        }
         tracker
     }
 
@@ -648,14 +663,16 @@ impl Tracker {
                 // Its calls' start times go with its voice states, whether
                 // it left or is out: back, it's asked again.
                 if let Some(server) = self.servers.iter().find(|server| server.id == id)
-                    && server
-                        .voice_channels
-                        .iter()
-                        .any(|channel| self.voice_started.contains_key(&channel.id))
+                    && server.voice_channels.iter().any(|channel| {
+                        self.voice_started.contains_key(&channel.id)
+                            || self.stage_instances.contains_key(&channel.id)
+                    })
                 {
                     let started = Arc::make_mut(&mut self.voice_started);
+                    let stages = Arc::make_mut(&mut self.stage_instances);
                     for channel in &server.voice_channels {
                         started.remove(&channel.id);
+                        stages.remove(&channel.id);
                     }
                 }
                 if data["unavailable"].as_bool() == Some(true) {
@@ -747,10 +764,22 @@ impl Tracker {
                 if *event == Event::ChannelDelete {
                     server.remove_channel(id);
                     self.voice_start(id, None);
+                    Arc::make_mut(&mut self.stage_instances).remove(id);
                 } else {
                     server.put_channel(data);
                 }
                 true
+            }
+            Event::StageInstanceCreate | Event::StageInstanceUpdate => {
+                self.put_stage_instance(data)
+            }
+            Event::StageInstanceDelete => {
+                let Some(channel) = data["channel_id"].as_str() else {
+                    return false;
+                };
+                Arc::make_mut(&mut self.stage_instances)
+                    .remove(channel)
+                    .is_some()
             }
             Event::VoiceChannelStartTimeUpdate => {
                 let Some(id) = data["id"].as_str() else {
@@ -1158,6 +1187,19 @@ impl Tracker {
         self.session.is_some() && entry.session.is_some() && entry.session != self.session
     }
 
+    /// Keeps a stage instance from a gateway payload; returns whether it
+    /// changed what snapshots show.
+    fn put_stage_instance(&mut self, value: &Value) -> bool {
+        let Some(stage) = StageInstance::parse(value) else {
+            return false;
+        };
+        if self.stage_instances.get(&stage.channel_id) == Some(&stage) {
+            return false;
+        }
+        Arc::make_mut(&mut self.stage_instances).insert(stage.channel_id.clone(), stage);
+        true
+    }
+
     fn voice_state(&mut self, guild: &str, state: &Value) {
         let Some(user) = state["user_id"].as_str() else {
             return;
@@ -1177,6 +1219,11 @@ impl Tracker {
                         server_deafened: flag("deaf"),
                         streaming: flag("self_stream"),
                         video: flag("self_video"),
+                        suppressed: flag("suppress"),
+                        requested: state["request_to_speak_timestamp"]
+                            .as_str()
+                            .and_then(crate::message::iso_ms)
+                            .unwrap_or_default(),
                     },
                 );
             }
@@ -1827,6 +1874,8 @@ impl Tracker {
                 streaming: false,
                 video: false,
                 elsewhere: false,
+                suppressed: false,
+                requested: false,
             })
             .collect();
         let preview = private
@@ -1975,6 +2024,8 @@ impl Tracker {
                     streaming: entry.streaming,
                     video: entry.video,
                     elsewhere: *user == self.me && self.elsewhere(entry),
+                    suppressed: entry.suppressed,
+                    requested: entry.requested != 0,
                 });
         }
         for members in voice.values_mut() {
@@ -2092,6 +2143,7 @@ impl Tracker {
             friend_requests: people.friend_requests,
             voice,
             voice_started: self.voice_started.clone(),
+            stage_instances: self.stage_instances.clone(),
             listed: None,
             viewing: self.viewing.iter().chain(&self.beside).cloned().collect(),
             names: super::SharedNames::new(self.names.clone()),
@@ -2161,6 +2213,89 @@ mod tests {
                 .is_some_and(|icon| icon.contains("/icons/10/ghi.png"))
         );
         assert_eq!(server.voice_channels.len(), 2, "the channels stay");
+    }
+
+    #[test]
+    fn tracks_stage_instances_and_who_may_speak() {
+        let ready = json!({
+            "user": {"id": "1", "username": "me"},
+            "users": [{"id": "2", "username": "ann"}],
+            "guilds": [{"id": "10", "properties": {"name": "Test"}, "channels": [
+                {"id": "11", "name": "Stage", "type": 13, "position": 0},
+            ], "stage_instances": [
+                {"id": "12", "channel_id": "11", "topic": "Launch", "privacy_level": 2},
+            ]}],
+        });
+        let mut tracker = Tracker::from_ready("1".into(), &ready, Default::default());
+        let stage = snapshot_stage(&tracker);
+        assert_eq!(stage.topic, "Launch");
+        assert_eq!(stage.privacy_level, 2);
+
+        // A speaker and an audience member, the latter with their hand up.
+        tracker.apply(
+            &Event::ReadySupplemental,
+            &json!({
+                "guilds": [{"id": "10", "voice_states": [
+                    {"user_id": "2", "channel_id": "11", "suppress": false},
+                    {"user_id": "3", "channel_id": "11", "suppress": true,
+                     "request_to_speak_timestamp": "2026-01-01T00:00:00.000Z"},
+                ]}],
+                "merged_members": [[{"user_id": "2"}, {"user_id": "3"}]],
+            }),
+        );
+        let people = &tracker.snapshot().voice["11"];
+        assert_eq!(people.len(), 2);
+        let ann = people.iter().find(|person| person.user_id == "2").unwrap();
+        assert!(!ann.suppressed && !ann.requested);
+        let bo = people.iter().find(|person| person.user_id == "3").unwrap();
+        assert!(bo.suppressed && bo.requested);
+
+        // The hand comes down, and the stage's topic changes.
+        tracker.apply(
+            &Event::VoiceStateUpdate,
+            &json!({"guild_id": "10", "user_id": "3", "channel_id": "11",
+                    "suppress": true, "request_to_speak_timestamp": null}),
+        );
+        assert!(!tracker.snapshot().voice["11"].iter().any(|p| p.requested));
+        assert!(tracker.apply(
+            &Event::StageInstanceUpdate,
+            &json!({"id": "12", "channel_id": "11", "topic": "Q&A", "privacy_level": 2}),
+        ));
+        assert_eq!(snapshot_stage(&tracker).topic, "Q&A");
+        assert!(
+            !tracker.apply(
+                &Event::StageInstanceUpdate,
+                &json!({"id": "12", "channel_id": "11", "topic": "Q&A", "privacy_level": 2}),
+            ),
+            "the same instance again changes nothing"
+        );
+
+        // It ends, and starts again.
+        assert!(tracker.apply(
+            &Event::StageInstanceDelete,
+            &json!({"id": "12", "channel_id": "11"}),
+        ));
+        assert!(tracker.snapshot().stage_instances.is_empty());
+        assert!(tracker.apply(
+            &Event::StageInstanceCreate,
+            &json!({"id": "13", "channel_id": "11", "topic": "Again", "privacy_level": 2}),
+        ));
+        assert_eq!(snapshot_stage(&tracker).id, "13");
+
+        // Leaving the server takes its stage with it.
+        tracker.apply(&Event::GuildDelete, &json!({"id": "10"}));
+        assert!(tracker.snapshot().stage_instances.is_empty());
+    }
+
+    /// The stage instance of the tracker's first snapshot.
+    fn snapshot_stage(tracker: &mut Tracker) -> StageInstance {
+        tracker
+            .snapshot()
+            .stage_instances
+            .values()
+            .next()
+            .unwrap()
+            .clone()
     }
 
     #[test]

@@ -317,6 +317,8 @@ mod servers;
 mod session;
 #[cfg(feature = "discord")]
 mod slash_commands;
+#[cfg(feature = "discord")]
+mod stage;
 mod threads;
 mod timeline;
 mod unread;

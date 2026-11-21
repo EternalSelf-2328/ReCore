@@ -1,4 +1,5 @@
-//! Voice channels: the soundboard, moderation and when a call started.
+//! Voice channels: the soundboard, moderation, when a call started, and a
+//! stage's topic, speakers, audience and raised hands.
 
 use super::*;
 
@@ -294,6 +295,119 @@ async fn moderates_voice() {
     );
     post_control(server, "/_control/voice-reset", "");
     snapshot_where(&discord, |snapshot| dave_in(&lounge)(snapshot).is_some()).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "starts testing/fake_discord.ts with bun; run scripts/test-fake-discord"]
+async fn speaks_in_a_stage() {
+    let Fixture {
+        _fake,
+        discord,
+        server,
+        snapshot,
+        guild,
+        ..
+    } = Fixture::start("speaks_in_a_stage").await;
+    let stage = snapshot.servers[0]
+        .voice_channels
+        .iter()
+        .find(|channel| channel.name == "Stage")
+        .unwrap()
+        .id
+        .clone();
+    let snapshot = snapshot_where(&discord, |snapshot| {
+        snapshot.stage_instances.contains_key(&stage) && snapshot.voice.contains_key(&stage)
+    })
+    .await;
+    // Its stage instance, and who speaks and listens there: Erin speaks,
+    // and Frank listens with his hand raised.
+    let found = &snapshot.stage_instances[&stage];
+    assert_eq!(found.topic, "Community AMA");
+    assert_eq!(found.privacy_level, 2);
+    assert_eq!(discord.stage_instance(&stage).await.unwrap(), *found);
+    let people = &snapshot.voice[&stage];
+    let person = |name: &str| people.iter().find(|person| person.name == name).unwrap();
+    assert!(!person("Erin").suppressed && !person("Erin").requested);
+    assert!(person("Frank").suppressed && person("Frank").requested);
+    let me = snapshot.user_id.clone().unwrap();
+
+    // Its topic changes, as Stage Topic does, and STAGE_INSTANCE_UPDATE
+    // shows it.
+    discord
+        .set_stage_topic(&stage, "Q&A with the team")
+        .await
+        .unwrap();
+    let snapshot = snapshot_where(&discord, |snapshot| {
+        snapshot.stage_instances[&stage].topic == "Q&A with the team"
+    })
+    .await;
+    assert_eq!(snapshot.stage_instances[&stage].privacy_level, 2);
+    let changes: serde_json::Value =
+        serde_json::from_str(&control(server, "GET", "/_control/stage-changes", "")).unwrap();
+    assert_eq!(changes, serde_json::json!([{"topic": "Q&A with the team"}]));
+
+    // Joining, this account listens, raises its hand and takes it back.
+    discord.join(&guild, &stage).await.unwrap();
+    let in_stage = |snapshot: &Snapshot| {
+        snapshot.voice[&stage]
+            .iter()
+            .find(|person| person.user_id == me)
+            .map(|person| (person.suppressed, person.requested))
+    };
+    snapshot_where(&discord, |snapshot| in_stage(snapshot).is_some()).await;
+    discord.set_suppressed(&guild, &me, true).await.unwrap();
+    snapshot_where(&discord, |snapshot| {
+        in_stage(snapshot) == Some((true, false))
+    })
+    .await;
+    discord.request_to_speak(&guild, true).await.unwrap();
+    snapshot_where(&discord, |snapshot| {
+        in_stage(snapshot) == Some((true, true))
+    })
+    .await;
+    discord.request_to_speak(&guild, false).await.unwrap();
+    snapshot_where(&discord, |snapshot| {
+        in_stage(snapshot) == Some((true, false))
+    })
+    .await;
+
+    // A moderator moves it between the audience and the speakers.
+    discord.set_suppressed(&guild, &me, false).await.unwrap();
+    snapshot_where(&discord, |snapshot| {
+        in_stage(snapshot) == Some((false, false))
+    })
+    .await;
+    discord.set_suppressed(&guild, &me, true).await.unwrap();
+    snapshot_where(&discord, |snapshot| {
+        in_stage(snapshot) == Some((true, false))
+    })
+    .await;
+    let changes: serde_json::Value =
+        serde_json::from_str(&control(server, "GET", "/_control/voice-state-changes", "")).unwrap();
+    let changes = changes.as_array().unwrap();
+    assert_eq!(changes[0]["suppress"], true);
+    assert!(changes[1]["request_to_speak_timestamp"].is_string());
+    assert_eq!(
+        changes[2]["request_to_speak_timestamp"],
+        serde_json::Value::Null
+    );
+    assert_eq!(changes[3]["suppress"], false);
+    assert_eq!(changes[4]["suppress"], true);
+    discord.leave(&guild);
+
+    // The stage ends and starts again, as its menu does.
+    post_control(server, "/_control/stage-instance?off", "");
+    snapshot_where(&discord, |snapshot| {
+        !snapshot.stage_instances.contains_key(&stage)
+    })
+    .await;
+    assert!(discord.stage_instance(&stage).await.is_err());
+    post_control(server, "/_control/stage-instance", "");
+    let snapshot = snapshot_where(&discord, |snapshot| {
+        snapshot.stage_instances.contains_key(&stage)
+    })
+    .await;
+    assert_eq!(snapshot.stage_instances[&stage].topic, "Community AMA");
 }
 
 #[tokio::test(flavor = "multi_thread")]

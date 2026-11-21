@@ -638,7 +638,11 @@ pub fn group_of(choice: MenuChoice) -> u8 {
         | MenuChoice::AddToChannelList
         | MenuChoice::RemoveFromChannelList
         | MenuChoice::UnfollowCategory => 3,
-        MenuChoice::ServerNickname | MenuChoice::Roles | MenuChoice::MoveTo => 4,
+        MenuChoice::ServerNickname
+        | MenuChoice::Roles
+        | MenuChoice::MoveTo
+        | MenuChoice::MoveToSpeakers
+        | MenuChoice::MoveToAudience => 4,
         MenuChoice::Apps => 10,
         MenuChoice::LocalMute
         | MenuChoice::SoundboardMute
@@ -712,6 +716,8 @@ pub fn icon(choice: MenuChoice) -> Icon {
         C::SoundboardMute => Icon::Soundboard,
         C::SelfDeafen | C::ServerDeafen => Icon::HeadphoneOff,
         C::MoveTo => Icon::Forward,
+        C::MoveToSpeakers => Icon::Mic,
+        C::MoveToAudience => Icon::Volume,
         C::Disconnect => Icon::PhoneOff,
         C::CreateChannel => Icon::CirclePlus,
         C::CreateCategory => Icon::FolderPlus,
@@ -768,6 +774,8 @@ pub fn label(choice: MenuChoice) -> &'static str {
         MenuChoice::SoundboardMute => "Mute Soundboard",
         MenuChoice::SelfDeafen => "Deafen",
         MenuChoice::MoveTo => "Move to",
+        MenuChoice::MoveToSpeakers => "Move to Speakers",
+        MenuChoice::MoveToAudience => "Move to Audience",
         MenuChoice::ServerMute => "Server mute",
         MenuChoice::ServerDeafen => "Server deafen",
         MenuChoice::Disconnect => "Disconnect",

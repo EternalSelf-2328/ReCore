@@ -75,6 +75,37 @@ pub struct VoiceMember {
     /// This account, in the call on another client, such as Discord's app
     /// on a phone, rather than on this gateway session.
     pub elsewhere: bool,
+    /// Suppressed in a stage channel: an audience member rather than a
+    /// speaker.
+    pub suppressed: bool,
+    /// Their hand is raised in a stage channel: they asked to speak.
+    pub requested: bool,
+}
+
+/// A stage channel's stage instance: the talk going on, with its topic and
+/// who may hear it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct StageInstance {
+    pub id: String,
+    pub channel_id: String,
+    pub topic: String,
+    /// Discord's privacy level: 2 while the stage is open to the server.
+    pub privacy_level: u8,
+}
+
+impl StageInstance {
+    /// One from a gateway payload, or a REST answer.
+    pub fn parse(value: &Value) -> Option<Self> {
+        Some(Self {
+            id: value["id"].as_str()?.to_owned(),
+            channel_id: value["channel_id"].as_str()?.to_owned(),
+            topic: value["topic"].as_str().unwrap_or_default().to_owned(),
+            privacy_level: value["privacy_level"]
+                .as_u64()
+                .and_then(|level| u8::try_from(level).ok())
+                .unwrap_or(2),
+        })
+    }
 }
 
 /// The linked account, as Discord shows it outside any server.
@@ -442,6 +473,10 @@ pub struct Snapshot {
     /// joined, which a channel's row counts from.
     #[serde(skip)]
     pub voice_started: Arc<HashMap<String, u64>>,
+    /// Each stage channel's stage instance, by channel id: its topic and
+    /// privacy, while its talk goes on.
+    #[serde(default)]
+    pub stage_instances: Arc<HashMap<String, StageInstance>>,
     /// The channel whose member list is on screen, and how many people can
     /// read it.
     #[serde(skip)]
@@ -3233,6 +3268,38 @@ impl Discord {
     pub async fn move_member(&self, guild: &str, user: &str, channel: Option<&str>) -> Result<()> {
         let body = serde_json::json!({ "channel_id": channel });
         self.api.modify_member_voice(guild, user, &body).await
+    }
+
+    /// Raises this account's hand in a stage channel, asking to speak, or
+    /// with `requested` false lowers it again.
+    pub async fn request_to_speak(&self, guild: &str, requested: bool) -> Result<()> {
+        let timestamp = requested
+            .then(|| chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
+        let body = serde_json::json!({ "request_to_speak_timestamp": timestamp });
+        self.api.update_own_voice_state(guild, &body).await
+    }
+
+    /// Moves a member between a stage's audience and its speakers:
+    /// `suppressed` true puts them in the audience, false lets them speak.
+    pub async fn set_suppressed(&self, guild: &str, user: &str, suppressed: bool) -> Result<()> {
+        let body = serde_json::json!({ "suppress": suppressed });
+        self.api.update_voice_state(guild, user, &body).await
+    }
+
+    /// A stage channel's stage instance, or why Discord gives none.
+    pub async fn stage_instance(&self, channel: &str) -> Result<StageInstance> {
+        let value = self.api.stage_instance(channel).await?;
+        StageInstance::parse(&value)
+            .ok_or_else(|| anyhow!("Discord answered a stage instance without an id or channel"))
+    }
+
+    /// Sets a stage channel's topic; STAGE_INSTANCE_UPDATE shows it.
+    pub async fn set_stage_topic(&self, channel: &str, topic: &str) -> Result<()> {
+        let body = serde_json::json!({ "topic": topic });
+        self.api
+            .update_stage_instance(channel, &body)
+            .await
+            .map(drop)
     }
 
     /// Removes a member from a server.

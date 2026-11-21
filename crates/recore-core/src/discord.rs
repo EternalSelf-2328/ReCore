@@ -270,6 +270,8 @@ fn voice_person(member: &recore_discord::service::VoiceMember) -> VoicePerson {
         streaming: member.streaming,
         video: member.video,
         elsewhere: member.elsewhere,
+        suppressed: member.suppressed,
+        requested: member.requested,
     }
 }
 
@@ -2524,6 +2526,8 @@ mod tests {
             streaming: false,
             video: false,
             elsewhere: false,
+            suppressed: false,
+            requested: false,
             server_muted: false,
             server_deafened: false,
         };
@@ -2694,6 +2698,8 @@ mod tests {
                 streaming: false,
                 video: false,
                 elsewhere: false,
+                suppressed: false,
+                requested: false,
             }],
         );
         assert!(kept.update_into(&call, false, &mut rooms, &mut servers));
@@ -2788,6 +2794,8 @@ mod tests {
             streaming: false,
             video: false,
             elsewhere: false,
+            suppressed: false,
+            requested: false,
         };
         let snapshot = Snapshot {
             servers: vec![MarkedServer::marked(
@@ -2870,6 +2878,8 @@ mod tests {
                     streaming: true,
                     video: false,
                     elsewhere: false,
+                    suppressed: false,
+                    requested: false,
                     server_muted: false,
                     server_deafened: false,
                 }],

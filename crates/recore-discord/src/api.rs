@@ -2422,6 +2422,39 @@ impl Api {
             .await
     }
 
+    /// A stage channel's stage instance, as `GET /stage-instances/{id}`
+    /// gives it.
+    pub async fn stage_instance(&self, channel: &str) -> Result<Value> {
+        let path = format!("/stage-instances/{channel}");
+        self.json(self.request(Method::GET, &path)).await
+    }
+
+    /// Changes a stage instance's `topic` or `privacy_level` from `body`;
+    /// Discord sends STAGE_INSTANCE_UPDATE.
+    pub async fn update_stage_instance(&self, channel: &str, body: &Value) -> Result<Value> {
+        let path = format!("/stage-instances/{channel}");
+        self.json(with_json(self.request(Method::PATCH, &path), body))
+            .await
+    }
+
+    /// Changes this account's voice state in a server, such as raising or
+    /// lowering its hand in a stage with `request_to_speak_timestamp`;
+    /// Discord sends VOICE_STATE_UPDATE.
+    pub async fn update_own_voice_state(&self, guild: &str, body: &Value) -> Result<()> {
+        let path = format!("/guilds/{guild}/voice-states/@me");
+        self.empty(with_json(self.request(Method::PATCH, &path), body))
+            .await
+    }
+
+    /// Changes a member's voice state in a server, such as moving them
+    /// between a stage's audience and its speakers with `suppress`;
+    /// Discord sends VOICE_STATE_UPDATE.
+    pub async fn update_voice_state(&self, guild: &str, user: &str, body: &Value) -> Result<()> {
+        let path = format!("/guilds/{guild}/voice-states/{user}");
+        self.empty(with_json(self.request(Method::PATCH, &path), body))
+            .await
+    }
+
     /// Moves a server's channels and categories, `[{"id", "position",
     /// "parent_id", "lock_permissions"}, ...]`, the last two optional;
     /// Discord sends CHANNEL_UPDATE for each that changed.

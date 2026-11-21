@@ -119,6 +119,20 @@ fn viewer_sound(before: &voice::State, after: &voice::State) -> Option<Sound> {
 }
 
 impl Application {
+    /// Raises this account's hand in a stage channel, asking to speak, or
+    /// lowers it again.
+    pub(super) fn request_to_speak(&mut self, room: String, requested: bool) -> Vec<Effect> {
+        let stage = self.state.rooms.iter().any(|known| {
+            known.id == room && known.voice && known.mark.kind == chat::MarkKind::Stage
+        });
+        if !stage || !self.state.discord_online {
+            return vec![];
+        }
+        vec![Effect::Backend(Command::Discord(
+            DiscordCommand::RequestToSpeak { room, requested },
+        ))]
+    }
+
     pub(super) fn request_join_voice(&mut self, id: String) -> Vec<Effect> {
         if !self.state.can_join_voice(&id) {
             return vec![];

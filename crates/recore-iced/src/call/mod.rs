@@ -168,6 +168,8 @@ pub enum Event {
     Answer(String, bool),
     /// The open DM's call started, with the camera or without.
     Start(bool),
+    /// This account asks to speak in a stage, or lowers its hand.
+    Speak,
     /// Switching calls confirmed, or not.
     Switch(bool),
     /// The corner picture pressed, the pointer moved to here in the window
@@ -299,6 +301,15 @@ pub fn update(app: &mut App, event: Event) -> Task<Message> {
                 Action::StartVideoCall(room)
             } else {
                 Action::RequestJoinVoice(room)
+            }
+        }
+        Event::Speak => {
+            let Some(room) = app.client.state().selected.clone() else {
+                return Task::none();
+            };
+            Action::RequestToSpeak {
+                room,
+                requested: !crate::call::stage::my_hand(app).unwrap_or(false),
             }
         }
         Event::Switch(true) => Action::ConfirmVoiceSwitch,

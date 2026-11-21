@@ -10,7 +10,10 @@ use iced::{
     Alignment, Color, Element, Length, Padding, Rectangle, Size,
     widget::{Space, button, column, container, mouse_area, pin, row, stack, text},
 };
-use recore_core::voice::{self, SharePhase};
+use recore_core::{
+    chat::{ChatRoom, MarkKind, VoicePerson},
+    voice::{self, SharePhase},
+};
 
 use super::{Event, Popup, voice_ready};
 use crate::{
@@ -50,6 +53,44 @@ pub fn voice_selected(app: &App) -> bool {
 /// A voice channel is open on its call, not on its chat.
 pub fn voice_panel(app: &App) -> bool {
     voice_selected(app) && !app.client.state().voice_chat
+}
+
+/// The open room is a stage channel.
+pub fn stage_channel(app: &App) -> Option<&ChatRoom> {
+    app.client
+        .state()
+        .selected_room()
+        .filter(|room| room.voice && room.mark.kind == MarkKind::Stage)
+}
+
+/// Who is in the call, split as a stage shows them: its speakers, then its
+/// audience, in each list's name order.
+pub fn stage_lists(app: &App) -> (Vec<&VoicePerson>, Vec<&VoicePerson>) {
+    let people = stage_channel(app).map_or(&[][..], |room| room.people.as_slice());
+    people.iter().partition(|person| !person.suppressed)
+}
+
+/// This account's raised hand in the open stage, while it's in the audience:
+/// `Some(false)` with its hand down, `Some(true)` with it up, and none when
+/// it isn't there or speaks.
+pub fn my_hand(app: &App) -> Option<bool> {
+    let state = app.client.state();
+    let me = state.discord_user.as_deref()?;
+    let room = stage_channel(app)?;
+    let person = room.people.iter().find(|person| person.id == me)?;
+    person.suppressed.then_some(person.requested)
+}
+
+/// The stage's button for this account: ask to speak with its hand down,
+/// or take the request back with it up.
+pub fn request_label(app: &App) -> Option<&'static str> {
+    my_hand(app).map(|requested| {
+        if requested {
+            "Cancel Request"
+        } else {
+            "Request to Speak"
+        }
+    })
 }
 
 /// The open room's call is the one this account is in.
@@ -305,10 +346,115 @@ pub fn call_panel(app: &App) -> Element<'_, Message> {
     let size = stage_size(app);
     let stage: Element<'_, Message> = if full_shown(app) {
         Space::new().width(size.width).height(size.height).into()
+    } else if stage_channel(app).is_some() {
+        stage_room_view(app)
     } else {
         stage_view(app)
     };
     column![line, stage, call_controls(app)].into()
+}
+
+/// A stage channel's call: its topic, its speakers and its audience, with
+/// this account's Request to Speak while it listens.
+fn stage_room_view(app: &App) -> Element<'_, Message> {
+    let state = app.client.state();
+    let theme = &app.theme;
+    let room = match stage_channel(app) {
+        Some(room) => room,
+        None => return Space::new().width(Length::Fill).height(Length::Fill).into(),
+    };
+    let (speakers, audience) = stage_lists(app);
+    let mut panel = column![].spacing(16).padding(Padding {
+        top: 12.0,
+        bottom: 12.0,
+        left: 24.0,
+        right: 24.0,
+    });
+    if let Some(topic) = state.stage_topics.get(&room.id) {
+        panel = panel.push(
+            text(topic.as_ref())
+                .size(15)
+                .color(theme.secondary)
+                .align_x(Alignment::Center)
+                .width(Length::Fill),
+        );
+    }
+    panel = panel
+        .push(stage_section(app, "Speakers", &speakers))
+        .push(stage_section(app, "Audience", &audience));
+    if let Some(label) = request_label(app) {
+        let request = controls::action(
+            theme,
+            label,
+            controls::Kind::Primary,
+            Some(Message::Call(Event::Speak)),
+        );
+        panel = panel.push(container(request).center_x(Length::Fill));
+    }
+    let size = stage_size(app);
+    scroll_view(panel)
+        .width(size.width)
+        .height(size.height)
+        .into()
+}
+
+/// A stage's list of people under its heading.
+fn stage_section<'a>(
+    app: &'a App,
+    heading: &'a str,
+    people: &[&'a VoicePerson],
+) -> Element<'a, Message> {
+    let theme = &app.theme;
+    let mut list = column![].spacing(4);
+    if people.is_empty() {
+        list = list.push(text(format!("No {heading}")).size(13).color(theme.muted));
+    }
+    for person in people {
+        let mut marks = row![].spacing(6).align_y(Alignment::Center);
+        if person.muted {
+            marks = marks.push(app.look().glyph(Icon::MicOff, 14, theme.danger));
+        }
+        if person.requested {
+            marks = marks.push(app.look().glyph(Icon::Hand, 14, theme.accent));
+        }
+        let face = app.ctx().avatar(
+            person.avatar.as_deref(),
+            &person.name,
+            24.0,
+            if app.ctx().themes.square_avatars() {
+                0.0
+            } else {
+                12.0
+            },
+            1.0,
+        );
+        list = list.push(
+            row![
+                face,
+                text(person.name.as_str())
+                    .size(15)
+                    .color(theme.text)
+                    .width(Length::Fill),
+                marks,
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center)
+            .padding(Padding {
+                top: 4.0,
+                bottom: 4.0,
+                ..Padding::ZERO
+            }),
+        );
+    }
+    column![
+        text(heading)
+            .size(12)
+            .font(crate::fonts::BOLD())
+            .color(theme.muted),
+        list,
+    ]
+    .spacing(6)
+    .into()
 }
 
 /// What the line over the stage, or a channel's Join, says of the call.
@@ -382,6 +528,14 @@ fn join_view(app: &App) -> Element<'_, Message> {
     .spacing(14)
     .padding(32)
     .align_x(Alignment::Center);
+    if let Some(topic) = stage_channel(app).and_then(|room| state.stage_topics.get(&room.id)) {
+        panel = panel.push(
+            text(topic.as_ref())
+                .size(15)
+                .color(theme.secondary)
+                .align_x(Alignment::Center),
+        );
+    }
     let encrypted = state.preview
         || state
             .selected_room()

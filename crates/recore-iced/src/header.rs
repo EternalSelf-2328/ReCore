@@ -130,7 +130,11 @@ pub fn header(state: &AppState, was: &Header, link: u32) -> Header {
         icon: (!room.direct).then(|| room_icon(room)),
         parent,
         topic,
-        status: room.status.as_ref().map(ToString::to_string),
+        status: state
+            .stage_topics
+            .get(&room.id)
+            .map(ToString::to_string)
+            .or_else(|| room.status.as_ref().map(ToString::to_string)),
         activity: if room.direct {
             Status::of(room.activity.as_deref())
         } else {

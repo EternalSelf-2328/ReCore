@@ -134,6 +134,11 @@ events! {
     /// A server's channels' extra fields, asked for with op 43.
     ChannelInfo = "CHANNEL_INFO",
     VoiceChannelStatusUpdate = "VOICE_CHANNEL_STATUS_UPDATE",
+    /// A stage channel's stage instance, with its topic and privacy: made,
+    /// changed or ended.
+    StageInstanceCreate = "STAGE_INSTANCE_CREATE",
+    StageInstanceUpdate = "STAGE_INSTANCE_UPDATE",
+    StageInstanceDelete = "STAGE_INSTANCE_DELETE",
     /// A server's soundboard sounds, asked for with op 31.
     SoundboardSounds = "SOUNDBOARD_SOUNDS",
     GuildSoundboardSoundCreate = "GUILD_SOUNDBOARD_SOUND_CREATE",
@@ -259,6 +264,9 @@ mod tests {
                 "VOICE_CHANNEL_STATUS_UPDATE",
                 Event::VoiceChannelStatusUpdate,
             ),
+            ("STAGE_INSTANCE_CREATE", Event::StageInstanceCreate),
+            ("STAGE_INSTANCE_UPDATE", Event::StageInstanceUpdate),
+            ("STAGE_INSTANCE_DELETE", Event::StageInstanceDelete),
             ("SOUNDBOARD_SOUNDS", Event::SoundboardSounds),
             (
                 "GUILD_SOUNDBOARD_SOUND_CREATE",

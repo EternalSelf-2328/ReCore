@@ -534,6 +534,21 @@ impl Application {
         let changed = |same: fn(&Snapshot, &Snapshot) -> bool| {
             earlier.is_none_or(|earlier| !same(earlier, &snapshot))
         };
+        // Each stage channel's topic, by its room id, which its header and
+        // call show.
+        self.state.stage_topics = snapshot
+            .servers
+            .iter()
+            .flat_map(|server| {
+                server.server.voice_channels.iter().filter_map(|channel| {
+                    let stage = snapshot.stage_instances.get(&channel.id)?;
+                    Some((
+                        discord::room_id(&server.server.id, &channel.id),
+                        Arc::<str>::from(stage.topic.as_str()),
+                    ))
+                })
+            })
+            .collect();
         if changed(|a, b| Arc::ptr_eq(&a.blocked_list, &b.blocked_list)) {
             self.state.discord_blocked = snapshot
                 .blocked_list

@@ -77,6 +77,10 @@ pub enum MenuChoice {
     SelfDeafen,
     /// Move them to another voice channel, in a submenu of those.
     MoveTo,
+    /// Move them from a stage's audience to its speakers.
+    MoveToSpeakers,
+    /// Move them from a stage's speakers to its audience.
+    MoveToAudience,
     /// Mute or deafen them for everyone, as boxes to tick, or take them
     /// out of voice.
     ServerMute,

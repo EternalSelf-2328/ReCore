@@ -116,6 +116,8 @@ pub fn member_server(alice: &[&str]) -> Application {
                     streaming: false,
                     video: false,
                     elsewhere: false,
+                    suppressed: false,
+                    requested: false,
                 },
                 recore_discord::service::VoiceMember {
                     user_id: "1".into(),
@@ -128,6 +130,8 @@ pub fn member_server(alice: &[&str]) -> Application {
                     streaming: false,
                     video: false,
                     elsewhere: true,
+                    suppressed: false,
+                    requested: false,
                 },
             ],
         )]

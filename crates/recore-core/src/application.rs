@@ -567,6 +567,9 @@ pub struct AppState {
     /// The choices of a bot's select menu, in a message or a form, open.
     pub select_menu: Option<SelectMenu>,
     pub voice: voice::State,
+    /// Each Discord stage channel's topic, by channel id, while its stage
+    /// instance goes on.
+    pub stage_topics: HashMap<String, Arc<str>>,
     /// Discord is linked on this device and connected.
     pub discord_online: bool,
     /// The linked Discord account's user id.
@@ -2311,6 +2314,17 @@ pub enum Action {
     OpenChannelSettings(String),
     /// Set a Discord voice channel's status, by its room id.
     OpenVoiceStatus(String),
+    /// Set a Discord stage channel's topic, by its room id.
+    SetStageTopic {
+        room: String,
+        topic: String,
+    },
+    /// Raise this account's hand in a Discord stage channel to ask to
+    /// speak, or lower it.
+    RequestToSpeak {
+        room: String,
+        requested: bool,
+    },
     ChannelSettings(ChannelInput),
     SaveChannel {
         kind: chat::ChannelKind,
@@ -4070,6 +4084,8 @@ impl Application {
             Action::AskChannel(ask) => self.ask_channel(ask),
             Action::OpenChannelSettings(room) => self.open_channel_settings(room),
             Action::OpenVoiceStatus(room) => self.open_voice_status(room),
+            Action::SetStageTopic { room, topic } => self.set_stage_topic(room, topic),
+            Action::RequestToSpeak { room, requested } => self.request_to_speak(room, requested),
             Action::ChannelSettings(input) => self.channel_input(input),
             Action::SaveChannel { kind, settings } => self.save_channel(kind, settings),
             Action::CloseChannelDialog => {
@@ -4902,6 +4918,32 @@ impl Application {
             Event::Topic { room, topic } => {
                 if self.state.selected.as_ref() == Some(&room) {
                     self.state.topic = topic;
+                }
+            }
+            Event::StageTopicSet { room, result } => {
+                if let Err(error) = result {
+                    tracing::warn!(%error, "could not set the stage's topic");
+                    if self.state.selected.as_ref() == Some(&room) {
+                        self.state.voice.error =
+                            Some(format!("Could not set the stage's topic: {error}"));
+                    }
+                }
+            }
+            Event::SpeakRequested {
+                room,
+                requested,
+                result,
+            } => {
+                if let Err(error) = result {
+                    tracing::warn!(%error, "could not ask to speak");
+                    if self.state.selected.as_ref() == Some(&room) {
+                        let what = if requested {
+                            "ask to speak"
+                        } else {
+                            "lower your hand"
+                        };
+                        self.state.voice.error = Some(format!("Could not {what}: {error}"));
+                    }
                 }
             }
             Event::GroupChanged(result) => self.group_changed(result),

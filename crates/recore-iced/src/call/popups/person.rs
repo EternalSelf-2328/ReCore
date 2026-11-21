@@ -199,6 +199,8 @@ pub fn choose_voice(
         (MenuChoice::SelfDeafen, Some(deafened)) => Some(Action::Voice(Command::Deafen(deafened))),
         (MenuChoice::ServerMute, Some(mute)) => Some(member(MemberChange::ServerMute(mute))),
         (MenuChoice::ServerDeafen, Some(deaf)) => Some(member(MemberChange::ServerDeafen(deaf))),
+        (MenuChoice::MoveToSpeakers, _) => Some(member(MemberChange::Suppress(false))),
+        (MenuChoice::MoveToAudience, _) => Some(member(MemberChange::Suppress(true))),
         (MenuChoice::Disconnect, _) => Some(member(MemberChange::Move(None))),
         _ => {
             return crate::person_menu::choose_person(

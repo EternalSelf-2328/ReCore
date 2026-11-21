@@ -621,6 +621,8 @@ fn voice_row(choice: MenuChoice) -> bool {
             | MenuChoice::SelfDeafen
             | MenuChoice::ServerMute
             | MenuChoice::ServerDeafen
+            | MenuChoice::MoveToSpeakers
+            | MenuChoice::MoveToAudience
             | MenuChoice::Disconnect
     )
 }
@@ -673,6 +675,8 @@ pub(crate) fn acts(choice: MenuChoice) -> bool {
             | MenuChoice::Ban
             | MenuChoice::RemoveTimeout
             | MenuChoice::TransferOwnership
+            | MenuChoice::MoveToSpeakers
+            | MenuChoice::MoveToAudience
             | MenuChoice::Mention
             | MenuChoice::CopyLink
             | MenuChoice::CopyId

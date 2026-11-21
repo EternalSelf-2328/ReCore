@@ -260,6 +260,21 @@ impl Application {
             choices.push(MenuChoice::MoveTo);
         }
         if in_voice {
+            let stage = state
+                .rooms
+                .iter()
+                .any(|room| room.id == place && room.mark.kind == crate::chat::MarkKind::Stage);
+            if stage
+                && !me
+                && self.may(place, Permission::MuteMembers)
+                && let Some(person) = self.voice_person(place, user)
+            {
+                choices.push(if person.suppressed {
+                    MenuChoice::MoveToSpeakers
+                } else {
+                    MenuChoice::MoveToAudience
+                });
+            }
             if self.may(place, Permission::MuteMembers) {
                 choices.push(MenuChoice::ServerMute);
             }
@@ -556,6 +571,14 @@ impl Application {
                 MemberChange::ServerDeafen(_) => {
                     self.voice_person(&place, &user).is_some()
                         && self.may(&place, Permission::DeafenMembers)
+                }
+                MemberChange::Suppress(_) => {
+                    self.voice_person(&place, &user).is_some()
+                        && self.state.relation(&user) != Relation::Me
+                        && self.state.rooms.iter().any(|room| {
+                            room.id == place && room.mark.kind == crate::chat::MarkKind::Stage
+                        })
+                        && self.may(&place, Permission::MuteMembers)
                 }
                 MemberChange::Move(None) => {
                     self.voice_person(&place, &user).is_some()

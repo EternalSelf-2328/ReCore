@@ -459,6 +459,9 @@ const CATEGORY = "1400000000000000101";
 const GENERAL = "1400000000000000102";
 const ANNOUNCEMENT = "1400000000000000107";
 const LOUNGE = "1400000000000000103";
+// The Stage, with its stage instance, a speaker and an audience member.
+const STAGE = "1400000000000000108";
+const STAGE_INSTANCE = "1400000000000000109";
 // A bot makes a room for whoever joins Create Room and moves them there.
 const CREATE_ROOM = "1400000000000000104";
 const ALICES_ROOM = "1400000000000000105";
@@ -2206,13 +2209,37 @@ const readStates = new Map<string, { last: string; mentions: number }>([
 type VoiceState = {
   guild: string | null; channel: string; self_mute: boolean; self_deaf: boolean; session: string; self_stream?: boolean; self_video?: boolean;
   mute?: boolean; deaf?: boolean;
+  /** In a stage: an audience member rather than a speaker. */
+  suppress?: boolean;
+  /** When they raised their hand to speak, as an ISO 8601 time. */
+  request_to_speak_timestamp?: string | null;
 };
 /** The session of Alice's other client, such as her phone. */
 const OTHER_CLIENT = "voice-alice-phone";
+/** "Server"'s stage instance: its topic and privacy while the talk goes on. */
+type StageInstance = {
+  id: string; guild_id: string; channel_id: string; topic: string; privacy_level: number;
+  discoverable_disabled: boolean; guild_scheduled_event_id: string | null;
+};
+const startingStage = (): StageInstance => ({
+  id: STAGE_INSTANCE, guild_id: GUILD, channel_id: STAGE, topic: "Community AMA",
+  privacy_level: 2, discoverable_disabled: false, guild_scheduled_event_id: null,
+});
+let stageInstance: StageInstance | null = startingStage();
+/** Each PATCH of the stage instance, for GET /_control/stage-changes. */
+const stageChanges: Record<string, unknown>[] = [];
+/** Each PATCH of a voice state, for GET /_control/voice-state-changes. */
+const voiceStateChanges: Record<string, unknown>[] = [];
 const startingVoice = (): [string, VoiceState][] => [
   [users.bob.id, { guild: GUILD, channel: LOUNGE, self_mute: false, self_deaf: false, session: "voice-bob", self_stream: true }],
   [users.carol.id, { guild: GUILD, channel: LOUNGE, self_mute: true, self_deaf: false, session: "voice-carol" }],
   [users.dave.id, { guild: GUILD, channel: LOUNGE, self_mute: true, self_deaf: true, session: "voice-dave" }],
+  // Erin speaks on the Stage; Frank listens, with their hand raised.
+  [strangers.erin!.id, { guild: GUILD, channel: STAGE, self_mute: false, self_deaf: false, session: "voice-erin", suppress: false }],
+  [strangers.frank!.id, {
+    guild: GUILD, channel: STAGE, self_mute: false, self_deaf: false, session: "voice-frank",
+    suppress: true, request_to_speak_timestamp: new Date(Date.now() - 60_000).toISOString(),
+  }],
 ];
 const voice = new Map<string, VoiceState>(startingVoice());
 
@@ -2272,8 +2299,8 @@ function wireVoiceState(userId: string, state: VoiceState | undefined, left: str
     self_stream: state?.self_stream ?? false,
     mute: state?.mute ?? false,
     deaf: state?.deaf ?? false,
-    suppress: false,
-    request_to_speak_timestamp: null,
+    suppress: state?.suppress ?? false,
+    request_to_speak_timestamp: state?.request_to_speak_timestamp ?? null,
   };
 }
 
@@ -2488,7 +2515,7 @@ function guildChannel(id: string, name: string, type: number, position: number, 
     ...(type === 0
       ? { topic: (id === GENERAL ? generalTopic : null) as string | null, nsfw: false, rate_limit_per_user: 0, last_message_id: messages.get(id)?.at(-1)?.id ?? null }
       : {}),
-    ...(type === 2 ? { bitrate: 64000, user_limit: 0, rtc_region: null, last_message_id: null, status: null as string | null } : {}),
+    ...(type === 2 || type === 13 ? { bitrate: 64000, user_limit: 0, rtc_region: null, last_message_id: null, status: null as string | null } : {}),
     ...(type === 15 ? forumFields() : {}),
   };
 }
@@ -2541,7 +2568,7 @@ function rejoin() {
     voice_states: [],
     presences: [],
     threads: [],
-    stage_instances: [],
+    stage_instances: stageInstance ? [stageInstance] : [],
     guild_scheduled_events: [],
   });
 }
@@ -2555,6 +2582,7 @@ function guildChannels(): GuildChannel[] {
     channel(ANNOUNCEMENT, "announcements", 5, 2, CATEGORY),
     channel(FORUM, "ideas", 15, 1, CATEGORY),
     channel(LOUNGE, "Lounge", 2, 1, CATEGORY),
+    channel(STAGE, "Stage", 13, 4, CATEGORY),
     channel(CREATE_ROOM, "Create Room", 2, 2, CATEGORY),
     ...(roomMade ? [channel(ALICES_ROOM, "Alice's room", 2, 3, CATEGORY)] : []),
     ...rooms.map((id, n) => channel(id, `room-${n + 1}`, 0, 2 + n, CATEGORY)),
@@ -2816,7 +2844,7 @@ function guild() {
     stickers: expressions.stickers.map((sticker) => wireSticker(sticker)),
     // A user account hears of the active threads it's in.
     threads: [...threads.values()].filter((thread) => thread.members.has(ALICE) && !thread.archived).map(wireThread),
-    stage_instances: [],
+    stage_instances: stageInstance ? [stageInstance] : [],
     guild_scheduled_events: [scheduledEvent()],
     activity_instances: [],
     member_count: Object.keys(users).length,
@@ -7666,6 +7694,58 @@ async function api(req: Request, path: string, origin: string): Promise<Response
     });
     return empty();
   }
+  // A stage channel's stage instance: its topic and privacy, as the Stage's
+  // menu changes them with PATCH. Discord sends STAGE_INSTANCE_UPDATE.
+  if ((m = path.match(/^\/stage-instances\/(\d+)$/)) && (method === "GET" || method === "PATCH")) {
+    if (!stageInstance || stageInstance.channel_id !== m[1]) {
+      return notFound("Unknown Stage Instance", 10067);
+    }
+    if (method === "GET") return json(stageInstance);
+    const body: any = await req.json().catch(() => ({}));
+    if ("topic" in body && (typeof body.topic !== "string" || body.topic.length < 1 || body.topic.length > 120)) {
+      return json({ message: "Invalid Form Body", code: 50035 }, 400);
+    }
+    if ("privacy_level" in body && body.privacy_level !== 2) {
+      return json({ message: "Invalid Form Body", code: 50035 }, 400);
+    }
+    if ("topic" in body) stageInstance.topic = body.topic;
+    if ("privacy_level" in body) stageInstance.privacy_level = body.privacy_level;
+    stageChanges.push(body);
+    dispatch("STAGE_INSTANCE_UPDATE", stageInstance);
+    return json(stageInstance);
+  }
+  // A voice state's hand in a stage, and a moderator moving someone between
+  // its audience and its speakers, as Discord's routes change them.
+  if (method === "PATCH" && (m = path.match(/^\/guilds\/(\d+)\/voice-states\/(@me|\d+)$/))) {
+    if (m[1] !== GUILD) return notFound("Unknown Guild", 10004);
+    const who = m[2]! === "@me" ? ALICE : m[2]!;
+    const state = voice.get(who);
+    if (!state || state.guild !== GUILD) {
+      return json({ message: "Target user is not connected to voice.", code: 40032 }, 400);
+    }
+    const channel = guildChannels().find((known) => known.id === state.channel);
+    const body: any = await req.json().catch(() => ({}));
+    const fields = ["suppress", "request_to_speak_timestamp"].filter((field) => field in body);
+    if (fields.length === 0) return json({ message: "Invalid Form Body", code: 50035 }, 400);
+    if (who !== ALICE) {
+      if (!aliceMay(22)) return json({ message: "Missing Permissions", code: 50013 }, 403);
+      if ("suppress" in body) state.suppress = !!body.suppress;
+    } else {
+      if ("suppress" in body) return json({ message: "Missing Permissions", code: 50013 }, 403);
+      if (channel?.type !== 13) return json({ message: "Invalid Form Body", code: 50035 }, 400);
+      const when = body.request_to_speak_timestamp;
+      if (when !== null && (typeof when !== "string" || Number.isNaN(Date.parse(when)))) {
+        return json({ message: "Invalid Form Body", code: 50035 }, 400);
+      }
+      state.request_to_speak_timestamp = when;
+    }
+    dispatch("VOICE_STATE_UPDATE", {
+      ...wireVoiceState(who, state),
+      member: memberIn(GUILD, userById.get(who)!),
+    });
+    voiceStateChanges.push({ user: who, ...Object.fromEntries(fields.map((field) => [field, body[field]])) });
+    return empty();
+  }
   const envServer = (m = path.match(/^\/channels\/(\d+)$/)) ? world?.channelGuild.get(m[1]!) : undefined;
   if (method === "GET" && envServer) return json(envGuild(envServer).channels.find((channel) => channel.id === m![1]));
   // A channel's overwrites, one at a time, as Channel Permissions saves them.
@@ -9453,7 +9533,29 @@ const server = Bun.serve<SocketData>({
     if (path === "/_control/logouts") return Response.json(logouts);
     if (path === "/_control/voice-identifies") return Response.json(voiceIdentifies);
     if (path === "/_control/voice-changes") return Response.json(voiceChanges);
-    if (path === "/_control/channel-info") return Response.json(channelInfoRequests);
+    if (path === "/_control/voice-state-changes") return Response.json(voiceStateChanges);
+    if (req.method === "GET" && path === "/_control/stage-instance") return Response.json(stageInstance);
+    if (path === "/_control/stage-changes") return Response.json(stageChanges);
+    if (req.method === "POST" && path === "/_control/stage-instance") {
+      // ?off ends the Stage's talk, as its menu does; anything else starts
+      // it again with its topic.
+      const query = new URL(req.url).searchParams;
+      if (query.has("off")) {
+        const ended = stageInstance;
+        stageInstance = null;
+        if (ended) {
+          dispatch("STAGE_INSTANCE_DELETE", {
+            id: ended.id, guild_id: ended.guild_id, channel_id: ended.channel_id,
+          });
+        }
+        return new Response("The stage ended\n");
+      }
+      if (!stageInstance) {
+        stageInstance = startingStage();
+        dispatch("STAGE_INSTANCE_CREATE", stageInstance);
+      }
+      return new Response("The stage started\n");
+    }
     if (req.method === "POST" && path === "/_control/voice-reset") {
       // Bob, Carol and Dave back in the Lounge as they started, after a
       // test moved or disconnected them.

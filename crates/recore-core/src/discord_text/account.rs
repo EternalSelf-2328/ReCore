@@ -1342,6 +1342,7 @@ pub(super) fn command(
         | DiscordCommand::ChannelSettings { .. }
         | DiscordCommand::EditChannel { .. }
         | DiscordCommand::SetVoiceStatus { .. }
+        | DiscordCommand::SetStageTopic { .. }
         | DiscordCommand::DeleteChannel { .. }),
     ) = command
     {
@@ -1356,7 +1357,8 @@ pub(super) fn command(
         return None;
     }
     if let Command::Discord(
-        command @ (DiscordCommand::Relationship { .. }
+        command @ (DiscordCommand::RequestToSpeak { .. }
+        | DiscordCommand::Relationship { .. }
         | DiscordCommand::Note { .. }
         | DiscordCommand::SetNote { .. }
         | DiscordCommand::SetNickname { .. }
@@ -1388,6 +1390,7 @@ fn from_dialog(change: &MemberChange) -> bool {
             | MemberChange::ServerMute(_)
             | MemberChange::ServerDeafen(_)
             | MemberChange::Move(_)
+            | MemberChange::Suppress(_)
     )
 }
 
@@ -1592,6 +1595,23 @@ fn manage_channel(
                     },
                 )
             }
+            DiscordCommand::SetStageTopic { room, topic } => {
+                let result = match channel(&room) {
+                    Some(id) => discord.set_stage_topic(&id, &topic).await,
+                    None => Err(anyhow::anyhow!(NOT_DISCORD)),
+                };
+                let _ = events.send(Event::StageTopicSet {
+                    room,
+                    result: result.map_err(|error| {
+                        tracing::warn!(
+                            error = format!("{error:#}"),
+                            "could not set the stage's topic"
+                        );
+                        format!("Couldn't set the stage's topic: {error}")
+                    }),
+                });
+                return;
+            }
             DiscordCommand::DeleteChannel { room } => {
                 let result = match channel(&room) {
                     Some(id) => discord
@@ -1693,6 +1713,31 @@ fn change_person(
                 ));
                 return;
             }
+            DiscordCommand::RequestToSpeak { room, requested } => {
+                let guild = discord::parse_room(&room)
+                    .map(|(guild, _)| guild.to_owned())
+                    .unwrap_or_default();
+                let result = discord
+                    .request_to_speak(&guild, requested)
+                    .await
+                    .map_err(|error| {
+                        tracing::warn!(error = format!("{error:#}"), "could not ask to speak");
+                        format!(
+                            "Couldn't {}: {error}",
+                            if requested {
+                                "ask to speak"
+                            } else {
+                                "lower your hand"
+                            }
+                        )
+                    });
+                let _ = events.send(Event::SpeakRequested {
+                    room,
+                    requested,
+                    result,
+                });
+                return;
+            }
             DiscordCommand::Member {
                 server,
                 user,
@@ -1778,6 +1823,16 @@ fn change_person(
                             },
                         )
                     }
+                    MemberChange::Suppress(suppressed) => (
+                        discord
+                            .stepping_up(|| discord.set_suppressed(guild, &user, suppressed))
+                            .await,
+                        if suppressed {
+                            "move them to the audience"
+                        } else {
+                            "move them to the speakers"
+                        },
+                    ),
                 };
                 if !dialog {
                     (result, what)

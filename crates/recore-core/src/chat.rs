@@ -502,6 +502,11 @@ pub struct VoicePerson {
     /// This account, in the call on another client, as Discord shows it:
     /// dimmed, without its icons.
     pub elsewhere: bool,
+    /// Suppressed in a stage channel: an audience member rather than a
+    /// speaker.
+    pub suppressed: bool,
+    /// Their hand is raised in a stage channel: they asked to speak.
+    pub requested: bool,
 }
 
 #[derive(Clone, Default, PartialEq, Eq, Hash)]
@@ -3431,6 +3436,19 @@ pub enum DiscordCommand {
         room: String,
         status: Option<String>,
     },
+    /// Set a stage channel's topic; [`Event::StageTopicSet`] follows, and
+    /// STAGE_INSTANCE_UPDATE shows it.
+    SetStageTopic {
+        room: String,
+        topic: String,
+    },
+    /// Raise this account's hand in a stage channel, asking to speak, or
+    /// lower it with `requested` false; [`Event::SpeakRequested`] follows,
+    /// and VOICE_STATE_UPDATE shows it.
+    RequestToSpeak {
+        room: String,
+        requested: bool,
+    },
     DeleteChannel {
         room: String,
     },
@@ -4584,6 +4602,9 @@ pub enum MemberChange {
     /// Move them to another voice channel of the server, by its room id,
     /// or with none disconnect them from voice.
     Move(Option<String>),
+    /// Move them between a stage's audience and its speakers: suppressed
+    /// in the audience, or speaking with `false`.
+    Suppress(bool),
 }
 
 /// How long a Discord DM, server, channel or category stays muted.
@@ -4986,6 +5007,18 @@ pub enum Event {
     /// Whether Discord made, changed or deleted the channel a dialog asked
     /// it to: the room id of one it made, or why it didn't.
     ChannelSaved(Result<Option<String>, String>),
+    /// Whether Discord took a stage channel's new topic, or why not.
+    StageTopicSet {
+        room: String,
+        result: Result<(), String>,
+    },
+    /// Whether Discord raised or lowered this account's hand in a stage
+    /// channel, or why not.
+    SpeakRequested {
+        room: String,
+        requested: bool,
+        result: Result<(), String>,
+    },
     /// Whether Discord took a [`DiscordCommand::ChangeOverwrites`], or why
     /// not.
     OverwritesChanged {

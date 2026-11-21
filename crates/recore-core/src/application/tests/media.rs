@@ -417,6 +417,8 @@ fn asks_once_for_the_pictures_on_screen() {
                 streaming: false,
                 video: false,
                 elsewhere: false,
+                suppressed: false,
+                requested: false,
                 server_muted: false,
                 server_deafened: false,
             }],
