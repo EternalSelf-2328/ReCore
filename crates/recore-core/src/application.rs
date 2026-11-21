@@ -104,10 +104,11 @@ pub use server_settings::{
     MEMBER_SORTS, MEMBERS_CHUNK, MemberInput, MembersPage, MfaRule, Ownership, OwnershipInput,
     PAUSE_HOURS, Page as SettingsPage, PermissionGroup, PermissionInfo, PermissionLock,
     ProfilePage, ROLE_COLORS, ROLE_NAME_LIMIT, ROLE_PERMISSIONS, RoleConfirm, RoleDraft, RoleInput,
-    RoleLock, RoleRules, RoleTab, RolesPage, SETUP_TIPS, STICKER_DESCRIPTION_LIMIT,
-    STICKER_NAME_LIMIT, SafetyChoice, SafetyPage, SecurityDraft, ServerSettings, SettingsChoice,
-    SettingsText, SettingsToggle, StickerCard, StickerDraft, StickerInput, StickersPage,
-    TransferAsk, WELCOME, WELCOME_STICKER, emoji_name,
+    RoleLock, RoleRules, RoleTab, RolesPage, SETUP_TIPS, SOUND_FILE_LIMIT, SOUND_NAME_LIMIT,
+    STICKER_DESCRIPTION_LIMIT, STICKER_NAME_LIMIT, SafetyChoice, SafetyPage, SecurityDraft,
+    ServerSettings, SettingsChoice, SettingsText, SettingsToggle, SoundDraft, SoundboardInput,
+    SoundboardPage, StickerCard, StickerDraft, StickerInput, StickersPage, TransferAsk, WELCOME,
+    WELCOME_STICKER, emoji_name,
 };
 pub use slash::{CommandDraft, CommandRow, OptionDraft};
 pub use stickers::{FREQUENT_STICKERS, ServerStickers, StickerPicker, StickerPicture, StickerUse};
@@ -2382,6 +2383,13 @@ pub enum Action {
     Bans(BanInput),
     /// Something done on Audit Log in a server's settings.
     AuditLog(AuditInput),
+    /// Something done on Soundboard in a server's settings.
+    Soundboard(SoundboardInput),
+    /// Something done on Soundboard or another page of a server's settings
+    /// that acts at once.
+    ServerSettingsAction(chat::ServerSettingsAction),
+    /// Read a sound chosen for a server's Soundboard.
+    PickSoundFile(PathBuf),
     /// Answer the two-factor prompt: use another method, or with none
     /// list them; write the code; have Discord text it again; confirm; or
     /// cancel, which fails the request waiting on it.
@@ -2891,7 +2899,8 @@ fn pictures_on_screen<'a>(
                     | server_settings::Page::Invites(_)
                     | server_settings::Page::Safety(_)
                     | server_settings::Page::AuditLog(_)
-                    | server_settings::Page::Bans(_),
+                    | server_settings::Page::Bans(_)
+                    | server_settings::Page::Soundboard(_),
                 )
                 | None => (None, None),
             };
@@ -4136,6 +4145,13 @@ impl Application {
             Action::Invites(input) => self.invite_input(input),
             Action::Bans(input) => self.ban_input(input),
             Action::AuditLog(input) => self.audit_log_input(input),
+            Action::Soundboard(input) => self.soundboard_input(input),
+            Action::ServerSettingsAction(action) => self.settings_action_input(action),
+            Action::PickSoundFile(path) => {
+                vec![Effect::Backend(Command::Discord(
+                    DiscordCommand::ServerSound { path },
+                ))]
+            }
             Action::CloseServerSettings => {
                 self.close_server_settings();
                 vec![]
@@ -4948,6 +4964,12 @@ impl Application {
             Event::ServerSettingsSaved { server, result } => {
                 self.server_settings_saved(server, result);
             }
+            Event::ServerSettingsActionDone {
+                server,
+                action,
+                result,
+            } => self.settings_action_done(server, action, result),
+            Event::ServerSound { path, result } => self.server_sound_read(path, result),
             Event::ServerRoleChanged { server, role } => {
                 self.server_role_changed(server, Some(*role), None);
             }

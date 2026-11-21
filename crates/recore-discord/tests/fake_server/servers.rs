@@ -1322,3 +1322,79 @@ async fn reads_and_sends_a_membership_screening_form() {
     assert_eq!(sent[0]["guild"], guild);
     assert_eq!(sent[0]["fields"], answers);
 }
+
+/// Soundboard in Server Settings: listing "Server"'s sounds with who added
+/// each, adding her own with Create Expressions, renaming and deleting it,
+/// and not touching Bob's; part of [`talks_to_the_fake_server`], whose
+/// session it shares.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "starts testing/fake_discord.ts with bun; run scripts/test-fake-discord"]
+async fn keeps_soundboard_sounds_as_discords_client_does() {
+    let fixture = Fixture::start("keeps_soundboard_sounds_as_discords_client_does").await;
+    let discord = &fixture.discord;
+    let server = fixture.server;
+    let guild = fixture.guild.as_str();
+    let names = |sounds: &[recore_discord::server_settings::Sound]| {
+        sounds
+            .iter()
+            .map(|sound| sound.name.clone())
+            .collect::<Vec<_>>()
+    };
+    let sounds = discord.soundboard_sounds(guild).await.unwrap();
+    assert_eq!(names(&sounds), ["Bob's laugh", "Applause"]);
+    assert_eq!(sounds[0].uploader.as_deref(), Some("Bob"));
+    assert_eq!(sounds[0].emoji.as_deref(), Some("talk"));
+    assert!((sounds[0].volume - 0.8).abs() < f32::EPSILON);
+
+    // Hers, from an Ogg of a few bytes, which sounds are under 512 KiB.
+    let ogg = b"OggS\0\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00";
+    let bell = discord
+        .create_sound(guild, "Bell", "audio/ogg", ogg)
+        .await
+        .unwrap();
+    assert_eq!(bell.name, "Bell");
+    assert_eq!(bell.uploader.as_deref(), Some("Alice"));
+    assert_eq!(
+        names(&discord.soundboard_sounds(guild).await.unwrap()),
+        ["Bob's laugh", "Applause", "Bell"]
+    );
+
+    // A name Discord refuses, and Bob's sound, which only Manage
+    // Expressions would change.
+    assert!(discord.rename_sound(guild, &bell.id, "B").await.is_err());
+    assert!(
+        discord
+            .rename_sound(guild, &sounds[0].id, "Bob's")
+            .await
+            .is_err()
+    );
+    discord.rename_sound(guild, &bell.id, "Ding").await.unwrap();
+    assert_eq!(
+        names(&discord.soundboard_sounds(guild).await.unwrap()),
+        ["Bob's laugh", "Applause", "Ding"]
+    );
+
+    // A sound file Discord doesn't take.
+    assert!(
+        discord
+            .create_sound(guild, "Squeak", "text/plain", b"not a sound")
+            .await
+            .is_err()
+    );
+
+    discord.delete_sound(guild, &bell.id).await.unwrap();
+    assert_eq!(
+        names(&discord.soundboard_sounds(guild).await.unwrap()),
+        ["Bob's laugh", "Applause"]
+    );
+    let changes: serde_json::Value =
+        serde_json::from_str(&control(server, "GET", "/_control/soundboard-changes", "")).unwrap();
+    assert_eq!(
+        changes,
+        serde_json::json!([
+            {"action": "create", "name": "Bell", "type": "audio/ogg"},
+            {"action": "rename", "id": bell.id, "name": "Ding"},
+            {"action": "delete", "id": bell.id},
+        ])
+    );
+}

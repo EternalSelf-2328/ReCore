@@ -633,7 +633,7 @@ impl Application {
         }))]
     }
 
-    fn settings_server(&self) -> Option<String> {
+    pub(super) fn settings_server(&self) -> Option<String> {
         self.state
             .server_settings
             .as_ref()

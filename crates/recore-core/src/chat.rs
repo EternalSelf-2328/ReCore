@@ -3663,6 +3663,17 @@ pub enum DiscordCommand {
         /// bigger.
         action: Box<StickerAction>,
     },
+    /// What a page of a Discord server's settings asks of Discord at
+    /// once; [`Event::ServerSettingsActionDone`] follows.
+    SettingsAction {
+        server: String,
+        action: ServerSettingsAction,
+    },
+    /// Read the sound at `path` for a server's Soundboard;
+    /// [`Event::ServerSound`] follows.
+    ServerSound {
+        path: PathBuf,
+    },
 }
 
 /// What Emoji asks of Discord. Each is followed by the server's emoji
@@ -3695,6 +3706,97 @@ pub enum StickerAction {
         form: StickerForm,
     },
     Delete(String),
+}
+
+/// What a page of a Discord server's settings asks of Discord at once, as
+/// Discord's client does without the bar; [`Event::ServerSettingsActionDone`]
+/// follows.
+#[derive(Clone, Debug)]
+pub enum ServerSettingsAction {
+    Soundboard(SoundboardAction),
+    Webhooks(WebhookAction),
+    Integrations(IntegrationAction),
+    AutoMod(AutoModAction),
+    Privacy(PrivacyChange),
+    Discovery(DiscoveryAction),
+}
+
+/// What Soundboard asks of Discord; each is followed by the server's
+/// sounds again.
+#[derive(Clone, Debug)]
+pub enum SoundboardAction {
+    /// A new sound: its name, and the file read for it.
+    Upload {
+        name: String,
+        sound: PickedSound,
+    },
+    Rename {
+        id: String,
+        name: String,
+    },
+    Delete(String),
+}
+
+/// What Webhooks asks of Discord; each is followed by the server's
+/// webhooks again.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WebhookAction {
+    Create { channel: String, name: String },
+    Delete(String),
+}
+
+/// What Integrations asks of Discord; each is followed by the server's
+/// integrations again.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum IntegrationAction {
+    Delete(String),
+}
+
+/// What AutoMod asks of Discord; each is followed by the server's rules
+/// again.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AutoModAction {
+    /// Enables or disables a rule.
+    SetEnabled {
+        id: String,
+        enabled: bool,
+    },
+    /// A new keyword rule: its name, the words, and which actions it
+    /// takes.
+    Create(AutoModDraft),
+    Delete(String),
+}
+
+/// A keyword rule being made: its name, its words, and what it does.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct AutoModDraft {
+    pub name: String,
+    /// The words, split at commas and new lines.
+    pub keywords: String,
+    /// Block the message, telling the member why.
+    pub block: bool,
+    /// Alert a channel, by its Discord id.
+    pub alert: Option<String>,
+    /// Time the member out for an hour.
+    pub timeout: bool,
+}
+
+/// A change to one of the server privacy page's switches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PrivacyChange {
+    /// Direct Messages: false refuses members' DMs.
+    Dms(bool),
+    /// Message Requests: false keeps their DMs out of message requests.
+    MessageRequests(bool),
+    /// Activity Status: false hides this account's activity in the server.
+    Activity(bool),
+}
+
+/// What Discovery asks of Discord.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiscoveryAction {
+    /// Lists the server in Discovery, or takes it out.
+    SetEnabled(bool),
 }
 
 /// A sticker's name, related emoji, as a Unicode emoji or a custom emoji's
@@ -3812,6 +3914,12 @@ pub enum SettingsSection {
     Safety,
     AuditLog,
     Bans,
+    Soundboard,
+    Webhooks,
+    Integrations,
+    AutoMod,
+    Privacy,
+    Discovery,
 }
 
 /// A picture of a Discord server's.
@@ -3829,7 +3937,7 @@ pub enum ServerPicture {
 }
 
 /// What a page of a Discord server's settings shows, as Discord sent it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ServerSettingsPage {
     Profile(ServerProfile),
     /// Engagement's and Boost Perks', which the guild object holds.
@@ -3861,6 +3969,16 @@ pub enum ServerSettingsPage {
         stickers: Vec<ServerSticker>,
         settings: GuildSettings,
     },
+    /// The server's sounds, and its settings, which give its slots.
+    Soundboard {
+        sounds: Vec<ServerSound>,
+        settings: GuildSettings,
+    },
+    Webhooks(Vec<ServerWebhook>),
+    Integrations(Vec<ServerIntegration>),
+    AutoMod(Vec<AutoModRule>),
+    Privacy(PrivacySettings),
+    Discovery(DiscoverySettings),
 }
 
 /// A page of a Discord server's audit log, as Discord sends it: its
@@ -4078,6 +4196,163 @@ pub struct ServerSticker {
     pub user: Option<RoleMember>,
     /// Its picture's address; none for Lottie, which isn't drawn.
     pub picture: Option<String>,
+}
+
+/// A server's soundboard sound, as Soundboard in its settings lists it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ServerSound {
+    pub id: String,
+    pub name: String,
+    /// How loud it plays, from 0 to 1, as whoever added it chose.
+    pub volume: f32,
+    /// Its Unicode emoji, or a custom emoji's name.
+    pub emoji: Option<String>,
+    /// Whether the server's boosts still give it a slot.
+    pub available: bool,
+    /// Who added it, by id, and their name when Discord says.
+    pub user_id: Option<String>,
+    pub uploader: Option<String>,
+}
+
+/// A sound file chosen for a server's Soundboard, as Discord takes it: its
+/// type and bytes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PickedSound {
+    pub mime: &'static str,
+    pub data: Arc<[u8]>,
+    pub file_name: String,
+}
+
+/// A webhook in a server, as Webhooks in its settings lists it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ServerWebhook {
+    pub id: String,
+    pub name: String,
+    /// Discord's `type`: 1 incoming, 2 a channel follower, 3 an
+    /// application's.
+    pub kind: u8,
+    pub channel_id: Option<String>,
+    pub channel: String,
+    /// The token that makes its URL, which only incoming webhooks give.
+    pub token: Option<String>,
+    /// The address Discord sent for it, or the one its id and token make.
+    pub url: Option<String>,
+    /// Who made it, when Discord says.
+    pub creator: Option<String>,
+    /// The application it belongs to, when it is one's.
+    pub application: Option<String>,
+}
+
+/// Something integrated into a server, as Integrations lists it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ServerIntegration {
+    pub id: String,
+    pub name: String,
+    /// Discord's `type`: `discord`, `twitch`, `youtube` or
+    /// `guild_subscription`.
+    pub kind: String,
+    pub enabled: bool,
+    /// The account it follows, or the application it belongs to.
+    pub account: String,
+    pub subscriber_count: Option<u64>,
+    /// When it last synced, in Unix seconds.
+    pub synced: Option<u64>,
+}
+
+/// A rule of a server's AutoMod, as its settings list it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct AutoModRule {
+    pub id: String,
+    pub name: String,
+    pub enabled: bool,
+    /// Discord's `trigger_type`: 1 a keyword, 3 spam, 4 a preset list, 5
+    /// mention spam, 6 a member's profile.
+    pub trigger: u8,
+    /// Discord's `event_type`: 1 a message, 2 a member's profile.
+    pub event: u8,
+    pub creator: Option<String>,
+    pub keywords: Vec<String>,
+    pub regexes: Vec<String>,
+    /// Discord's preset word lists, 1 profanity, 2 sexual content, 3 slurs.
+    pub presets: Vec<u8>,
+    /// Discord's action types: 1 block, 2 alert, 3 time out.
+    pub actions: Vec<u8>,
+    /// The channel an alert goes to, by id.
+    pub alert_channel: Option<String>,
+    /// How long a timeout lasts, in seconds.
+    pub timeout: Option<u32>,
+}
+
+impl AutoModRule {
+    /// Whether its trigger looks for words, which a new rule may copy.
+    pub fn keywords_of(&self) -> bool {
+        matches!(self.trigger, 1 | 4 | 6)
+    }
+}
+
+/// What this account's server privacy page shows: whether members may DM
+/// it, whether their DMs are filtered into message requests, and whether
+/// its activity shows in the server.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PrivacySettings {
+    /// Direct Messages: false when the server is in `restricted_guild_ids`.
+    pub dms: bool,
+    /// Message Requests: false when it is in
+    /// `message_request_restricted_guild_ids`.
+    pub message_requests: bool,
+    /// Activity Status: false when it is in `activity_restricted_guild_ids`.
+    pub activity: bool,
+}
+
+impl Default for PrivacySettings {
+    fn default() -> Self {
+        Self {
+            dms: true,
+            message_requests: true,
+            activity: true,
+        }
+    }
+}
+
+/// One of Privacy's switches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PrivacyToggle {
+    Dms,
+    MessageRequests,
+    Activity,
+}
+
+/// What a server's Discovery page shows, as Discord's requirements and
+/// metadata give it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DiscoverySettings {
+    /// Whether the server has Discord's `DISCOVERABLE` feature.
+    pub enabled: bool,
+    /// Whether it meets Discovery's requirements.
+    pub sufficient: bool,
+    /// Whether it could stay in Discovery during its grace period.
+    pub sufficient_without_grace: bool,
+    pub safe_environment: bool,
+    pub healthy: bool,
+    pub health_score_pending: bool,
+    pub size: bool,
+    pub protected: bool,
+    pub valid_rules_channel: bool,
+    pub retention_healthy: bool,
+    pub engagement_healthy: bool,
+    pub age: bool,
+    /// The member count and days Discord asks for, when it says.
+    pub minimum_size: Option<u64>,
+    pub minimum_age: Option<u64>,
+    /// When a grace period ends, in Unix seconds.
+    pub grace_period_end: Option<u64>,
+    /// The discovery keywords and the long description, when set.
+    pub keywords: Vec<String>,
+    pub about: String,
+    /// Whether its landing page is published.
+    pub published: bool,
+    /// Discord permanently disabled Discovery for the server.
+    pub disabled: bool,
 }
 
 /// An invite to a Discord server, as Invites lists it.
@@ -4869,6 +5144,18 @@ pub enum Event {
         form: bool,
         result: Result<(), String>,
         stickers: Option<Vec<ServerSticker>>,
+    },
+    /// Whether what a page of a Discord server's settings asked of Discord
+    /// went, and the page as it then stands when Discord sent it.
+    ServerSettingsActionDone {
+        server: String,
+        action: ServerSettingsAction,
+        result: Result<ServerSettingsPage, String>,
+    },
+    /// The sound [`DiscordCommand::ServerSound`] read, from `path`.
+    ServerSound {
+        path: PathBuf,
+        result: Result<PickedSound, String>,
     },
     /// A server's stickers changed, as GUILD_STICKERS_UPDATE gives them,
     /// for an open Stickers.

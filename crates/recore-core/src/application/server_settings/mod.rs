@@ -10,7 +10,8 @@ use crate::{
     application::profile_editor::PictureEdit,
     chat::{
         AuditLog, AuditQuery, Ban, BansAction, GuildSettings, Permission, PickedPicture,
-        ServerPicture, ServerSettingsChange, ServerSettingsPage, SettingsSection,
+        ServerPicture, ServerSettingsAction, ServerSettingsChange, ServerSettingsPage,
+        SettingsSection,
     },
 };
 
@@ -28,6 +29,7 @@ mod profile;
 mod role_input;
 mod roles;
 mod safety;
+mod soundboard;
 
 use audit_log::Known;
 pub use audit_log::{
@@ -54,6 +56,9 @@ pub use roles::{
     RolesPage,
 };
 pub use safety::{FILTER_ALL, HIGHEST_VERIFICATION, MfaRule, SafetyChoice, SafetyPage};
+pub use soundboard::{
+    SOUND_FILE_LIMIT, SOUND_NAME_LIMIT, SoundDraft, SoundboardInput, SoundboardPage,
+};
 
 /// The settings of a Discord server, while they're open.
 #[derive(Clone, Debug)]
@@ -89,6 +94,7 @@ pub enum Page {
     Safety(SafetyPage),
     AuditLog(Box<AuditLogPage>),
     Bans(Box<BansPage>),
+    Soundboard(Box<SoundboardPage>),
 }
 
 /// A switch of a settings page: one of Engagement's system messages, by
@@ -139,7 +145,8 @@ impl ServerSettings {
             | Page::Invites(_)
             | Page::Safety(_)
             | Page::AuditLog(_)
-            | Page::Bans(_) => None,
+            | Page::Bans(_)
+            | Page::Soundboard(_) => None,
         }
     }
 
@@ -154,6 +161,7 @@ impl ServerSettings {
                 | SettingsSection::Safety
                 | SettingsSection::AuditLog
                 | SettingsSection::Bans
+                | SettingsSection::Soundboard
         )
     }
 
@@ -170,7 +178,8 @@ impl ServerSettings {
             | Page::Invites(_)
             | Page::Safety(_)
             | Page::AuditLog(_)
-            | Page::Bans(_) => None,
+            | Page::Bans(_)
+            | Page::Soundboard(_) => None,
         }
     }
 
@@ -200,7 +209,11 @@ impl Application {
         if self.may(server, Permission::ManageExpressions)
             || self.may(server, Permission::CreateExpressions)
         {
-            sections.extend([SettingsSection::Emoji, SettingsSection::Stickers]);
+            sections.extend([
+                SettingsSection::Emoji,
+                SettingsSection::Stickers,
+                SettingsSection::Soundboard,
+            ]);
         }
         // Discord's People.
         let moderates = [
@@ -505,6 +518,54 @@ impl Application {
                 change: Box::new(change),
             },
         ))]
+    }
+
+    /// Something done on one of the pages that act at once.
+    pub(super) fn settings_action_input(&mut self, action: ServerSettingsAction) -> Vec<Effect> {
+        match action {
+            ServerSettingsAction::Soundboard(_)
+            | ServerSettingsAction::Webhooks(_)
+            | ServerSettingsAction::Integrations(_)
+            | ServerSettingsAction::AutoMod(_)
+            | ServerSettingsAction::Privacy(_)
+            | ServerSettingsAction::Discovery(_) => vec![],
+        }
+    }
+
+    /// What a page that acts at once asked of Discord, and the page after
+    /// it.
+    pub(super) fn settings_action_done(
+        &mut self,
+        server: String,
+        action: ServerSettingsAction,
+        result: Result<ServerSettingsPage, String>,
+    ) {
+        match action {
+            ServerSettingsAction::Soundboard(done) => {
+                let (result, sounds) = match result {
+                    Ok(ServerSettingsPage::Soundboard { sounds, .. }) => (Ok(()), Some(sounds)),
+                    Ok(_) => (Ok(()), None),
+                    Err(error) => (Err(error), None),
+                };
+                self.soundboard_changed(server, done, result, sounds);
+            }
+            ServerSettingsAction::Webhooks(_)
+            | ServerSettingsAction::Integrations(_)
+            | ServerSettingsAction::AutoMod(_)
+            | ServerSettingsAction::Privacy(_)
+            | ServerSettingsAction::Discovery(_) => {
+                if let Some(settings) = self
+                    .state
+                    .server_settings
+                    .as_mut()
+                    .filter(|settings| settings.server == server)
+                {
+                    if let Err(error) = result {
+                        settings.error = Some(error);
+                    }
+                }
+            }
+        }
     }
 
     /// Something done on Bans.
@@ -865,7 +926,8 @@ impl Application {
                 | Page::Invites(_)
                 | Page::Safety(_)
                 | Page::AuditLog(_)
-                | Page::Bans(_),
+                | Page::Bans(_)
+                | Page::Soundboard(_),
             )
             | None => {}
         }
@@ -952,7 +1014,8 @@ impl Application {
                 | Page::Members(_)
                 | Page::Roles(_)
                 | Page::AuditLog(_)
-                | Page::Bans(_),
+                | Page::Bans(_)
+                | Page::Soundboard(_),
             )
             | None => {}
         }
@@ -1034,6 +1097,9 @@ impl Page {
             }
             (SettingsSection::Stickers, ServerSettingsPage::Stickers { stickers, settings }) => {
                 Self::Stickers(Box::new(StickersPage::new(stickers, settings)))
+            }
+            (SettingsSection::Soundboard, ServerSettingsPage::Soundboard { sounds, settings }) => {
+                Self::Soundboard(Box::new(SoundboardPage::new(sounds, settings)))
             }
             (SettingsSection::Roles, ServerSettingsPage::Roles(roles)) => {
                 Self::Roles(Box::new(RolesPage::new(roles)))

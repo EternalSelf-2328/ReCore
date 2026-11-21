@@ -7,6 +7,7 @@ use recore_discord::{
     mfa,
     server_settings::{
         Ban as DiscordBan, GuildSettings as DiscordSettings, ServerProfile as DiscordProfile,
+        Sound as DiscordSound,
     },
 };
 use serde_json::{Map, Value};
@@ -17,8 +18,9 @@ use super::{
     *,
 };
 use crate::chat::{
-    Ban, BansAction, GuildSettings, MfaMethod, RoleMember, ServerPicture, ServerProfile,
-    ServerSettingsChange, ServerSettingsPage, SettingsSection,
+    Ban, BansAction, GuildSettings, MfaMethod, PickedSound, RoleMember, ServerPicture,
+    ServerProfile, ServerSettingsAction, ServerSettingsChange, ServerSettingsPage, ServerSound,
+    SettingsSection,
 };
 
 /// A server icon as Discord's client crops it, and its preview at the
@@ -175,6 +177,25 @@ pub(super) fn command(
                         .bans(&guild, None)
                         .await
                         .map(|bans| ServerSettingsPage::Bans(bans.into_iter().map(ban).collect())),
+                    SettingsSection::Soundboard => {
+                        let (sounds, settings) = tokio::join!(
+                            discord.soundboard_sounds(&guild),
+                            discord.guild_settings(&guild)
+                        );
+                        sounds.and_then(|sounds| {
+                            Ok(ServerSettingsPage::Soundboard {
+                                sounds: sounds.into_iter().map(sound).collect(),
+                                settings: guild_settings(settings?),
+                            })
+                        })
+                    }
+                    SettingsSection::Webhooks
+                    | SettingsSection::Integrations
+                    | SettingsSection::AutoMod
+                    | SettingsSection::Privacy
+                    | SettingsSection::Discovery => {
+                        Err(anyhow::anyhow!("ReCore can't show that page yet"))
+                    }
                 };
                 let result = result.map_err(|error| {
                     tracing::warn!(
@@ -278,9 +299,130 @@ pub(super) fn command(
             let (discord, guild) = (discord.clone(), guild.to_owned());
             tokio::spawn(async move { bans(&discord, &guild, server, action, &events).await });
         }
+        DiscordCommand::SettingsAction { server, action } => {
+            let (Ok(discord), Some(guild)) = (discord, discord::parse_server(&server)) else {
+                let why = discord.err().unwrap_or(NOT_DISCORD).to_owned();
+                let _ = events.send(Event::ServerSettingsActionDone {
+                    server,
+                    action,
+                    result: Err(why),
+                });
+                return None;
+            };
+            let (discord, guild) = (discord.clone(), guild.to_owned());
+            let done = action.clone();
+            tokio::spawn(async move {
+                let result = settings_action(&discord, &guild, action)
+                    .await
+                    .map_err(|error| {
+                        tracing::warn!(
+                            error = format!("{error:#}"),
+                            "could not do what server settings asked"
+                        );
+                        error.to_string()
+                    });
+                let _ = events.send(Event::ServerSettingsActionDone {
+                    server,
+                    action: done,
+                    result,
+                });
+            });
+        }
+        DiscordCommand::ServerSound { path } => {
+            tokio::task::spawn_blocking(move || {
+                let result = read_sound(&path);
+                let _ = events.send(Event::ServerSound { path, result });
+            });
+        }
         other => return Some(Command::Discord(other)),
     }
     None
+}
+
+/// Does what a page of a server's settings asked at once, and gives the
+/// page as it then stands.
+async fn settings_action(
+    discord: &Discord,
+    guild: &str,
+    action: ServerSettingsAction,
+) -> anyhow::Result<ServerSettingsPage> {
+    match action {
+        ServerSettingsAction::Soundboard(action) => {
+            use crate::chat::SoundboardAction;
+            match action {
+                SoundboardAction::Upload { name, sound } => {
+                    discord
+                        .stepping_up(|| discord.create_sound(guild, &name, sound.mime, &sound.data))
+                        .await?;
+                }
+                SoundboardAction::Rename { id, name } => {
+                    discord
+                        .stepping_up(|| discord.rename_sound(guild, &id, &name))
+                        .await?;
+                }
+                SoundboardAction::Delete(id) => {
+                    discord
+                        .stepping_up(|| discord.delete_sound(guild, &id))
+                        .await?;
+                }
+            }
+            let (sounds, settings) = tokio::join!(
+                discord.soundboard_sounds(guild),
+                discord.guild_settings(guild)
+            );
+            Ok(ServerSettingsPage::Soundboard {
+                sounds: sounds?.into_iter().map(sound).collect(),
+                settings: guild_settings(settings?),
+            })
+        }
+        _ => anyhow::bail!("ReCore can't change that yet"),
+    }
+}
+
+/// A sound as Soundboard shows it.
+fn sound(sound: DiscordSound) -> ServerSound {
+    ServerSound {
+        id: sound.id,
+        name: sound.name,
+        volume: sound.volume,
+        emoji: sound.emoji,
+        available: sound.available,
+        user_id: sound.user_id,
+        uploader: sound.uploader,
+    }
+}
+
+/// The sound file at `path`, as Discord takes it: an MP3 or Ogg of at most
+/// 512 KiB.
+fn read_sound(path: &std::path::Path) -> Result<PickedSound, String> {
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let size = std::fs::metadata(path)
+        .ok()
+        .filter(std::fs::Metadata::is_file)
+        .map(|metadata| metadata.len())
+        .ok_or_else(|| format!("ReCore could not read {name}."))?;
+    if size > crate::application::SOUND_FILE_LIMIT {
+        return Err(format!(
+            "{name} is {}; soundboard sounds can be up to 512 KiB.",
+            crate::chat::file_size(size)
+        ));
+    }
+    let data = std::fs::read(path).map_err(|_| format!("ReCore could not read {name}."))?;
+    let mime = if data.starts_with(b"OggS") {
+        "audio/ogg"
+    } else if data.starts_with(b"ID3") || data.get(..2) == Some(&[0xff, 0xfb]) {
+        "audio/mpeg"
+    } else {
+        return Err(format!("{name} isn't an MP3 or Ogg sound."));
+    };
+    Ok(PickedSound {
+        mime,
+        data: data.into(),
+        file_name: name,
+    })
 }
 
 /// Does what Bans asked, and says how it went.

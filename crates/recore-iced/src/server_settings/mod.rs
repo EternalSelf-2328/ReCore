@@ -18,6 +18,7 @@ mod ownership;
 pub(crate) mod people;
 mod profile;
 pub(crate) mod roles;
+mod soundboard;
 
 use std::path::PathBuf;
 
@@ -29,7 +30,7 @@ use recore_core::{
     application::{
         Action, AppState, AuditInput, BanInput, EmojiInput, InviteInput, MemberInput,
         OwnershipInput, RoleInput, ServerSettings, SettingsChoice, SettingsPage, SettingsText,
-        SettingsToggle, StickerInput,
+        SettingsToggle, SoundboardInput, StickerInput,
     },
     chat::{ServerPicture, SettingsSection},
 };
@@ -112,6 +113,10 @@ pub enum Event {
     Emoji(EmojiInput),
     Sticker(StickerInput),
     ExpressionLocal(expressions::Event),
+    Soundboard(SoundboardInput),
+    /// A sound file's chooser, then what was chosen.
+    PickSound,
+    SoundFile(PathBuf),
     Ownership(OwnershipInput),
 }
 
@@ -146,6 +151,7 @@ impl Screen {
             .and_then(ownership::dialog_field)
             .or(match &core.page {
                 Some(SettingsPage::Emoji(page)) => expressions::dialog_field(page),
+                Some(SettingsPage::Soundboard(page)) => soundboard::dialog_field(page),
                 _ => None,
             });
         let mut tasks = vec![];
@@ -263,6 +269,9 @@ impl Screen {
             Event::Emoji(input) => Action::Emoji(input),
             Event::Sticker(input) => Action::Stickers(input),
             Event::ExpressionLocal(event) => return self.expressions_local(event, cx),
+            Event::Soundboard(input) => Action::Soundboard(input),
+            Event::PickSound => return pick_sound(),
+            Event::SoundFile(path) => Action::PickSoundFile(path),
             Event::Ownership(input) => Action::Ownership(input),
         };
         cx.dispatch(action);
@@ -334,6 +343,9 @@ fn dialog_cancel(core: Option<&ServerSettings>) -> Option<Event> {
         SettingsPage::Stickers(page) if page.draft.is_some() => {
             Some(Event::Sticker(StickerInput::Cancel))
         }
+        SettingsPage::Soundboard(page) if page.draft.is_some() => {
+            Some(Event::Soundboard(SoundboardInput::Cancel))
+        }
         _ => None,
     }
 }
@@ -376,6 +388,7 @@ impl<'a> View<'a> {
                 SettingsPage::Invites(page) => (self.invites_page(core, page, screen), true),
                 SettingsPage::Emoji(page) => (self.emoji_page(core, page, screen), true),
                 SettingsPage::Stickers(page) => (self.stickers_page(core, page), false),
+                SettingsPage::Soundboard(page) => (self.soundboard_page(core, page, screen), false),
             };
             fill = fills;
             page = page.push(view);
@@ -428,6 +441,9 @@ impl<'a> View<'a> {
             Some(SettingsPage::Invites(page)) => dialogs.extend(self.security_dialog(page, screen)),
             Some(SettingsPage::Emoji(page)) => dialogs.extend(self.emoji_dialog(page)),
             Some(SettingsPage::Stickers(page)) => dialogs.extend(self.sticker_dialog(core, page)),
+            Some(SettingsPage::Soundboard(page)) => {
+                dialogs.extend(self.soundboard_dialog(page, screen))
+            }
             _ => {}
         }
         if let Some(ownership) = &core.ownership {
@@ -454,7 +470,9 @@ impl<'a> View<'a> {
         let mut group = "";
         for section in app.settings_sections(&core.server) {
             let heading = match section {
-                SettingsSection::Emoji | SettingsSection::Stickers => "EXPRESSION",
+                SettingsSection::Emoji
+                | SettingsSection::Stickers
+                | SettingsSection::Soundboard => "EXPRESSION",
                 SettingsSection::Members | SettingsSection::Roles | SettingsSection::Invites => {
                     "PEOPLE"
                 }
@@ -522,6 +540,12 @@ fn section_look(section: SettingsSection) -> (&'static str, Icon) {
         SettingsSection::Bans => ("Bans", Icon::Gavel),
         SettingsSection::Emoji => ("Emoji", Icon::Smile),
         SettingsSection::Stickers => ("Stickers", Icon::StickyNote),
+        SettingsSection::Soundboard => ("Soundboard", Icon::Music),
+        SettingsSection::Webhooks => ("Webhooks", Icon::Chain),
+        SettingsSection::Integrations => ("Integrations", Icon::Settings),
+        SettingsSection::AutoMod => ("AutoMod", Icon::Shield),
+        SettingsSection::Privacy => ("Privacy", Icon::Lock),
+        SettingsSection::Discovery => ("Discovery", Icon::Community),
     }
 }
 
@@ -553,6 +577,24 @@ fn pick(kind: ServerPicture) -> Task<Message> {
         },
         move |path| match path {
             Some(path) => message(Event::Picked(kind, path)),
+            None => Message::Nothing,
+        },
+    )
+}
+
+/// The system's file dialog for a soundboard sound.
+fn pick_sound() -> Task<Message> {
+    Task::perform(
+        async move {
+            rfd::AsyncFileDialog::new()
+                .set_title("Add Sound")
+                .add_filter("Sounds", &["mp3", "ogg", "opus"][..])
+                .pick_file()
+                .await
+                .map(|file| file.path().to_owned())
+        },
+        |path| match path {
+            Some(path) => message(Event::SoundFile(path)),
             None => Message::Nothing,
         },
     )

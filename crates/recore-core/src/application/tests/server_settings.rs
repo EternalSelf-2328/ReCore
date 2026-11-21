@@ -2,10 +2,11 @@
 //! held-back requests open.
 
 use super::*;
+use crate::application::SoundboardInput;
 use crate::chat::{
-    GuildSettings, MfaMethod, PickedPicture, RoleAction, RoleDetail, RoleManager, RoleMember,
-    ServerPicture, ServerProfile, ServerRoles, ServerSettingsChange, ServerSettingsPage,
-    SettingsSection,
+    GuildSettings, MfaMethod, PickedPicture, PickedSound, RoleAction, RoleDetail, RoleManager,
+    RoleMember, ServerPicture, ServerProfile, ServerRoles, ServerSettingsAction,
+    ServerSettingsChange, ServerSettingsPage, ServerSound, SettingsSection,
 };
 
 /// `discord_server`, with Alice's Mods role managing the server as well.
@@ -61,6 +62,21 @@ fn loaded(app: &mut Application, name: &str) {
     });
 }
 
+fn soundboard(app: &mut Application) -> &mut crate::application::SoundboardPage {
+    match app
+        .state
+        .server_settings
+        .as_mut()
+        .unwrap()
+        .page
+        .as_mut()
+        .unwrap()
+    {
+        crate::application::SettingsPage::Soundboard(page) => page,
+        _ => panic!("not Soundboard"),
+    }
+}
+
 fn saved(effects: Vec<Effect>) -> ServerSettingsChange {
     match effects.as_slice() {
         [
@@ -74,6 +90,92 @@ fn saved(effects: Vec<Effect>) -> ServerSettingsChange {
         }
         other => panic!("{} effects", other.len()),
     }
+}
+
+#[test]
+fn soundboard_adds_a_sound_from_a_file_and_lists_it() {
+    let mut app = managing();
+    grant_mods(
+        &mut app,
+        recore_discord::ready::permission::MANAGE_GUILD_EXPRESSIONS,
+    );
+    app.state.discord_online = true;
+    app.dispatch(Action::OpenServerSettings("discord:10".into()));
+    assert!(
+        app.settings_sections("discord:10")
+            .contains(&SettingsSection::Soundboard)
+    );
+    app.dispatch(Action::ServerSettingsSection(SettingsSection::Soundboard));
+    app.apply(Event::ServerSettingsLoaded {
+        server: "discord:10".into(),
+        section: SettingsSection::Soundboard,
+        result: Ok(ServerSettingsPage::Soundboard {
+            sounds: vec![ServerSound {
+                id: "1".into(),
+                name: "Bob's laugh".into(),
+                user_id: Some("2".into()),
+                uploader: Some("Bob".into()),
+                available: true,
+                ..ServerSound::default()
+            }],
+            settings: GuildSettings::default(),
+        }),
+    });
+    assert_eq!(soundboard(&mut app).sounds.len(), 1);
+    assert_eq!(soundboard(&mut app).free(), 7);
+
+    // A file chosen opens the dialog with its name.
+    app.apply(Event::ServerSound {
+        path: "Bell.ogg".into(),
+        result: Ok(PickedSound {
+            mime: "audio/ogg",
+            data: b"OggS".to_vec().into(),
+            file_name: "Bell.ogg".into(),
+        }),
+    });
+    assert_eq!(soundboard(&mut app).draft.as_ref().unwrap().name, "Bell");
+    let effects = app.dispatch(Action::Soundboard(SoundboardInput::Save));
+    match effects.as_slice() {
+        [Effect::Backend(Command::Discord(DiscordCommand::SettingsAction { server, action }))] => {
+            assert_eq!(server, "discord:10");
+            assert!(matches!(action, ServerSettingsAction::Soundboard(
+                    crate::chat::SoundboardAction::Upload { name, .. }) if name == "Bell"));
+        }
+        other => panic!("{} effects", other.len()),
+    }
+
+    // Discord's answer replaces the list and closes the dialog.
+    app.apply(Event::ServerSettingsActionDone {
+        server: "discord:10".into(),
+        action: ServerSettingsAction::Soundboard(crate::chat::SoundboardAction::Upload {
+            name: "Bell".into(),
+            sound: PickedSound {
+                mime: "audio/ogg",
+                data: b"OggS".to_vec().into(),
+                file_name: "Bell.ogg".into(),
+            },
+        }),
+        result: Ok(ServerSettingsPage::Soundboard {
+            sounds: vec![
+                ServerSound {
+                    id: "1".into(),
+                    name: "Bob's laugh".into(),
+                    user_id: Some("2".into()),
+                    ..ServerSound::default()
+                },
+                ServerSound {
+                    id: "2".into(),
+                    name: "Bell".into(),
+                    user_id: Some("1".into()),
+                    ..ServerSound::default()
+                },
+            ],
+            settings: GuildSettings::default(),
+        }),
+    });
+    let page = soundboard(&mut app);
+    assert!(page.draft.is_none());
+    assert_eq!(page.sounds.len(), 2);
 }
 
 #[test]

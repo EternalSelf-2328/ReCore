@@ -1921,6 +1921,113 @@ impl Api {
         self.empty(self.request(Method::DELETE, &path)).await
     }
 
+    /// A server's soundboard sounds, each with who added it when this
+    /// account may make or change them, as Soundboard lists them.
+    pub async fn guild_sounds(&self, guild: &str) -> Result<Value> {
+        let path = format!("/guilds/{guild}/soundboard-sounds");
+        self.json(self.request(Method::GET, &path)).await
+    }
+
+    /// Adds a soundboard sound: `body` has its `name` and `sound`, a data
+    /// URI of at most 512 KiB, and its `volume`. Discord answers with the
+    /// sound, and GUILD_SOUNDBOARD_SOUND_CREATE.
+    pub async fn create_sound(&self, guild: &str, body: &Value) -> Result<Value> {
+        let path = format!("/guilds/{guild}/soundboard-sounds");
+        self.json(with_json(self.request(Method::POST, &path), body))
+            .await
+    }
+
+    /// Renames a soundboard sound, or changes its volume or emoji; Discord
+    /// answers with it, and GUILD_SOUNDBOARD_SOUND_UPDATE.
+    pub async fn edit_sound(&self, guild: &str, sound: &str, body: &Value) -> Result<Value> {
+        let path = format!("/guilds/{guild}/soundboard-sounds/{sound}");
+        self.json(with_json(self.request(Method::PATCH, &path), body))
+            .await
+    }
+
+    /// Deletes a soundboard sound, as Soundboard's X does; Discord sends
+    /// GUILD_SOUNDBOARD_SOUND_DELETE.
+    pub async fn delete_sound(&self, guild: &str, sound: &str) -> Result<()> {
+        let path = format!("/guilds/{guild}/soundboard-sounds/{sound}");
+        self.empty(self.request(Method::DELETE, &path)).await
+    }
+
+    /// A server's webhooks, as Webhooks in its settings lists them; it
+    /// takes Manage Webhooks.
+    pub async fn guild_webhooks(&self, guild: &str) -> Result<Value> {
+        let path = format!("/guilds/{guild}/webhooks");
+        self.json(self.request(Method::GET, &path)).await
+    }
+
+    /// Adds an incoming webhook to `channel`, named `name`; Discord answers
+    /// with it, and sends WEBHOOKS_UPDATE.
+    pub async fn create_webhook(&self, channel: &str, body: &Value) -> Result<Value> {
+        let path = format!("/channels/{channel}/webhooks");
+        self.json(with_json(self.request(Method::POST, &path), body))
+            .await
+    }
+
+    /// Deletes a webhook, as Webhooks' X does.
+    pub async fn delete_webhook(&self, webhook: &str) -> Result<()> {
+        let path = format!("/webhooks/{webhook}");
+        self.empty(self.request(Method::DELETE, &path)).await
+    }
+
+    /// A server's integrations, as Integrations in its settings lists them;
+    /// it takes Manage Server.
+    pub async fn guild_integrations(&self, guild: &str) -> Result<Value> {
+        let path = format!("/guilds/{guild}/integrations");
+        self.json(self.request(Method::GET, &path)).await
+    }
+
+    /// Removes an integration from a server, as Integrations' X does.
+    pub async fn delete_integration(&self, guild: &str, integration: &str) -> Result<()> {
+        let path = format!("/guilds/{guild}/integrations/{integration}");
+        self.empty(self.request(Method::DELETE, &path)).await
+    }
+
+    /// A server's AutoMod rules, as AutoMod lists them; it takes Manage
+    /// Server.
+    pub async fn auto_moderation_rules(&self, guild: &str) -> Result<Value> {
+        let path = format!("/guilds/{guild}/auto-moderation/rules");
+        self.json(self.request(Method::GET, &path)).await
+    }
+
+    /// Adds an AutoMod rule; Discord answers with it, and sends
+    /// AUTO_MODERATION_RULE_CREATE.
+    pub async fn create_rule(&self, guild: &str, body: &Value) -> Result<Value> {
+        let path = format!("/guilds/{guild}/auto-moderation/rules");
+        self.json(with_json(self.request(Method::POST, &path), body))
+            .await
+    }
+
+    /// Changes an AutoMod rule, as its switch or form does.
+    pub async fn edit_rule(&self, guild: &str, rule: &str, body: &Value) -> Result<Value> {
+        let path = format!("/guilds/{guild}/auto-moderation/rules/{rule}");
+        self.json(with_json(self.request(Method::PATCH, &path), body))
+            .await
+    }
+
+    /// Deletes an AutoMod rule, as its X does.
+    pub async fn delete_rule(&self, guild: &str, rule: &str) -> Result<()> {
+        let path = format!("/guilds/{guild}/auto-moderation/rules/{rule}");
+        self.empty(self.request(Method::DELETE, &path)).await
+    }
+
+    /// What a server must meet to be in Discovery, as its settings'
+    /// Discovery page shows it; it takes Manage Server.
+    pub async fn discovery_requirements(&self, guild: &str) -> Result<Value> {
+        let path = format!("/guilds/{guild}/discovery-requirements");
+        self.json(self.request(Method::GET, &path)).await
+    }
+
+    /// A server's Discovery settings: its keywords, description and
+    /// whether its page is published.
+    pub async fn discovery_metadata(&self, guild: &str) -> Result<Value> {
+        let path = format!("/guilds/{guild}/discovery-metadata");
+        self.json(self.request(Method::GET, &path)).await
+    }
+
     /// Pauses a server's invites or DMs until a time, or resumes them, as
     /// Security Actions does: `body` has `invites_disabled_until`,
     /// `dms_disabled_until` and `lockdown_duration_hours`. Discord answers

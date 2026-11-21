@@ -2325,6 +2325,187 @@ impl Discord {
         self.api.delete_sticker(guild, sticker).await
     }
 
+    /// A server's soundboard sounds, as Soundboard lists them.
+    pub async fn soundboard_sounds(&self, guild: &str) -> Result<Vec<server_settings::Sound>> {
+        let sounds = self.api.guild_sounds(guild).await?;
+        Ok(sounds["items"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(server_settings::parse_sound)
+            .collect())
+    }
+
+    /// Adds a soundboard sound: its name and its file, by type and bytes,
+    /// as a data URI. Gives back the sound Discord made.
+    pub async fn create_sound(
+        &self,
+        guild: &str,
+        name: &str,
+        mime: &str,
+        data: &[u8],
+    ) -> Result<server_settings::Sound> {
+        use base64::Engine;
+        let sound = format!(
+            "data:{mime};base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(data)
+        );
+        let body = serde_json::json!({"name": name, "sound": sound, "volume": 1});
+        let sound = self.api.create_sound(guild, &body).await?;
+        server_settings::parse_sound(&sound).context("could not understand Discord's answer")
+    }
+
+    /// Renames a soundboard sound.
+    pub async fn rename_sound(&self, guild: &str, sound: &str, name: &str) -> Result<()> {
+        let body = serde_json::json!({"name": name});
+        self.api.edit_sound(guild, sound, &body).await.map(drop)
+    }
+
+    pub async fn delete_sound(&self, guild: &str, sound: &str) -> Result<()> {
+        self.api.delete_sound(guild, sound).await
+    }
+
+    /// A server's webhooks, with the names of the channels they post to.
+    pub async fn guild_webhooks(&self, guild: &str) -> Result<Vec<server_settings::Webhook>> {
+        let webhooks = self.api.guild_webhooks(guild).await?;
+        Ok(webhooks
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(server_settings::parse_webhook)
+            .collect())
+    }
+
+    /// Adds an incoming webhook to a channel, named `name`.
+    pub async fn create_webhook(
+        &self,
+        channel: &str,
+        name: &str,
+    ) -> Result<server_settings::Webhook> {
+        let body = serde_json::json!({"name": name});
+        let webhook = self.api.create_webhook(channel, &body).await?;
+        server_settings::parse_webhook(&webhook).context("could not understand Discord's answer")
+    }
+
+    pub async fn delete_webhook(&self, webhook: &str) -> Result<()> {
+        self.api.delete_webhook(webhook).await
+    }
+
+    pub async fn guild_integrations(
+        &self,
+        guild: &str,
+    ) -> Result<Vec<server_settings::Integration>> {
+        let integrations = self.api.guild_integrations(guild).await?;
+        Ok(integrations
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(server_settings::parse_integration)
+            .collect())
+    }
+
+    pub async fn delete_integration(&self, guild: &str, integration: &str) -> Result<()> {
+        self.api.delete_integration(guild, integration).await
+    }
+
+    pub async fn auto_moderation_rules(
+        &self,
+        guild: &str,
+    ) -> Result<Vec<server_settings::ModerationRule>> {
+        let rules = self.api.auto_moderation_rules(guild).await?;
+        Ok(rules
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(server_settings::parse_rule)
+            .collect())
+    }
+
+    pub async fn create_rule(
+        &self,
+        guild: &str,
+        body: &Value,
+    ) -> Result<server_settings::ModerationRule> {
+        let rule = self.api.create_rule(guild, body).await?;
+        server_settings::parse_rule(&rule).context("could not understand Discord's answer")
+    }
+
+    pub async fn set_rule_enabled(&self, guild: &str, rule: &str, enabled: bool) -> Result<()> {
+        let body = serde_json::json!({"enabled": enabled});
+        self.api.edit_rule(guild, rule, &body).await.map(drop)
+    }
+
+    pub async fn delete_rule(&self, guild: &str, rule: &str) -> Result<()> {
+        self.api.delete_rule(guild, rule).await
+    }
+
+    /// What this account's privacy settings say of a server.
+    pub async fn server_privacy(&self, guild: &str) -> Result<server_settings::Privacy> {
+        let settings = self.api.user_settings().await?;
+        Ok(server_settings::parse_privacy(&settings, guild))
+    }
+
+    /// Changes the three lists a server's privacy page names, keeping the
+    /// rest of the settings as they are; gives the page as it then stands.
+    pub async fn set_server_privacy(
+        &self,
+        guild: &str,
+        privacy: server_settings::Privacy,
+    ) -> Result<server_settings::Privacy> {
+        let encoded = self.api.user_settings().await?;
+        let settings = server_settings::privacy_settings(&encoded, guild, privacy)
+            .context("could not understand Discord's settings")?;
+        self.api.set_user_settings(&settings).await?;
+        Ok(privacy)
+    }
+
+    /// A server's Discovery, from its requirements, metadata and guild
+    /// object.
+    pub async fn discovery(&self, guild: &str) -> Result<server_settings::Discovery> {
+        let (requirements, metadata, server) = tokio::join!(
+            self.api.discovery_requirements(guild),
+            self.api.discovery_metadata(guild),
+            self.api.guild(guild)
+        );
+        let server = server?;
+        let features: Vec<String> = server["features"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|feature| Some(feature.as_str()?.to_owned()))
+            .collect();
+        Ok(server_settings::parse_discovery(
+            &requirements?,
+            &metadata?,
+            &features,
+        ))
+    }
+
+    /// Lists the server in Discovery or takes it out, by changing its
+    /// `DISCOVERABLE` feature, as Discord's client does. Gives its
+    /// Discovery as it then stands.
+    pub async fn set_discovery(
+        &self,
+        guild: &str,
+        enabled: bool,
+    ) -> Result<server_settings::Discovery> {
+        let server = self.api.guild(guild).await?;
+        let mut features: Vec<String> = server["features"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|feature| Some(feature.as_str()?.to_owned()))
+            .filter(|feature| feature != "DISCOVERABLE")
+            .collect();
+        if enabled {
+            features.push("DISCOVERABLE".into());
+        }
+        self.api
+            .modify_guild(guild, &serde_json::json!({"features": features}))
+            .await?;
+        self.discovery(guild).await
+    }
+
     /// Pauses invites and DMs for `hours`, or resumes them; gives back when
     /// each pause ends, in Unix seconds.
     pub async fn pause_server(

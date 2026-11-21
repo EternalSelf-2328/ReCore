@@ -2394,7 +2394,7 @@ const SERVER_ROLES = () => [
   serverRole(BOTS, "Bots", 0, 2),
   // Crew may manage channels, the server and pin messages, and add emoji
   // and stickers.
-  serverRole(CREW, "Crew", bit(4) + bit(5) + bit(51) + bit(43), 3),
+  serverRole(CREW, "Crew", bit(4) + bit(5) + bit(29) + bit(51) + bit(43), 3),
   serverRole(STAFF, "Staff", MODERATION, 4),
   serverRole(LEADS, "Leads", 0, 5),
 ];
@@ -2699,6 +2699,11 @@ function stickerSlots(): number {
   if (serverSettings.features.includes("MORE_STICKERS")) return 120;
   return [5, 15, 30, 60][Math.min(serverSettings.premium_tier, 3)]!;
 }
+
+function soundSlots(): number {
+  if (serverSettings.features.includes("MORE_SOUNDBOARD")) return 96;
+  return [8, 24, 36, 48][Math.min(serverSettings.premium_tier, 3)]!;
+}
 const mfa = {
   on: false,
   methods: ["totp"] as string[],
@@ -2712,6 +2717,8 @@ function resetGuild() {
   expressions.emojis = SERVER_EMOJIS();
   expressions.stickers = SERVER_STICKERS();
   expressions.pictures.clear();
+  serverSounds.splice(0, serverSounds.length, ...SERVER_SOUNDS());
+  soundboardChanges.length = 0;
   revokedInvites.clear();
   Object.assign(mfa, { on: false, methods: ["totp"], code: "123456" });
   mfa.tickets.clear();
@@ -4048,10 +4055,11 @@ const DEFAULT_SOUNDS: SoundboardSound[] = [
 const SOUND_LAUGH = "1400000000000000320";
 const SOUND_APPLAUSE = "1400000000000000321";
 /** "Server"'s sounds: Bob's laugh, with :talk:, and Carol's applause. */
-const serverSounds: SoundboardSound[] = [
+const SERVER_SOUNDS = (): SoundboardSound[] => [
   { sound_id: SOUND_LAUGH, name: "Bob's laugh", volume: 0.8, emoji_id: EMOJI_TALK, emoji_name: "talk", guild_id: GUILD, user_id: users.bob.id, available: true },
   { sound_id: SOUND_APPLAUSE, name: "Applause", volume: 1, emoji_id: null, emoji_name: "👏", guild_id: GUILD, user_id: users.carol.id, available: true },
 ];
+const serverSounds: SoundboardSound[] = SERVER_SOUNDS();
 /** What the CDN serves for a sound: Discord's as MP3, the server's as Ogg. */
 const soundFiles = {
   mp3: readFileSync(new URL("soundboard-tone.mp3", fixtures)),
@@ -4059,6 +4067,17 @@ const soundFiles = {
 };
 /** Sounds Alice played, as she sent them. */
 const soundboardSends: unknown[] = [];
+/** What Alice asked of "Server"'s soundboard, as she sent it: a create's
+ *  name and sound's type, a rename's name, or a delete. */
+const soundboardChanges: unknown[] = [];
+/** A soundboard sound's wire object, with who added it when asked. */
+function wireSound(sound: SoundboardSound, uploader = false) {
+  const user = Object.values(users).find((known) => known.id === sound.user_id);
+  return {
+    ...sound,
+    ...(uploader && user ? { user: wireUser(user) } : { user_id: sound.user_id }),
+  };
+}
 /** Join sounds Alice asked for: the channel and what she sent. */
 const customCallSounds: unknown[] = [];
 
@@ -6296,6 +6315,80 @@ async function api(req: Request, path: string, origin: string): Promise<Response
       logAudit(90, sticker.id, { changes: [{ key: "name", new_value: name }] });
       changed();
       return json(wireSticker(sticker, true), 201);
+    }
+    return json({ message: "405: Method Not Allowed", code: 0 }, 405);
+  }
+
+  // Soundboard in Server Settings. GET /guilds/{id}/soundboard-sounds lists
+  // "Server"'s sounds in `items`, with who added each to those who may make
+  // or change them; POST adds one from `{name, sound}`, a data URI of an MP3
+  // or Ogg under 512 KB, as Create Expressions allows; PATCH renames one,
+  // and DELETE removes one, their own with Create Expressions and any with
+  // Manage Expressions. Each sends GUILD_SOUNDBOARD_SOUND_CREATE, _UPDATE
+  // or _DELETE, and GET /_control/soundboard-changes lists what Alice asked.
+  if ((m = path.match(/^\/guilds\/(\d+)\/soundboard-sounds(?:\/(\d+))?$/))) {
+    if (m[1] !== GUILD) return notFound("Unknown Guild", 10004);
+    const create = aliceMay(43);
+    const manage = aliceMay(30);
+    if (!create && !manage) return json({ message: "Missing Permissions", code: 50013 }, 403);
+    const id = m[2];
+    const found = id ? serverSounds.find((sound) => sound.sound_id === id) : undefined;
+    if (id && !found) return notFound("Unknown Sound", 10011);
+    const own = found?.user_id === ALICE;
+    if (found && !manage && !own) return json({ message: "Missing Permissions", code: 50013 }, 403);
+    const changed = (event: string, sound: SoundboardSound) => {
+      dispatch(event, { guild_id: GUILD, ...(event === "GUILD_SOUNDBOARD_SOUND_DELETE" ? { sound_id: sound.sound_id } : wireSound(sound, true)) });
+    };
+    if (method === "GET" && !id) {
+      return json({ items: serverSounds.map((sound) => wireSound(sound, create || manage)) });
+    }
+    if (method === "POST" && !id) {
+      const body: any = await req.json().catch(() => ({}));
+      const name = body.name;
+      if (typeof name !== "string" || name.length < 2 || name.length > 32) {
+        return json({ message: "Invalid Form Body", code: 50035, errors: { name: { _errors: [{ code: "BASE_TYPE_BAD_LENGTH", message: "Must be between 2 and 32 in length." }] } } }, 400);
+      }
+      const sound = typeof body.sound === "string" && body.sound.match(/^data:(audio\/(?:mpeg|ogg));base64,(.+)$/);
+      if (!sound) {
+        return json({ message: "Invalid Form Body", code: 50035, errors: { sound: { _errors: [{ code: "BASE_TYPE_INVALID", message: "Invalid sound data" }] } } }, 400);
+      }
+      const data = Buffer.from(sound[2]!, "base64");
+      if (data.length > 512 * 1024) return json({ message: "File cannot be larger than 512.0 kb.", code: 50045 }, 400);
+      if (serverSounds.length >= soundSlots()) return json({ message: `Maximum number of sounds reached (${soundSlots()})`, code: 30059 }, 400);
+      const made: SoundboardSound = {
+        sound_id: snowflake(Date.now(), 3600 + (soundboardChanges.length % 400)),
+        name, volume: Math.min(Math.max(Number(body.volume ?? 1), 0), 1),
+        emoji_id: body.emoji_id ?? null, emoji_name: body.emoji_name ?? null,
+        guild_id: GUILD, user_id: ALICE, available: true,
+      };
+      serverSounds.push(made);
+      soundboardChanges.push({ action: "create", name, type: sound[1] });
+      logAudit(110, made.sound_id, { changes: [{ key: "name", new_value: name }] });
+      changed("GUILD_SOUNDBOARD_SOUND_CREATE", made);
+      return json(wireSound(made, true), 201);
+    }
+    if (method === "PATCH" && found) {
+      const body: any = await req.json().catch(() => ({}));
+      if ("name" in body) {
+        if (typeof body.name !== "string" || body.name.length < 2 || body.name.length > 32) {
+          return json({ message: "Invalid Form Body", code: 50035, errors: { name: { _errors: [{ code: "BASE_TYPE_BAD_LENGTH", message: "Must be between 2 and 32 in length." }] } } }, 400);
+        }
+        found.name = body.name;
+        soundboardChanges.push({ action: "rename", id: found.sound_id, name: body.name });
+      }
+      if ("volume" in body) found.volume = Math.min(Math.max(Number(body.volume), 0), 1);
+      if ("emoji_id" in body) found.emoji_id = body.emoji_id;
+      if ("emoji_name" in body) found.emoji_name = body.emoji_name;
+      logAudit(111, found.sound_id);
+      changed("GUILD_SOUNDBOARD_SOUND_UPDATE", found);
+      return json(wireSound(found, true));
+    }
+    if (method === "DELETE" && found) {
+      serverSounds.splice(serverSounds.indexOf(found), 1);
+      soundboardChanges.push({ action: "delete", id: found.sound_id });
+      logAudit(112, found.sound_id);
+      changed("GUILD_SOUNDBOARD_SOUND_DELETE", found);
+      return new Response(null, { status: 204 });
     }
     return json({ message: "405: Method Not Allowed", code: 0 }, 405);
   }
@@ -9397,6 +9490,7 @@ const server = Bun.serve<SocketData>({
       return new Response(`${name}'s camera is ${state.self_video ? "on" : "off"} in ${calls.length} call(s)\n`);
     }
     if (path === "/_control/soundboard-sends") return Response.json(soundboardSends);
+    if (path === "/_control/soundboard-changes") return Response.json(soundboardChanges);
     if (path === "/_control/custom-call-sounds") return Response.json(customCallSounds);
     if (req.method === "POST" && path === "/_control/soundboard-play") {
       const who = url.searchParams.get("user") ?? "bob";
