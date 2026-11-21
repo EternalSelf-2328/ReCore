@@ -89,6 +89,8 @@ fn moderation_lists_safety_setup_with_manage_server_the_log_with_its_permission_
             SettingsSection::BoostPerks,
             SettingsSection::Members,
             SettingsSection::Invites,
+            SettingsSection::Integrations,
+            SettingsSection::AutoMod,
             SettingsSection::Safety
         ]
     );

@@ -143,6 +143,30 @@ the list scrolls or shows another server, as a dialog, the quick switcher
 or a ringing call covers the window, and as its channel empties, is deleted
 or is filtered out by the channel search.
 
+## Stage channels
+
+A stage channel is a voice channel whose type Discord marks as stage, and
+whose call has a stage instance: the topic above the speakers and the
+audience's raised hands. ReCore keeps each stage instance from READY's guilds
+and `STAGE_INSTANCE_CREATE`, `STAGE_INSTANCE_UPDATE` and
+`STAGE_INSTANCE_DELETE`, by channel id, with its `topic` and
+`privacy_level`. The header shows the topic where a text channel shows its
+own. A moderator with Manage Channels can set it, which sends `PATCH
+/stage-instances/{channel}` with `{"topic": ...}`; an empty topic clears it.
+
+Voice states carry `suppress`: a suppressed member is in the audience, and
+one who isn't is a speaker. `request_to_speak_timestamp` marks a raised
+hand. The stage view lists Speakers first and Audience under them, marks the
+raised hands, and shows Request to Speak to this account when it's in the
+audience. The request sends `PATCH /guilds/{server}/voice-states/@me` with
+`{"request_to_speak_timestamp": "<now>"}`; Cancel Request sends `null`.
+A moderator with Mute Members can move someone between the two with `PATCH
+/guilds/{server}/voice-states/{user}` and `{"suppress": false}` or
+`{"suppress": true}`.
+Discord's full stage UI, with its speaker invitations and audience count in
+the channel list, is not drawn yet; the call stage, its tiles and its
+controls work as they do in any voice channel.
+
 ## The call's channel line
 
 As in Discord's voice panel, the dock's line under the status ("gen ·
