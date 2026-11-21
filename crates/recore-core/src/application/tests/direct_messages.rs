@@ -578,7 +578,7 @@ fn leaving_a_group_dm_asks_first_and_may_tell_no_one() {
     // After muting, as in Discord's menu; a one-to-one DM closes instead.
     assert_eq!(
         app.state.menu_choices(&group),
-        [Pin, Call, Mute, LeaveGroup, CopyLink, CopyId]
+        [Pin, Call, Mute, EditGroup, LeaveGroup, CopyLink, CopyId]
     );
     assert!(
         !app.state
@@ -644,6 +644,52 @@ fn leaving_a_group_dm_asks_first_and_may_tell_no_one() {
     let mut app = discord_dms(vec![]);
     app.state.discord_online = false;
     assert!(!app.state.menu_choices(&group).contains(&LeaveGroup));
+}
+
+#[test]
+#[cfg(feature = "discord")]
+fn edits_a_group_dms_name_and_icon_from_its_menu() {
+    use crate::chat::{GroupIcon, PickedPicture, Picture};
+    use MenuChoice::*;
+    let mut app = discord_dms(vec![]);
+    let group = "discord:@me:31".to_owned();
+    assert!(app.state.menu_choices(&group).contains(&EditGroup));
+    app.dispatch(Action::OpenGroupEditor(group.clone()));
+    let dialog = app.state.group_dialog.as_ref().expect("the dialog");
+    assert_eq!(dialog.name, "Hikers");
+    assert!(matches!(dialog.icon, GroupIcon::Keep));
+
+    app.dispatch(Action::GroupName("Trail crew".into()));
+    app.apply(Event::GroupIcon(Ok(PickedPicture {
+        mime: "image/png",
+        data: std::sync::Arc::from(&b"png"[..]),
+        preview: std::sync::Arc::new(Picture::default()),
+    })));
+    let effects = app.dispatch(Action::SaveGroup);
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::Backend(Command::Discord(DiscordCommand::EditGroup {
+            room,
+            name,
+            icon: GroupIcon::New(_),
+        }))] if room == &group && name == "Trail crew"
+    ));
+    app.apply(Event::GroupSaved(Ok(())));
+    assert!(app.state.group_dialog.is_none());
+
+    // Removing the icon sends a clear, not a keep.
+    app.dispatch(Action::OpenGroupEditor(group.clone()));
+    app.dispatch(Action::ResetGroupIcon);
+    let effects = app.dispatch(Action::SaveGroup);
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::Backend(Command::Discord(
+            DiscordCommand::EditGroup {
+                icon: GroupIcon::Clear,
+                ..
+            }
+        ))]
+    ));
 }
 
 #[test]

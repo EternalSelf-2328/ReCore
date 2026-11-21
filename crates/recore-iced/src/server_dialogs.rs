@@ -12,11 +12,11 @@
 use iced::{
     Alignment, Element, Length, Task,
     keyboard::key,
-    widget::{Id, button, container, operation, row, text},
+    widget::{Id, button, column, container, operation, row, text},
 };
 use recore_core::{
     application::{Action, AppState, ChannelAsk, INVITE_AGES, INVITE_USES},
-    chat::{ChannelKind, ChannelSettings},
+    chat::{ChannelKind, ChannelSettings, GroupIcon},
 };
 
 use crate::{
@@ -25,6 +25,7 @@ use crate::{
     ctx::{Ctx, Cx, Focus, Request},
     dialog::buttons,
     form,
+    media::{Fit, Shot},
     style::rounded,
 };
 
@@ -37,6 +38,7 @@ const LINK: f32 = 44.0;
 /// The fields' ids.
 const JOIN_FIELD: &str = "join-invite";
 const CHANNEL_FIELD: &str = "channel-name";
+const GROUP_FIELD: &str = "group-name";
 
 /// The choices for a new invite link, as Discord's dialog words them, in
 /// the order of `INVITE_AGES` and `INVITE_USES`.
@@ -55,6 +57,8 @@ pub struct Dialogs {
     join: Option<String>,
     /// The channel dialog's name and kind, while it's open.
     channel: Option<ChannelDraft>,
+    /// The group dialog's name, while it's open.
+    group: Option<String>,
     /// Whether the leave dialog showed at the last sync.
     leave_shown: bool,
 }
@@ -87,6 +91,12 @@ pub enum Event {
     ChannelVoice(bool),
     SaveChannel,
     CloseChannel,
+    GroupName(String),
+    PickGroupIcon,
+    GroupPicked(std::path::PathBuf),
+    ResetGroupIcon,
+    SaveGroup,
+    CloseGroup,
     Leave,
     ToggleSilent,
     CloseLeave,
@@ -104,6 +114,7 @@ pub fn is_open(state: &AppState) -> bool {
     state.invite.is_some()
         || state.join.is_some()
         || state.channel_dialog.is_some()
+        || state.group_dialog.is_some()
         || state.leave.is_some()
         || state.move_sync.is_some()
 }
@@ -165,6 +176,21 @@ impl Dialogs {
             }
             Some(_) => {}
             None => local.channel = None,
+        }
+        match &state.group_dialog {
+            Some(group) if local.group.is_none() => {
+                local.group = Some(group.name.clone());
+                focus = Some(GROUP_FIELD);
+            }
+            Some(group) => {
+                if local.group.as_deref() != Some(group.name.as_str())
+                    && !group.saving
+                    && !group.reading
+                {
+                    local.group = Some(group.name.clone());
+                }
+            }
+            None => local.group = None,
         }
         if state.leave.is_some() && !local.leave_shown {
             focus = Some(NOBODY);
@@ -273,6 +299,32 @@ impl Dialogs {
                 }
             }
             Event::CloseChannel => Action::CloseChannelDialog,
+            Event::GroupName(name) => {
+                if let Some(group) = &mut local.group {
+                    *group = name.clone();
+                }
+                Action::GroupName(name)
+            }
+            Event::PickGroupIcon => {
+                return Task::perform(
+                    async move {
+                        rfd::AsyncFileDialog::new()
+                            .set_title("Change Group Icon")
+                            .add_filter("Pictures", &["png", "jpg", "jpeg", "gif", "webp"])
+                            .pick_file()
+                            .await
+                            .map(|file| file.path().to_owned())
+                    },
+                    |path| match path {
+                        Some(path) => message(Event::GroupPicked(path)),
+                        None => Message::Nothing,
+                    },
+                );
+            }
+            Event::GroupPicked(path) => Action::PickGroupIcon(path),
+            Event::ResetGroupIcon => Action::ResetGroupIcon,
+            Event::SaveGroup => Action::SaveGroup,
+            Event::CloseGroup => Action::CloseGroupEditor,
             Event::Leave => Action::Leave,
             Event::ToggleSilent => Action::ToggleSilentLeave,
             Event::CloseLeave => Action::CloseLeave,
@@ -295,6 +347,8 @@ impl Dialogs {
             (Event::CloseLeave, Some(Event::Leave))
         } else if state.channel_dialog.is_some() {
             (Event::CloseChannel, Some(Event::SaveChannel))
+        } else if state.group_dialog.is_some() {
+            (Event::CloseGroup, Some(Event::SaveGroup))
         } else if state.join.is_some() {
             (Event::CloseJoin, None)
         } else if state.invite.is_some() {
@@ -332,6 +386,9 @@ impl<'a> View<'a> {
         }
         if state.leave.is_some() {
             return self.leave_view();
+        }
+        if state.group_dialog.is_some() {
+            return self.group_view();
         }
         if state.channel_dialog.is_some() {
             return self.channel_dialog_view();
@@ -555,6 +612,103 @@ impl<'a> View<'a> {
         }
         body.push(buttons(row_));
         Some(self.cx.look.framed(body, NARROW, message(Event::CloseJoin)))
+    }
+
+    /// A group DM's name and icon, as Discord's Edit Group dialog has them.
+    fn group_view(self) -> Option<Element<'a, Message>> {
+        let group = self.cx.state.group_dialog.as_ref()?;
+        let draft = self.s.group.as_ref()?;
+        let theme = self.cx.look.theme;
+        let room = self
+            .cx
+            .state
+            .rooms
+            .iter()
+            .find(|room| room.id == group.room);
+        let name = room.map_or("the group", |room| room.name.as_str());
+        let icon: Element<'a, Message> = match &group.icon {
+            GroupIcon::New(picked) => self.cx.shot(
+                Shot::new(Some(&picked.preview), iced::Size::new(64.0, 64.0))
+                    .fit(Fit::Contain)
+                    .radius(if theme.square { 0.0 } else { 32.0 }),
+            ),
+            GroupIcon::Clear => container(text("No icon").size(12).color(theme.muted))
+                .width(64)
+                .height(64)
+                .center(Length::Fill)
+                .into(),
+            GroupIcon::Keep => self.cx.avatar(
+                room.and_then(|room| room.avatar.as_deref()),
+                name,
+                64.0,
+                32.0,
+                1.0,
+            ),
+        };
+        let mut body = vec![
+            self.cx
+                .look
+                .dialog_head("Edit Group", message(Event::CloseGroup)),
+            form::note(theme, "Change the group's name and icon."),
+            row![
+                icon,
+                column![
+                    action(
+                        theme,
+                        "Change Icon",
+                        Kind::Plain,
+                        Some(message(Event::PickGroupIcon)),
+                    ),
+                    action(
+                        theme,
+                        "Remove",
+                        Kind::Ghost,
+                        (!matches!(group.icon, GroupIcon::Keep | GroupIcon::Clear))
+                            .then(|| message(Event::ResetGroupIcon)),
+                    ),
+                ]
+                .spacing(6)
+            ]
+            .spacing(16)
+            .align_y(Alignment::Center)
+            .into(),
+        ];
+        if group.reading {
+            body.push(form::note(theme, "Reading the picture..."));
+        }
+        body.push(form::heading(theme, "GROUP NAME"));
+        body.push(
+            form::field(theme, GROUP_FIELD, "Group name", draft)
+                .padding([8.0, 10.0])
+                .on_input(|name| message(Event::GroupName(name)))
+                .on_submit(message(Event::SaveGroup))
+                .into(),
+        );
+        if let Some(error) = &group.error {
+            body.push(form::note_in(error.as_str(), theme.danger));
+        }
+        let ready = group.ready() && self.cx.state.discord_online;
+        body.push(buttons([
+            action(
+                theme,
+                "Cancel",
+                Kind::Ghost,
+                Some(message(Event::CloseGroup)),
+            )
+            .into(),
+            action(
+                theme,
+                "Save",
+                Kind::Primary,
+                ready.then(|| message(Event::SaveGroup)),
+            )
+            .into(),
+        ]));
+        Some(
+            self.cx
+                .look
+                .framed(body, NARROW, message(Event::CloseGroup)),
+        )
     }
 
     /// Making, copying or deleting a channel or category: where it goes or

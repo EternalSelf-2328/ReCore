@@ -1639,6 +1639,17 @@ impl Discord {
         self.api.create_group(users).await
     }
 
+    /// Changes a group DM's name and, when `icon` says, its icon: a data
+    /// URI, or null to clear it.
+    pub async fn edit_group(
+        &self,
+        channel: &str,
+        name: &str,
+        icon: Option<&serde_json::Value>,
+    ) -> Result<()> {
+        self.api.edit_group(channel, name, icon).await
+    }
+
     /// Adds `users` to a group DM, one at a time, as Discord's client does.
     pub async fn add_to_group(&self, channel: &str, users: &[String]) -> Result<()> {
         for user in users {

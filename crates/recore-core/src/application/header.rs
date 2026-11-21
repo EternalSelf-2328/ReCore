@@ -223,6 +223,113 @@ impl Application {
         vec![Effect::Backend(Command::Discord(command))]
     }
 
+    /// Opens the dialog that renames a group DM and changes its icon.
+    pub(super) fn open_group_editor(&mut self, room: String) -> Vec<Effect> {
+        let Some(name) = self
+            .state
+            .rooms
+            .iter()
+            .find(|known| {
+                known.id == room && known.direct && known.person.is_none() && !known.request
+            })
+            .map(|known| known.name.clone())
+        else {
+            return vec![];
+        };
+        if !self.state.discord_online || self.state.preview {
+            return vec![];
+        }
+        self.state.pins = None;
+        self.state.add_people = None;
+        self.state.group_dialog = Some(GroupDialog {
+            room,
+            name,
+            icon: chat::GroupIcon::Keep,
+            reading: false,
+            saving: false,
+            error: None,
+        });
+        vec![]
+    }
+
+    /// Reads the picture chosen for a group's icon.
+    pub(super) fn pick_group_icon(&mut self, path: std::path::PathBuf) -> Vec<Effect> {
+        let Some(group) = self
+            .state
+            .group_dialog
+            .as_mut()
+            .filter(|group| !group.reading && !group.saving)
+        else {
+            return vec![];
+        };
+        group.reading = true;
+        group.error = None;
+        vec![Effect::Backend(Command::Discord(
+            DiscordCommand::GroupPicture { path },
+        ))]
+    }
+
+    /// The icon came, or didn't.
+    pub(super) fn group_icon_read(&mut self, result: Result<chat::PickedPicture, String>) {
+        let Some(group) = &mut self.state.group_dialog else {
+            return;
+        };
+        group.reading = false;
+        match result {
+            Ok(picked) => group.icon = chat::GroupIcon::New(picked),
+            Err(error) => group.error = Some(error),
+        }
+    }
+
+    pub(super) fn reset_group_icon(&mut self) -> Vec<Effect> {
+        if let Some(group) = &mut self.state.group_dialog {
+            group.icon = chat::GroupIcon::Clear;
+            group.error = None;
+        }
+        vec![]
+    }
+
+    /// Saves the group's name and icon, as its dialog's Save does.
+    pub(super) fn save_group(&mut self) -> Vec<Effect> {
+        let Some(group) = self
+            .state
+            .group_dialog
+            .as_mut()
+            .filter(|group| group.ready())
+        else {
+            return vec![];
+        };
+        let name = group.name.trim().to_owned();
+        if name.chars().count() > 100 {
+            group.error = Some("A group's name can be up to 100 characters.".into());
+            return vec![];
+        }
+        group.saving = true;
+        group.error = None;
+        let (room, icon) = (group.room.clone(), group.icon.clone());
+        vec![Effect::Backend(Command::Discord(
+            DiscordCommand::EditGroup { room, name, icon },
+        ))]
+    }
+
+    pub(super) fn group_saved(&mut self, result: Result<(), String>) {
+        let Some(group) = self
+            .state
+            .group_dialog
+            .as_mut()
+            .filter(|group| group.saving)
+        else {
+            return;
+        };
+        match result {
+            Ok(()) => self.state.group_dialog = None,
+            Err(error) => {
+                group.saving = false;
+                group.error = Some(error);
+            }
+        }
+    }
+
     /// A group made opens once the DM list has it.
     pub(super) fn group_changed(&mut self, result: Result<String, String>) {
         match result {

@@ -264,6 +264,7 @@ pub fn choose_place(app: &mut App, place: String, choice: MenuChoice) -> Task<Me
             pinned: choice == MenuChoice::Pin,
         },
         MenuChoice::CloseDm => Action::CloseDm(place),
+        MenuChoice::EditGroup => Action::OpenGroupEditor(place),
         MenuChoice::LeaveGroup => Action::AskLeaveGroup(place),
         MenuChoice::EditServerProfile => Action::EditServerProfile(place),
         MenuChoice::ServerSettings => Action::OpenServerSettings(place),
@@ -655,7 +656,10 @@ pub fn group_of(choice: MenuChoice) -> u8 {
         | MenuChoice::EditChannel
         | MenuChoice::SetVoiceStatus
         | MenuChoice::DuplicateChannel => 6,
-        MenuChoice::DeleteChannel | MenuChoice::LeaveServer | MenuChoice::LeaveGroup => 7,
+        MenuChoice::EditGroup
+        | MenuChoice::DeleteChannel
+        | MenuChoice::LeaveServer
+        | MenuChoice::LeaveGroup => 7,
         _ => 0,
     }
 }
@@ -675,6 +679,7 @@ pub fn icon(choice: MenuChoice) -> Icon {
         C::Unpin | C::UnpinChannel => Icon::PinOff,
         C::AddNote => Icon::StickyNote,
         C::AddNickname | C::EditNickname => Icon::UserPen,
+        C::EditGroup => Icon::Pencil,
         C::LeaveGroup | C::LeaveServer | C::LeaveThread => Icon::LogOut,
         C::Apps => Icon::Slash,
         C::ServerSettings => Icon::Settings,
@@ -730,6 +735,7 @@ pub fn label(choice: MenuChoice) -> &'static str {
         MenuChoice::AddNickname => "Add friend nickname",
         MenuChoice::EditNickname => "Change friend nickname",
         MenuChoice::CloseDm => "Close DM",
+        MenuChoice::EditGroup => "Edit group",
         MenuChoice::LeaveGroup => "Leave group",
         MenuChoice::InviteToServer => "Invite to server",
         MenuChoice::Apps => "Apps",

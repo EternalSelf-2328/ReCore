@@ -1414,7 +1414,7 @@ const messages = new Map<string, Message[]>([
 ]);
 
 // DMs and group DMs by channel id, with everyone in them besides Alice.
-type Private = { type: 1 | 3; recipients: User[]; name?: string; request?: boolean; spam?: boolean };
+type Private = { type: 1 | 3; recipients: User[]; name?: string; icon?: string | null; request?: boolean; spam?: boolean };
 const privates = new Map<string, Private>();
 const byId = new Map<string, Message>();
 let lastId = 0n;
@@ -1649,7 +1649,7 @@ function wirePrivate(id: string, channel: Private, users: "ids" | "objects") {
     type: channel.type,
     last_message_id: messages.get(id)!.at(-1)?.id ?? null,
     flags: 0,
-    ...(channel.type === 3 ? { name: channel.name ?? null, icon: null, owner_id: channel.recipients[0]!.id } : {}),
+    ...(channel.type === 3 ? { name: channel.name ?? null, icon: channel.icon ?? null, owner_id: channel.recipients[0]!.id } : {}),
     ...(channel.request
       ? { is_message_request: true, is_message_request_timestamp: iso(timeOf(messages.get(id)![0]!.id)), is_spam: !!channel.spam }
       : {}),
@@ -7061,6 +7061,18 @@ async function api(req: Request, path: string, origin: string): Promise<Response
         return last ? [{ channel_id: id, message_preview: wireMessage(last, origin) }] : [];
       }),
     );
+  }
+
+  // A group DM's name and icon, as Edit Group changes them.
+  if (method === "PATCH" && (m = path.match(/^\/channels\/(\d+)$/)) && privates.get(m[1]!)?.type === 3) {
+    const id = m[1]!;
+    const channel = privates.get(id)!;
+    const body: any = await req.json().catch(() => ({}));
+    if (typeof body.name === "string") channel.name = body.name;
+    if ("icon" in body) channel.icon = typeof body.icon === "string" ? "group-icon" : null;
+    const wire = wirePrivate(id, channel, "objects");
+    dispatch("CHANNEL_UPDATE", wire);
+    return json(wire);
   }
 
   // Accepting a message request makes it a DM; ignoring it closes the DM.

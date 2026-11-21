@@ -408,6 +408,55 @@ async fn opens_dms_and_searches_pins() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "starts testing/fake_discord.ts with bun; run scripts/test-fake-discord"]
+async fn edits_a_group_dms_name_and_icon() {
+    use serde_json::json;
+    let Fixture {
+        _fake,
+        discord,
+        snapshot,
+        ..
+    } = Fixture::start("edits_a_group_dms_name_and_icon").await;
+    let friends: Vec<String> = snapshot.friends.iter().take(2).cloned().collect();
+    let group = discord.create_group(&friends).await.unwrap();
+    let conversation = |snapshot: &Snapshot| {
+        snapshot
+            .conversations
+            .iter()
+            .find(|conversation| conversation.id == group)
+            .cloned()
+    };
+    snapshot_where(&discord, |snapshot| conversation(snapshot).is_some()).await;
+    discord
+        .edit_group(
+            &group,
+            "Weekend plans",
+            Some(&json!("data:image/png;base64,cG5n")),
+        )
+        .await
+        .unwrap();
+    let renamed = snapshot_where(&discord, |snapshot| {
+        conversation(snapshot).is_some_and(|conversation| {
+            conversation.name == "Weekend plans" && conversation.avatar.is_some()
+        })
+    })
+    .await;
+    assert!(
+        conversation(&renamed)
+            .and_then(|conversation| conversation.avatar.clone())
+            .is_some_and(|avatar| !avatar.is_empty())
+    );
+    discord
+        .edit_group(&group, "Weekend plans", Some(&json!(null)))
+        .await
+        .unwrap();
+    snapshot_where(&discord, |snapshot| {
+        conversation(snapshot).is_some_and(|conversation| conversation.avatar.is_none())
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "starts testing/fake_discord.ts with bun; run scripts/test-fake-discord"]
 async fn makes_group_dms_and_answers_requests() {
     let Fixture {
         _fake,

@@ -175,6 +175,10 @@ Right-clicking a DM offers, besides Profile and copying, these:
   `muted` and a `mute_config` of `selected_time_window`, in seconds or -1 for
   good, and its `end_time`. Unmute sets `muted` false. USER_GUILD_SETTINGS_UPDATE
   brings the change back, and a muted DM shows faint and counts nothing unread.
+- Edit group, in a group DM, opens its name and icon. Save sends `PATCH
+  /channels/{id}` with `name`, and `icon` as a data URI, or null to clear
+  it; a chosen picture is cropped square at 128 px. CHANNEL_UPDATE brings
+  the new name and icon back.
 - Leave group, in a group DM, asks first with Discord's dialog, whose box
   leaves without notifying the other members. Either way it's `DELETE
   /channels/{id}` with `silent` true or false, which Discord's client always

@@ -314,6 +314,25 @@ pub struct AddPeople {
     pub error: Option<String>,
 }
 
+/// Editing a Discord group DM's name and icon, while its dialog is open.
+#[derive(Clone, Debug)]
+pub struct GroupDialog {
+    pub room: String,
+    pub name: String,
+    pub icon: chat::GroupIcon,
+    /// A chosen icon is being read, and why it couldn't be.
+    pub reading: bool,
+    pub saving: bool,
+    pub error: Option<String>,
+}
+
+impl GroupDialog {
+    /// Whether Save may send what's written.
+    pub fn ready(&self) -> bool {
+        !self.saving && !self.reading && self.error.is_none()
+    }
+}
+
 /// The most people in a Discord group DM, this account included.
 pub const GROUP_LIMIT: usize = 10;
 
@@ -777,6 +796,8 @@ pub struct AppState {
     /// The sticker picker, and Discord's default packs once they came.
     pub stickers: StickerPicker,
     pub add_people: Option<AddPeople>,
+    /// A group DM's name and icon being edited, while its dialog is open.
+    pub group_dialog: Option<GroupDialog>,
     /// The selected Discord channel's topic, once the backend has said it.
     pub topic: Option<Arc<chat::Topic>>,
     /// The image viewer, open over the selected room.
@@ -2048,6 +2069,13 @@ pub enum Action {
     ChoosePerson(String),
     AddPeople,
     CloseAddPeople,
+    /// Edit a Discord group DM's name and icon, by its room id.
+    OpenGroupEditor(String),
+    GroupName(String),
+    PickGroupIcon(std::path::PathBuf),
+    ResetGroupIcon,
+    SaveGroup,
+    CloseGroupEditor,
     /// Mute a Discord DM, or unmute it.
     MuteDm {
         room: String,
@@ -3767,6 +3795,21 @@ impl Application {
                 vec![]
             }
             Action::OpenAddPeople => self.open_add_people(),
+            Action::OpenGroupEditor(room) => self.open_group_editor(room),
+            Action::GroupName(name) => {
+                if let Some(group) = &mut self.state.group_dialog {
+                    group.name = name;
+                    group.error = None;
+                }
+                vec![]
+            }
+            Action::PickGroupIcon(path) => self.pick_group_icon(path),
+            Action::ResetGroupIcon => self.reset_group_icon(),
+            Action::SaveGroup => self.save_group(),
+            Action::CloseGroupEditor => {
+                self.state.group_dialog = None;
+                vec![]
+            }
             Action::AddPeopleQuery(query) => {
                 if let Some(picker) = &mut self.state.add_people {
                     picker.query = query;
@@ -4517,6 +4560,8 @@ impl Application {
                 }
             }
             Event::GroupChanged(result) => self.group_changed(result),
+            Event::GroupIcon(result) => self.group_icon_read(result),
+            Event::GroupSaved(result) => self.group_saved(result),
             Event::InviteMade { room, result } => {
                 let made = result.is_ok();
                 self.invite_made(room.clone(), result);

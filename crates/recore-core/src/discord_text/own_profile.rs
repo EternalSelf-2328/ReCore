@@ -377,6 +377,11 @@ fn main_bodies(change: &ProfileChange) -> (Value, Value) {
 /// [`AVATAR`] or [`BANNER`], with a preview at the editor's size. Only the
 /// file to send and the preview stay; the decoded picture goes. An animated
 /// GIF goes as it is, so it stays animated.
+/// A picture chosen for a group DM's icon: square, at most 128 px.
+pub(super) fn read_group_icon(path: &Path) -> Result<PickedPicture, String> {
+    read_shaped(path, (128, 128), (128, 128), "a group icon")
+}
+
 pub(super) fn read_picture(path: &Path, kind: ProfilePicture) -> Result<PickedPicture, String> {
     let (largest, preview) = match kind {
         ProfilePicture::Avatar => (AVATAR, AVATAR_PREVIEW),

@@ -31,6 +31,8 @@ pub enum MenuChoice {
     EditNickname,
     /// Close a one-to-one Discord DM.
     CloseDm,
+    /// Rename a Discord group DM and change its icon.
+    EditGroup,
     /// Leave a Discord group DM, asking first.
     LeaveGroup,
     /// Send someone an invite to one of this account's Discord servers, in
@@ -322,6 +324,7 @@ impl AppState {
         // After muting, as in Discord's menu; Discord takes it only while
         // connected.
         if discord && room.person.is_none() && !room.request && self.discord_online {
+            choices.push(MenuChoice::EditGroup);
             choices.push(MenuChoice::LeaveGroup);
         }
         // A thread's notifications are its own, which ReCore doesn't change yet.

@@ -3073,6 +3073,18 @@ pub enum DiscordCommand {
         room: Option<String>,
         users: Vec<String>,
     },
+    /// Read a picture chosen for a group DM's icon; [`Event::GroupIcon`]
+    /// follows.
+    GroupPicture {
+        path: PathBuf,
+    },
+    /// Change a Discord group DM's name and icon; [`Event::GroupSaved`]
+    /// follows.
+    EditGroup {
+        room: String,
+        name: String,
+        icon: GroupIcon,
+    },
     /// Mute a Discord DM or group DM, or unmute it.
     Mute {
         room: String,
@@ -4038,6 +4050,18 @@ pub struct PickedPicture {
     pub preview: Arc<Picture>,
 }
 
+/// What a group DM's dialog does with its icon.
+#[derive(Clone, Debug, Default)]
+pub enum GroupIcon {
+    /// It stays as Discord has it.
+    #[default]
+    Keep,
+    /// It goes, and the group shows its members' initials instead.
+    Clear,
+    /// A picture chosen, which Discord takes as a data URI.
+    New(PickedPicture),
+}
+
 /// What changes in this account's profile: each field that does, a
 /// picture to `None` to go by [`OwnProfile::fallback`] again, as an empty
 /// text does.
@@ -4443,6 +4467,10 @@ pub enum Event {
     /// The group [`DiscordCommand::AddToGroup`] made or added to, by room id,
     /// or why it couldn't.
     GroupChanged(Result<String, String>),
+    /// The icon chosen for a group DM's dialog, or why it couldn't be read.
+    GroupIcon(Result<PickedPicture, String>),
+    /// A group DM's name and icon were saved, or why they weren't.
+    GroupSaved(Result<(), String>),
     /// A Discord channel's settings [`DiscordCommand::ChannelSettings`]
     /// asked for, by its room id, or why they didn't come.
     ChannelLoaded {

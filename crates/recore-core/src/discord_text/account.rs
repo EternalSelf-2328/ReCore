@@ -1327,6 +1327,13 @@ pub(super) fn command(
         return None;
     }
     if let Command::Discord(
+        command @ (DiscordCommand::GroupPicture { .. } | DiscordCommand::EditGroup { .. }),
+    ) = command
+    {
+        edit_group(command, discord, events);
+        return None;
+    }
+    if let Command::Discord(
         command @ (DiscordCommand::Relationship { .. }
         | DiscordCommand::Note { .. }
         | DiscordCommand::SetNote { .. }
@@ -1404,6 +1411,50 @@ fn leave(
             format!("Couldn't leave the {what}: {error}")
         });
         let _ = events.send(Event::Left { place, result });
+    });
+}
+
+/// Reads a group DM's chosen icon, or changes its name and icon.
+fn edit_group(
+    command: DiscordCommand,
+    discord: Result<&Discord, &str>,
+    events: &UnboundedSender<Event>,
+) {
+    use crate::chat::GroupIcon;
+    let discord = match discord {
+        Ok(discord) => discord.clone(),
+        Err(why) => {
+            let _ = events.send(match command {
+                DiscordCommand::GroupPicture { .. } => Event::GroupIcon(Err(why.into())),
+                _ => Event::GroupSaved(Err(why.into())),
+            });
+            return;
+        }
+    };
+    let events = events.clone();
+    tokio::spawn(async move {
+        match command {
+            DiscordCommand::GroupPicture { path } => {
+                let result = super::own_profile::read_group_icon(&path);
+                let _ = events.send(Event::GroupIcon(result));
+            }
+            DiscordCommand::EditGroup { room, name, icon } => {
+                let icon = match icon {
+                    GroupIcon::Keep => None,
+                    GroupIcon::Clear => Some(serde_json::Value::Null),
+                    GroupIcon::New(picked) => Some(super::own_profile::picture(&Some(picked))),
+                };
+                let result = match discord::parse_room(&room) {
+                    Some((_, channel)) => discord
+                        .edit_group(channel, &name, icon.as_ref())
+                        .await
+                        .map_err(|error| format!("Couldn't edit the group: {error}")),
+                    None => Err(NOT_DISCORD.into()),
+                };
+                let _ = events.send(Event::GroupSaved(result));
+            }
+            _ => {}
+        }
     });
 }
 

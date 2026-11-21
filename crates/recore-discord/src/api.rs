@@ -1027,6 +1027,16 @@ impl Api {
 
     /// Makes a group DM with `recipients`, as adding friends to a one-to-one
     /// DM does, which stays as it was; returns its channel id.
+    /// Changes a group DM's name and, when `icon` says, its icon: a data
+    /// URI, or null to clear it. Discord sends CHANNEL_UPDATE.
+    pub async fn edit_group(&self, channel: &str, name: &str, icon: Option<&Value>) -> Result<()> {
+        let mut body = json!({"name": name});
+        if let Some(icon) = icon {
+            body["icon"] = icon.clone();
+        }
+        self.edit_channel(channel, &body).await
+    }
+
     pub async fn create_group(&self, recipients: &[String]) -> Result<String> {
         let body = json!({"recipients": recipients});
         let channel = self
