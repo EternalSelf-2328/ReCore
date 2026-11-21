@@ -221,7 +221,7 @@ pub fn incoming_view(app: &App) -> Option<Element<'_, Message>> {
             .style(move |_| container::Style {
                 background: Some(ground.into()),
                 border: crate::style::edge(edge, if theme.square { 0.0 } else { 12.0 }),
-                shadow: card_shadow(),
+                shadow: card_shadow(theme),
                 ..Default::default()
             }),
     );

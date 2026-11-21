@@ -169,12 +169,13 @@ impl<'a, M: Clone + 'a> Sheet<'a, M> {
                 .align_right(Length::Fill)
         ];
         if let Some(bar) = self.bar {
+            let shadow = crate::style::card_shadow(theme);
             let bar = container(bar)
                 .max_width(BAR)
                 .width(Length::Fill)
-                .style(|_| container::Style {
+                .style(move |_| container::Style {
                     border: Border::default().rounded(BAR_RADIUS),
-                    shadow: crate::style::card_shadow(),
+                    shadow,
                     ..Default::default()
                 });
             content = content.push(
@@ -380,14 +381,13 @@ pub fn backdrop<'a, M: Clone + 'a>(
     // Its parts round their own grounds to its corners; its edge goes over
     // them. The ground under them is opaque, so its shadow is drawn only
     // round it.
+    let shadow = crate::style::raised_shadow(theme);
     let card = container(controls::edged(card, edge, RADIUS))
         .width(Length::Fill)
         .max_width(WIDEST)
         .height(Length::Fill)
         .clip(true)
-        .style(move |_| {
-            crate::style::rounded(ground, RADIUS).shadow(crate::style::raised_shadow())
-        });
+        .style(move |_| crate::style::rounded(ground, RADIUS).shadow(shadow));
     opaque(stack![
         controls::dimmed(close, DIM),
         container(crate::widgets::motion::grow(opaque(card)))

@@ -111,7 +111,7 @@ pub fn corners([top_left, top_right, bottom_right, bottom_left]: [f32; 4]) -> bo
 
 /// A card's shadow, over the window or a dimmed one: the sign-in card, a
 /// dialog.
-pub fn card_shadow() -> iced::Shadow {
+pub fn default_card_shadow() -> iced::Shadow {
     iced::Shadow {
         color: Color {
             a: 0.4,
@@ -120,6 +120,12 @@ pub fn card_shadow() -> iced::Shadow {
         offset: iced::Vector::new(0.0, 12.0),
         blur_radius: 32.0,
     }
+}
+
+/// `theme`'s card shadow, which a CSS theme's `box-shadow` on a card or a
+/// profile popout may give.
+pub fn card_shadow(theme: &crate::theme::Theme) -> iced::Shadow {
+    theme.card_shadow
 }
 
 /// The shadow of a window over a card: the Display Name Style's, over the
@@ -135,9 +141,8 @@ pub fn window_shadow() -> iced::Shadow {
     }
 }
 
-/// The raised panels' shadow: menus, the picker, suggestions; and the
-/// settings' cards.
-pub fn raised_shadow() -> iced::Shadow {
+/// The shadow ReCore gives raised panels before a theme names one.
+pub fn default_raised_shadow() -> iced::Shadow {
     iced::Shadow {
         color: Color {
             a: 0.5,
@@ -148,13 +153,29 @@ pub fn raised_shadow() -> iced::Shadow {
     }
 }
 
-/// A raised panel: `ground` in a 1 px `edge` with `radius` corners, over
-/// the raised shadow, as menus, suggestions, the picker and cards are.
+/// `theme`'s raised shadow, which a CSS theme's `box-shadow` on a menu, a
+/// popout or a tooltip may give.
+pub fn raised_shadow(theme: &crate::theme::Theme) -> iced::Shadow {
+    theme.raised_shadow
+}
+
+/// A raised panel: `ground` in a 1 px `edge` with `radius` corners, over the
+/// raised shadow, as menus, suggestions, the picker and cards are.
 pub fn panel(ground: Color, edge: Color, radius: f32) -> container::Style {
+    panel_with_shadow(ground, edge, radius, default_raised_shadow())
+}
+
+/// A raised panel over `shadow`, for the theme's own.
+pub fn panel_with_shadow(
+    ground: Color,
+    edge: Color,
+    radius: f32,
+    shadow: iced::Shadow,
+) -> container::Style {
     container::Style {
         background: Some(ground.into()),
         border: self::edge(edge, radius),
-        shadow: raised_shadow(),
+        shadow,
         ..Default::default()
     }
 }
@@ -181,6 +202,16 @@ pub fn hover_bar_shadow() -> iced::Shadow {
 /// the dimmed signal under the pointer; other themes keep the generic
 /// dark or light thumb.
 pub fn scrollbar(theme: &Theme) -> crate::widgets::Scroller {
+    if theme.scrollbar_rest.a > 0.0 {
+        return crate::widgets::Scroller {
+            rest: theme.scrollbar_rest,
+            pointed: if theme.scrollbar_pointed.a > 0.0 {
+                theme.scrollbar_pointed
+            } else {
+                theme.scrollbar_rest
+            },
+        };
+    }
     if theme.square {
         crate::widgets::Scroller {
             rest: theme.line,

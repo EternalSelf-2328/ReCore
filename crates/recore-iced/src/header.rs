@@ -262,8 +262,8 @@ pub fn view<'a>(ctx: crate::ctx::Ctx<'a>) -> Element<'a, Message> {
     }
     let fills = header.topic.is_none() && header.status.is_none() && header.activity.is_empty();
     let name = container(
-        text(header.name.as_str())
-            .size(16)
+        text(theme.header_transform.apply(header.name.as_str()))
+            .size(theme.header_size)
             .font(SEMIBOLD())
             .color(theme.channel_white)
             .wrapping(text::Wrapping::None),

@@ -36,7 +36,7 @@ use crate::{
     ctx::{Cx, Focus, Request},
     looks, paint,
     pictures::shared,
-    style::{card_shadow, scrollbar},
+    style::scrollbar,
     widgets::Place,
 };
 use look::{Look, Tab};
@@ -519,7 +519,7 @@ pub(crate) fn frame_style(
                 radius: radius.into(),
             },
             shadow: if floats {
-                card_shadow()
+                crate::style::default_card_shadow()
             } else {
                 iced::Shadow::default()
             },

@@ -654,7 +654,7 @@ pub fn drop_view<'a>(ctx: crate::ctx::Ctx<'a>) -> Option<Element<'a, Message>> {
         .padding(8)
         .width(CARD)
         .style(move |_| container::Style {
-            shadow: card_shadow(),
+            shadow: card_shadow(theme),
             ..rounded(ground, 10)
         });
     Some(

@@ -470,7 +470,9 @@ impl Themes {
         if let Some(css) = self.css.iter().find(|css| css.id == id) {
             let mut shown = from_css(css);
             self.paint_css(css, &mut shown);
-            return Some(shown.worked_out());
+            let mut shown = shown.worked_out();
+            apply_kit_native_after(&mut shown, &css.native);
+            return Some(shown);
         }
         palette::lookup(id, &self.custom).map(|(id, found)| {
             let found = match (id, self.accent) {
@@ -584,6 +586,21 @@ impl Themes {
             Some(recore_css::Motion::Subtle) => Motion::Subtle,
             _ => Motion::Full,
         }
+    }
+
+    /// How long the chosen CSS theme's popups take and how many steps they
+    /// move in, when a rule on a menu, popout or dialog names one. ReCore's
+    /// own motion is 190 ms in four steps.
+    pub fn motion_pace(&self) -> Option<(Duration, u32)> {
+        let css = self.chosen_css()?;
+        let native = &css.native;
+        if native.motion_ms.is_none() && native.motion_steps.is_none() {
+            return None;
+        }
+        Some((
+            Duration::from_millis(u64::from(native.motion_ms.unwrap_or(190))),
+            native.motion_steps.unwrap_or(4),
+        ))
     }
 
     /// The CRT layer the window draws over itself: ReCord's effect levels for
@@ -1223,7 +1240,10 @@ fn from_css(file: &ThemeFile) -> Theme {
     recore_iced_kit::for_theme_colours!(assign);
     shown.mention = css_color(theme.link);
     apply_kit_native(&mut shown, &file.native);
-    shown.worked_out()
+    apply_kit_type(&mut shown, &file.native);
+    let mut shown = shown.worked_out();
+    apply_kit_native_after(&mut shown, &file.native);
+    shown
 }
 
 /// A CSS theme's colours as the core keeps them, for Appearance's tiles.
@@ -1251,9 +1271,80 @@ fn apply_kit_native(theme: &mut Theme, native: &NativeStyle) {
         };
     }
     set!(
-        rail, sidebar, panel, chat, raised, field, text, secondary, muted, hover, row_hover, line,
-        accent,
+        rail, sidebar, panel, chat, stage, raised, field, text, secondary, muted, hover, row_hover,
+        line, accent, tooltip,
     );
+    macro_rules! fade {
+        ($($field:ident, $opacity:ident,)*) => {
+            $(if let Some(opacity) = native.$opacity {
+                theme.$field.a *= opacity.clamp(0.0, 1.0);
+            })*
+        };
+    }
+    fade!(
+        rail,
+        rail_opacity,
+        sidebar,
+        sidebar_opacity,
+        panel,
+        panel_opacity,
+        chat,
+        chat_opacity,
+        raised,
+        raised_opacity,
+        field,
+        field_opacity,
+        stage,
+        stage_opacity,
+        tooltip,
+        tooltip_opacity,
+    );
+}
+
+/// The type a CSS theme gives the window's own headings, before its colours
+/// are worked out.
+fn apply_kit_type(theme: &mut Theme, native: &NativeStyle) {
+    if let Some(size) = native.category_size {
+        theme.category_size = size;
+    }
+    if let Some(value) = native.category_transform {
+        theme.category_transform = transform(value);
+    }
+    if let Some(size) = native.member_heading_size {
+        theme.member_heading_size = size;
+    }
+    if let Some(value) = native.member_heading_transform {
+        theme.member_heading_transform = transform(value);
+    }
+    if let Some(size) = native.header_size {
+        theme.header_size = size;
+    }
+    if let Some(value) = native.header_transform {
+        theme.header_transform = transform(value);
+    }
+}
+
+/// The values `worked_out` would otherwise compute from the palette: the
+/// selection, a field's hint, the scrollbar's inks and the popups' shadows.
+fn apply_kit_native_after(theme: &mut Theme, native: &NativeStyle) {
+    if let Some(colour) = native.selection {
+        theme.selection = css_color(colour);
+    }
+    if let Some(colour) = native.placeholder {
+        theme.placeholder = css_color(colour);
+    }
+    if let Some(colour) = native.scrollbar {
+        theme.scrollbar_rest = css_color(colour);
+    }
+    if let Some(colour) = native.scrollbar_hover {
+        theme.scrollbar_pointed = css_color(colour);
+    }
+    if let Some(shadow) = native.raised_shadow {
+        theme.raised_shadow = css_shadow(shadow);
+    }
+    if let Some(shadow) = native.card_shadow {
+        theme.card_shadow = css_shadow(shadow);
+    }
 }
 
 /// A selector-derived colour on the core's palette, for Appearance's tile.
@@ -1266,9 +1357,58 @@ fn apply_core_native(theme: &mut palette::Theme, native: &NativeStyle) {
         };
     }
     set!(
-        rail, sidebar, panel, chat, raised, field, text, secondary, muted, hover, row_hover, line,
-        accent,
+        rail, sidebar, panel, chat, stage, raised, field, text, secondary, muted, hover, row_hover,
+        line, accent, tooltip,
     );
+    macro_rules! fade {
+        ($($field:ident, $opacity:ident,)*) => {
+            $(if let Some(opacity) = native.$opacity {
+                theme.$field = faded(theme.$field, opacity);
+            })*
+        };
+    }
+    fade!(
+        rail,
+        rail_opacity,
+        sidebar,
+        sidebar_opacity,
+        panel,
+        panel_opacity,
+        chat,
+        chat_opacity,
+        raised,
+        raised_opacity,
+        field,
+        field_opacity,
+        stage,
+        stage_opacity,
+        tooltip,
+        tooltip_opacity,
+    );
+}
+
+/// `colour` at `opacity` of its own alpha.
+fn faded(colour: Colour, opacity: f32) -> Colour {
+    let alpha = (f32::from(colour.alpha()) * opacity.clamp(0.0, 1.0)) as u8;
+    Colour::from_argb((u32::from(alpha) << 24) | colour.rgb_part())
+}
+
+fn transform(transform: recore_css::TextTransform) -> crate::theme::Transform {
+    match transform {
+        recore_css::TextTransform::None => crate::theme::Transform::None,
+        recore_css::TextTransform::Uppercase => crate::theme::Transform::Uppercase,
+        recore_css::TextTransform::Lowercase => crate::theme::Transform::Lowercase,
+        recore_css::TextTransform::Capitalize => crate::theme::Transform::Capitalize,
+    }
+}
+
+/// A CSS `box-shadow` as iced's.
+fn css_shadow(shadow: recore_css::Shadow) -> iced::Shadow {
+    iced::Shadow {
+        color: css_color(shadow.color),
+        offset: iced::Vector::new(shadow.offset_x, shadow.offset_y),
+        blur_radius: shadow.blur,
+    }
 }
 
 /// A core colour as iced's.
@@ -1474,5 +1614,84 @@ mod tests {
         let shown = themes.find("css:plum").expect("its colours");
         assert_eq!(shown.chat, crate::style::hex(0x201020));
         assert_eq!(shown.accent, crate::style::hex(0xc04080));
+    }
+
+    #[test]
+    fn a_css_themes_new_regions_and_decorations_reach_the_window() {
+        let folder = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(folder.path().join("themes")).unwrap();
+        std::fs::write(
+            folder.path().join("themes/ornate.theme.css"),
+            r#"/** @name Ornate */
+            :root { --background-primary: #101010; }
+            [class*="stage_"] { background: #0a0b0c; }
+            [class*="profileBanner_"] { background: #0d0e0f; }
+            [class*="membersWrap_"] { background: #070809; }
+            [class*="sidebar_"] { opacity: 0.5; }
+            ::selection { background: #112233; }
+            input::placeholder { color: #445566; }
+            ::-webkit-scrollbar-thumb { background: #778899; }
+            ::-webkit-scrollbar-thumb:hover { background: #aabbcc; }
+            [class*="menu_"] {
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+                transition: opacity 240ms ease;
+            }
+            [class*="userPopout_"] { box-shadow: 0 8px 30px #00000080; }
+            [class*="sidebarList_"] [class*="category_"] {
+                font-size: 11px;
+                text-transform: uppercase;
+            }
+            [class*="membersGroup_"] {
+                font-size: 12px;
+                text-transform: lowercase;
+            }
+            [class*="header_"] {
+                font-size: 15px;
+                text-transform: capitalize;
+            }
+            "#,
+        )
+        .unwrap();
+        let themes = Themes::read(folder.path(), &Layout::read(folder.path()));
+        let shown = themes.find("css:ornate").expect("its colours");
+        assert_eq!(shown.stage, crate::style::hex(0x0a0b0c));
+        assert_eq!(shown.raised, crate::style::hex(0x0d0e0f));
+        assert_eq!(shown.panel, crate::style::hex(0x070809));
+        assert!(
+            (shown.sidebar.a - 0.5).abs() < 0.01,
+            "the sidebar's own opacity fades its ground"
+        );
+        assert_eq!(shown.selection, crate::style::hex(0x112233));
+        assert_eq!(shown.placeholder, crate::style::hex(0x445566));
+        assert_eq!(shown.scrollbar_rest, crate::style::hex(0x778899));
+        assert_eq!(shown.scrollbar_pointed, crate::style::hex(0xaabbcc));
+        assert_eq!(shown.raised_shadow.offset.y, 4.0);
+        assert_eq!(shown.raised_shadow.blur_radius, 12.0);
+        assert_eq!(shown.card_shadow.offset.y, 8.0);
+        assert_eq!(shown.card_shadow.blur_radius, 30.0);
+        assert_eq!(shown.category_size, 11.0);
+        assert_eq!(shown.category_transform, crate::theme::Transform::Uppercase);
+        assert_eq!(shown.member_heading_size, 12.0);
+        assert_eq!(
+            shown.member_heading_transform,
+            crate::theme::Transform::Lowercase
+        );
+        assert_eq!(shown.header_size, 15.0);
+        assert_eq!(shown.header_transform, crate::theme::Transform::Capitalize);
+        assert_eq!(
+            themes.motion_pace(),
+            Some((std::time::Duration::from_millis(240), 0))
+        );
+        // Appearance's tile reads the same selector colours from the core's
+        // palette.
+        let plum = themes
+            .css
+            .iter()
+            .find(|css| css.id == "css:ornate")
+            .unwrap();
+        let tile = css_palette(plum);
+        assert_eq!(tile.stage, Colour::rgb(0x0a0b0c));
+        assert_eq!(tile.raised, Colour::rgb(0x0d0e0f));
+        assert_eq!(tile.panel, Colour::rgb(0x070809));
     }
 }

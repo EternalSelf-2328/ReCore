@@ -12,11 +12,57 @@
 //! or DOM animations. The window applies the result on top of the palette it
 //! already reads from the theme's root variables.
 
+use std::borrow::Cow;
+
 use crate::{
     Rgba,
     color::{self, parse as parse_color},
     css::{Declaration, Rule, Vars, selector_compounds},
 };
+
+/// How a region's text is transformed, as CSS's `text-transform`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TextTransform {
+    #[default]
+    None,
+    Uppercase,
+    Lowercase,
+    Capitalize,
+}
+
+impl TextTransform {
+    /// `text` with this transformation applied. The native window keeps the
+    /// text's words and only changes its case, as CSS does.
+    pub fn apply(self, text: &str) -> Cow<'_, str> {
+        match self {
+            Self::None => Cow::Borrowed(text),
+            Self::Uppercase => Cow::Owned(text.to_uppercase()),
+            Self::Lowercase => Cow::Owned(text.to_lowercase()),
+            Self::Capitalize => {
+                let mut capital = true;
+                let mut result = String::with_capacity(text.len());
+                for character in text.chars() {
+                    if capital {
+                        result.extend(character.to_uppercase());
+                    } else {
+                        result.push(character);
+                    }
+                    capital = character.is_whitespace();
+                }
+                Cow::Owned(result)
+            }
+        }
+    }
+}
+
+/// A `box-shadow` a theme gives a region, ready for the window's renderer.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Shadow {
+    pub color: Rgba,
+    pub offset_x: f32,
+    pub offset_y: f32,
+    pub blur: f32,
+}
 
 /// The parts of a Discord window a theme can address. A node may match more
 /// than one selector fragment (for example `sidebar` and `sidebarList_`).
@@ -32,7 +78,21 @@ enum Role {
     Message,
     Composer,
     Member,
+    Category,
+    Thread,
+    Forum,
+    ForumPost,
+    ServerSettings,
+    Stage,
+    Inbox,
+    Profile,
+    MembersGroup,
+    Uploads,
+    SearchResults,
+    Poll,
     Card,
+    Menu,
+    Tooltip,
 }
 
 /// One synthetic node in the native window.
@@ -42,6 +102,9 @@ struct Node {
     id: Option<&'static str>,
     classes: &'static [&'static str],
     parent: Option<usize>,
+    /// The `role` attribute Discord puts on this part, which a theme may
+    /// name instead of a class (`[role="tooltip"]`).
+    aria_role: Option<&'static str>,
 }
 
 const ROOT: usize = 0;
@@ -51,7 +114,7 @@ const MESSAGES: usize = 6;
 
 /// The tree ReCore shows, with the class names themes tend to mention. The
 /// class fragments end in `_` because Discord's generated class names do.
-const NODES: [Node; 11] = [
+const NODES: [Node; 25] = [
     Node {
         role: Role::Root,
         tags: &["html", "body"],
@@ -65,6 +128,7 @@ const NODES: [Node; 11] = [
             "theme-light",
         ],
         parent: None,
+        aria_role: None,
     },
     Node {
         role: Role::Rail,
@@ -72,6 +136,7 @@ const NODES: [Node; 11] = [
         id: None,
         classes: &["guilds", "guilds_", "guildsnav___", "guildRail", "rail"],
         parent: Some(ROOT),
+        aria_role: None,
     },
     Node {
         role: Role::Sidebar,
@@ -87,6 +152,7 @@ const NODES: [Node; 11] = [
             "privateChannels_",
         ],
         parent: Some(ROOT),
+        aria_role: None,
     },
     Node {
         role: Role::Chat,
@@ -100,6 +166,7 @@ const NODES: [Node; 11] = [
             "messagesWrapper_",
         ],
         parent: Some(ROOT),
+        aria_role: None,
     },
     Node {
         role: Role::Members,
@@ -113,6 +180,7 @@ const NODES: [Node; 11] = [
             "membersList",
         ],
         parent: Some(ROOT),
+        aria_role: None,
     },
     Node {
         role: Role::Header,
@@ -120,6 +188,7 @@ const NODES: [Node; 11] = [
         id: None,
         classes: &["header", "header_", "title_", "channelHeader", "toolbar"],
         parent: Some(CHAT),
+        aria_role: None,
     },
     Node {
         role: Role::Messages,
@@ -127,6 +196,7 @@ const NODES: [Node; 11] = [
         id: None,
         classes: &["messages", "messages_", "scroller", "messageList"],
         parent: Some(CHAT),
+        aria_role: None,
     },
     Node {
         role: Role::Message,
@@ -140,6 +210,7 @@ const NODES: [Node; 11] = [
             "messageListItem",
         ],
         parent: Some(MESSAGES),
+        aria_role: None,
     },
     Node {
         role: Role::Composer,
@@ -153,6 +224,7 @@ const NODES: [Node; 11] = [
             "composer",
         ],
         parent: Some(CHAT),
+        aria_role: None,
     },
     Node {
         role: Role::Member,
@@ -160,6 +232,7 @@ const NODES: [Node; 11] = [
         id: None,
         classes: &["member", "member_", "memberInner", "memberRow"],
         parent: Some(MEMBERS),
+        aria_role: None,
     },
     Node {
         role: Role::Card,
@@ -170,11 +243,242 @@ const NODES: [Node; 11] = [
             "card_",
             "modal_",
             "popout_",
-            "menu_",
             "userPopout_",
             "profilePanel",
         ],
         parent: Some(ROOT),
+        aria_role: Some("dialog"),
+    },
+    // The tooltip Discord draws above a badge, a reaction or a control.
+    Node {
+        role: Role::Tooltip,
+        tags: &["div", "span"],
+        id: None,
+        classes: &[
+            "tooltip",
+            "tooltip_",
+            "tooltipContainer_",
+            "tooltipContent_",
+            "tooltipText_",
+        ],
+        parent: Some(ROOT),
+        aria_role: Some("tooltip"),
+    },
+    // A category heading in the channel list.
+    Node {
+        role: Role::Category,
+        tags: &["div", "li", "h2"],
+        id: None,
+        classes: &[
+            "category",
+            "category_",
+            "sidebarCategory_",
+            "section",
+            "section_",
+            "sidebarSection_",
+        ],
+        parent: Some(2),
+        aria_role: None,
+    },
+    // The heading over a member list's group, Online or a role's name.
+    Node {
+        role: Role::MembersGroup,
+        tags: &["div", "h3"],
+        id: None,
+        classes: &[
+            "membersGroup",
+            "membersGroup_",
+            "memberGroup_",
+            "group_",
+            "groupContainer_",
+            "membersGroupContainer_",
+        ],
+        parent: Some(MEMBERS),
+        aria_role: None,
+    },
+    // A thread's panel beside the channel it belongs to.
+    Node {
+        role: Role::Thread,
+        tags: &["aside", "div"],
+        id: None,
+        classes: &[
+            "threadSidebar",
+            "threadSidebar_",
+            "threadSidebarOpen_",
+            "threadContainer_",
+            "threadPanel_",
+        ],
+        parent: Some(CHAT),
+        aria_role: None,
+    },
+    // A forum's list of posts and one post's card.
+    Node {
+        role: Role::Forum,
+        tags: &["div", "main"],
+        id: None,
+        classes: &[
+            "forum",
+            "forum_",
+            "forumContainer_",
+            "forumPosts_",
+            "forumContent_",
+            "forumGuidelines_",
+        ],
+        parent: Some(CHAT),
+        aria_role: None,
+    },
+    Node {
+        role: Role::ForumPost,
+        tags: &["div", "article", "li"],
+        id: None,
+        classes: &[
+            "forumPost",
+            "forumPost_",
+            "forumPostContainer_",
+            "forumPostContent_",
+            "postCard_",
+        ],
+        parent: Some(15),
+        aria_role: None,
+    },
+    // A server's or channel's settings page.
+    Node {
+        role: Role::ServerSettings,
+        tags: &["div", "main"],
+        id: None,
+        classes: &[
+            "serverSettings",
+            "serverSettings_",
+            "guildSettings_",
+            "settingsPage_",
+            "settingsSidebar_",
+            "settingsContent_",
+            "contentColumn_",
+            "sidebarRegion_",
+            "side_",
+        ],
+        parent: Some(ROOT),
+        aria_role: None,
+    },
+    // A stage channel's audience and the call's controls.
+    Node {
+        role: Role::Stage,
+        tags: &["div", "section"],
+        id: None,
+        classes: &[
+            "stage",
+            "stage_",
+            "stageContainer_",
+            "callContainer_",
+            "voice_",
+            "participants_",
+            "videoWrapper_",
+            "callPanel_",
+        ],
+        parent: Some(CHAT),
+        aria_role: None,
+    },
+    // The inbox: recent mentions and unread messages.
+    Node {
+        role: Role::Inbox,
+        tags: &["div", "aside"],
+        id: None,
+        classes: &[
+            "inbox",
+            "inbox_",
+            "inboxContainer_",
+            "recentMentions_",
+            "recentMentionsPopout_",
+            "messagesPopout_",
+            "mentions_",
+        ],
+        parent: Some(CHAT),
+        aria_role: None,
+    },
+    // A person's profile card and its banner.
+    Node {
+        role: Role::Profile,
+        tags: &["div", "section"],
+        id: None,
+        classes: &[
+            "profile",
+            "profile_",
+            "profilePanel_",
+            "profileBanner_",
+            "profileHeader_",
+            "profileBody_",
+            "profileNote_",
+            "banner_",
+        ],
+        parent: Some(10),
+        aria_role: None,
+    },
+    // The attachments waiting over the composer.
+    Node {
+        role: Role::Uploads,
+        tags: &["div", "section"],
+        id: None,
+        classes: &[
+            "upload",
+            "upload_",
+            "uploads_",
+            "uploadArea_",
+            "uploadContainer_",
+            "attachWrapper_",
+            "attachmentUpload_",
+            "uploadDropModal_",
+            "uploadFile_",
+        ],
+        parent: Some(8),
+        aria_role: None,
+    },
+    // The results panel a search opens.
+    Node {
+        role: Role::SearchResults,
+        tags: &["div", "section"],
+        id: None,
+        classes: &[
+            "searchResults",
+            "searchResults_",
+            "searchResultsWrap_",
+            "searchResult_",
+            "searchResultGroup_",
+            "searchResultContainer_",
+            "searchPage_",
+        ],
+        parent: Some(CHAT),
+        aria_role: None,
+    },
+    // A poll's card on a message.
+    Node {
+        role: Role::Poll,
+        tags: &["div", "section"],
+        id: None,
+        classes: &[
+            "poll",
+            "poll_",
+            "pollContainer_",
+            "pollAnswer_",
+            "pollResults_",
+            "pollMessage_",
+        ],
+        parent: Some(7),
+        aria_role: None,
+    },
+    // A context menu, named by its role attribute or its own fragment.
+    Node {
+        role: Role::Menu,
+        tags: &["div", "ul"],
+        id: None,
+        classes: &[
+            "menu",
+            "menu_",
+            "menuContainer_",
+            "contextMenu_",
+            "submenu_",
+        ],
+        parent: Some(ROOT),
+        aria_role: Some("menu"),
     },
 ];
 
@@ -191,6 +495,8 @@ pub struct NativeStyle {
     pub panel: Option<Rgba>,
     pub raised: Option<Rgba>,
     pub field: Option<Rgba>,
+    pub stage: Option<Rgba>,
+    pub tooltip: Option<Rgba>,
     pub text: Option<Rgba>,
     pub secondary: Option<Rgba>,
     pub muted: Option<Rgba>,
@@ -198,10 +504,43 @@ pub struct NativeStyle {
     pub row_hover: Option<Rgba>,
     pub line: Option<Rgba>,
     pub accent: Option<Rgba>,
+    /// The ground of selected text, as `::selection` names it.
+    pub selection: Option<Rgba>,
+    /// A field's hint text, as `::placeholder` names it.
+    pub placeholder: Option<Rgba>,
+    /// A scrollbar's thumb at rest and under the pointer.
+    pub scrollbar: Option<Rgba>,
+    pub scrollbar_hover: Option<Rgba>,
+    /// The shadow a menu, popout or tooltip asks for.
+    pub raised_shadow: Option<Shadow>,
+    /// The shadow a card, dialog or profile popout asks for.
+    pub card_shadow: Option<Shadow>,
+    /// How opaque a region's ground is, as `opacity` names it. Only the
+    /// ground is faded; the window's text keeps its own ink.
+    pub rail_opacity: Option<f32>,
+    pub sidebar_opacity: Option<f32>,
+    pub chat_opacity: Option<f32>,
+    pub panel_opacity: Option<f32>,
+    pub raised_opacity: Option<f32>,
+    pub field_opacity: Option<f32>,
+    pub stage_opacity: Option<f32>,
+    pub tooltip_opacity: Option<f32>,
     pub radius: Option<f32>,
     pub font_family: Option<String>,
     pub font_size: Option<f32>,
     pub letter_spacing: Option<f32>,
+    /// A channel list's category heading, a member list's group heading and
+    /// the conversation's title, as their own rules name them.
+    pub category_size: Option<f32>,
+    pub category_transform: Option<TextTransform>,
+    pub member_heading_size: Option<f32>,
+    pub member_heading_transform: Option<TextTransform>,
+    pub header_size: Option<f32>,
+    pub header_transform: Option<TextTransform>,
+    /// How long popups open for, and in how many steps, from a `transition`
+    /// or `animation` on a menu, popout or dialog.
+    pub motion_ms: Option<u32>,
+    pub motion_steps: Option<u32>,
 }
 
 impl NativeStyle {
@@ -217,8 +556,11 @@ impl NativeStyle {
             {
                 continue;
             }
+            let thin = rule_thin(rule);
+            let opacity = rule_opacity(rule);
             for selector in &rule.selectors {
-                let Some((role, hover, specificity)) = match_selector(selector, dark) else {
+                let Some((role, hover, specificity, pseudo)) = match_selector(selector, dark)
+                else {
                     continue;
                 };
                 for declaration in &rule.declarations {
@@ -228,6 +570,9 @@ impl NativeStyle {
                         order,
                         role,
                         hover,
+                        pseudo,
+                        thin,
+                        opacity,
                         declaration,
                     });
                 }
@@ -242,7 +587,7 @@ impl NativeStyle {
             let Some(value) = vars.resolve(&write.declaration.value) else {
                 continue;
             };
-            apply(&mut style, write, &value, vars, dark);
+            apply(&mut style, write, &value, dark);
         }
         style
     }
@@ -255,16 +600,70 @@ struct Write<'a> {
     order: usize,
     role: Role,
     hover: bool,
+    pseudo: Pseudo,
+    /// Whether a pseudo-element is a thin bar rather than an overlay.
+    thin: bool,
+    /// The pseudo-element's own `opacity`, which fades what it paints.
+    opacity: Option<f32>,
     declaration: &'a Declaration,
 }
 
-fn apply(style: &mut NativeStyle, write: Write<'_>, value: &str, _vars: &Vars, dark: bool) {
+fn apply(style: &mut NativeStyle, write: Write<'_>, value: &str, dark: bool) {
     let property = write.declaration.name.trim().to_ascii_lowercase();
     let value = value.trim();
     if value.is_empty() {
         return;
     }
     let role = write.role;
+    match write.pseudo {
+        Pseudo::Ignored => return,
+        Pseudo::Selection => {
+            if matches!(
+                property.as_str(),
+                "background" | "background-color" | "background-image"
+            ) && let Some(color) = background_color(value, !dark)
+                && color.a > 0
+            {
+                style.selection = Some(fade(color, write.opacity));
+            }
+            return;
+        }
+        Pseudo::Placeholder => {
+            if property == "color"
+                && let Some(color) = color_in(value, !dark)
+                && color.a > 0
+            {
+                style.placeholder = Some(fade(color, write.opacity));
+            }
+            return;
+        }
+        Pseudo::Scrollbar | Pseudo::ScrollbarTrack => return,
+        Pseudo::ScrollbarThumb | Pseudo::ScrollbarThumbHover => {
+            if matches!(
+                property.as_str(),
+                "background" | "background-color" | "background-image"
+            ) && let Some(color) = background_color(value, !dark)
+                && color.a > 0
+            {
+                let color = fade(color, write.opacity);
+                if matches!(write.pseudo, Pseudo::ScrollbarThumbHover) {
+                    style.scrollbar_hover = Some(color);
+                } else {
+                    style.scrollbar = Some(color);
+                }
+            }
+            return;
+        }
+        Pseudo::Before | Pseudo::After => {
+            // `body::before` is where a theme's wallpaper usually lives;
+            // that path already gives the window its background picture.
+            if role != Role::Root {
+                apply_pseudo(style, &write, &property, value, dark);
+            }
+            return;
+        }
+        Pseudo::None => {}
+    }
     match property.as_str() {
         "background" | "background-color" | "background-image" => {
             if let Some(color) = background_color(value, !dark) {
@@ -306,10 +705,14 @@ fn apply(style: &mut NativeStyle, write: Write<'_>, value: &str, _vars: &Vars, d
             }
         }
         "font-size" => {
-            if matches!(role, Role::Root)
-                && let Some(size) = length(value)
-            {
-                style.font_size = Some(size);
+            if let Some(size) = length(value) {
+                match role {
+                    Role::Root => style.font_size = Some(size),
+                    Role::Category => style.category_size = Some(size),
+                    Role::MembersGroup => style.member_heading_size = Some(size),
+                    Role::Header => style.header_size = Some(size),
+                    _ => {}
+                }
             }
         }
         "letter-spacing" => {
@@ -317,6 +720,40 @@ fn apply(style: &mut NativeStyle, write: Write<'_>, value: &str, _vars: &Vars, d
                 && let Some(spacing) = length(value)
             {
                 style.letter_spacing = Some(spacing);
+            }
+        }
+        "text-transform" => {
+            if let Some(transform) = text_transform(value) {
+                match role {
+                    Role::Category => style.category_transform = Some(transform),
+                    Role::MembersGroup => style.member_heading_transform = Some(transform),
+                    Role::Header => style.header_transform = Some(transform),
+                    // A root rule that changes case would touch every word
+                    // the window draws, including messages; it is not a
+                    // region's decoration.
+                    _ => {}
+                }
+            }
+        }
+        "opacity" => {
+            if !write.hover
+                && let Some(opacity) = fraction(value)
+                && let Some(slot) = opacity_slot(style, role)
+            {
+                *slot = Some(opacity);
+            }
+        }
+        "box-shadow" => {
+            if let Some(shadow) = shadow(value, !dark) {
+                set_shadow(style, role, shadow);
+            }
+        }
+        "transition" | "transition-duration" | "animation" | "animation-duration" => {
+            if matches!(
+                role,
+                Role::Card | Role::Menu | Role::ServerSettings | Role::Profile
+            ) {
+                apply_motion(style, &property, value);
             }
         }
         "border"
@@ -344,6 +781,94 @@ fn apply(style: &mut NativeStyle, write: Write<'_>, value: &str, _vars: &Vars, d
     }
 }
 
+/// A `::before` or `::after` box: a full overlay is its region's ground, a
+/// thin strip is one of the window's lines.
+fn apply_pseudo(
+    style: &mut NativeStyle,
+    write: &Write<'_>,
+    property: &str,
+    value: &str,
+    dark: bool,
+) {
+    let role = write.role;
+    match property {
+        "background" | "background-color" | "background-image" => {
+            if let Some(color) = background_color(value, !dark)
+                && color.a > 0
+            {
+                let color = fade(color, write.opacity);
+                if write.thin {
+                    style.line = Some(color);
+                } else {
+                    set_background(style, role, false, color);
+                }
+            }
+        }
+        "border" | "border-color" | "border-top" | "border-right" | "border-bottom"
+        | "border-left" | "outline" | "outline-color" => {
+            if let Some(color) = color_in(value, !dark) {
+                style.line = Some(fade(color, write.opacity));
+            }
+        }
+        "box-shadow" => {
+            if let Some(shadow) = shadow(value, !dark) {
+                set_shadow(style, role, shadow);
+            }
+        }
+        "color" => {
+            // An icon pseudo-element paints `background: currentColor` over
+            // its mask; the ink it takes is the region's text.
+            if let Some(color) = color_in(value, !dark) {
+                set_text(style, role, color);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn opacity_slot(style: &mut NativeStyle, role: Role) -> Option<&mut Option<f32>> {
+    match role {
+        Role::Root | Role::Chat | Role::Messages | Role::SearchResults => {
+            Some(&mut style.chat_opacity)
+        }
+        Role::Rail => Some(&mut style.rail_opacity),
+        Role::Sidebar | Role::Category => Some(&mut style.sidebar_opacity),
+        Role::Members | Role::Member | Role::MembersGroup | Role::Thread => {
+            Some(&mut style.panel_opacity)
+        }
+        Role::Composer | Role::Uploads => Some(&mut style.field_opacity),
+        Role::Stage => Some(&mut style.stage_opacity),
+        Role::Tooltip => Some(&mut style.tooltip_opacity),
+        Role::Header
+        | Role::Forum
+        | Role::ForumPost
+        | Role::ServerSettings
+        | Role::Inbox
+        | Role::Profile
+        | Role::Poll
+        | Role::Card
+        | Role::Menu => Some(&mut style.raised_opacity),
+        // A message row's opacity would fade only the row's hover wash;
+        // the native window keeps the row's own ink and ground.
+        Role::Message => None,
+    }
+}
+
+fn set_shadow(style: &mut NativeStyle, role: Role, shadow: Shadow) {
+    match role {
+        Role::Menu | Role::Tooltip => style.raised_shadow = Some(shadow),
+        Role::Card | Role::Profile | Role::ServerSettings => style.card_shadow = Some(shadow),
+        _ => {}
+    }
+}
+
+fn fade(color: Rgba, opacity: Option<f32>) -> Rgba {
+    match opacity {
+        Some(opacity) => color.with_alpha((f32::from(color.a) * opacity.clamp(0.0, 1.0)) as u8),
+        None => color,
+    }
+}
+
 fn set_background(style: &mut NativeStyle, role: Role, hover: bool, color: Rgba) {
     let slot = if hover {
         match role {
@@ -352,12 +877,25 @@ fn set_background(style: &mut NativeStyle, role: Role, hover: bool, color: Rgba)
         }
     } else {
         match role {
-            Role::Root | Role::Chat | Role::Messages => &mut style.chat,
+            Role::Root | Role::Chat | Role::Messages | Role::Forum | Role::SearchResults => {
+                &mut style.chat
+            }
             Role::Rail => &mut style.rail,
             Role::Sidebar => &mut style.sidebar,
-            Role::Members | Role::Member => &mut style.panel,
-            Role::Header | Role::Card => &mut style.raised,
+            Role::Members | Role::Member | Role::MembersGroup | Role::Thread => &mut style.panel,
+            Role::Header
+            | Role::ForumPost
+            | Role::ServerSettings
+            | Role::Inbox
+            | Role::Profile
+            | Role::Uploads
+            | Role::Poll
+            | Role::Card
+            | Role::Menu => &mut style.raised,
             Role::Composer => &mut style.field,
+            Role::Stage => &mut style.stage,
+            Role::Tooltip => &mut style.tooltip,
+            Role::Category => &mut style.sidebar,
             Role::Message => &mut style.row_hover,
         }
     };
@@ -369,7 +907,7 @@ fn set_text(style: &mut NativeStyle, role: Role, color: Rgba) {
         Role::Sidebar => {
             style.secondary = Some(color);
         }
-        Role::Members | Role::Member => {
+        Role::Category | Role::Members | Role::Member | Role::MembersGroup => {
             style.muted = Some(color);
         }
         _ => style.text = Some(color),
@@ -381,19 +919,36 @@ fn background_color(value: &str, light: bool) -> Option<Rgba> {
     // no gradient painter for every region, so it keeps the first opaque
     // stop as that region's colour rather than dropping the rule entirely.
     if value.contains("gradient(") {
+        // A colour beside the gradient, as `#fff linear-gradient(...)`.
+        for token in color::split_top(value, ' ') {
+            if !token.contains("gradient(")
+                && let Some(color) = parse_color(token, light)
+                && color.a > 0
+            {
+                return Some(color);
+            }
+        }
         for part in color::split_top(value, ',') {
-            for token in part.split_whitespace() {
-                if let Some(color) = parse_color(token, light)
-                    && color.a > 0
-                {
-                    return Some(color);
+            let Some(open) = part.find('(') else {
+                continue;
+            };
+            let Some(close) = part.rfind(')') else {
+                continue;
+            };
+            for stop in color::split_top(&part[open + 1..close], ',') {
+                for token in color::split_top(stop, ' ') {
+                    if let Some(color) = parse_color(token, light)
+                        && color.a > 0
+                    {
+                        return Some(color);
+                    }
                 }
             }
         }
         return None;
     }
     if value.contains("url(") {
-        for token in value.split_whitespace() {
+        for token in color::split_top(value, ' ') {
             if let Some(color) = parse_color(token, light)
                 && color.a > 0
             {
@@ -409,8 +964,8 @@ fn color_in(value: &str, light: bool) -> Option<Rgba> {
     if let Some(color) = parse_color(value, light) {
         return Some(color);
     }
-    // A shorthand such as `#fff 1px solid` or `1px solid #fff`.
-    for token in value.split_whitespace() {
+    // A shorthand such as `#fff 1px solid` or `1px solid rgba(0, 0, 0, .4)`.
+    for token in color::split_top(value, ' ') {
         if let Some(color) = parse_color(token, light) {
             return Some(color);
         }
@@ -420,18 +975,154 @@ fn color_in(value: &str, light: bool) -> Option<Rgba> {
 
 fn length(value: &str) -> Option<f32> {
     let value = value.trim().trim_end_matches(';').trim();
-    let first = value.split_whitespace().next()?;
-    let first_lower = first.to_ascii_lowercase();
-    let number = |suffix: &str| {
-        first_lower
+    let first = color::split_top(value, ' ').into_iter().next()?;
+    number(first).or_else(|| {
+        first
+            .trim()
+            .strip_suffix('%')
+            .and_then(|percent| percent.trim().parse::<f32>().ok())
+            .map(|percent| percent / 100.0 * 16.0)
+    })
+}
+
+/// One CSS length or number, in pixels where the unit says so.
+fn number(token: &str) -> Option<f32> {
+    let token = token.trim().trim_end_matches(';').trim();
+    if token.is_empty() {
+        return None;
+    }
+    let lower = token.to_ascii_lowercase();
+    let parsed = |suffix: &str| {
+        lower
             .strip_suffix(suffix)
             .and_then(|number| number.trim().parse::<f32>().ok())
     };
-    number("px")
-        .or_else(|| number("rem").map(|number| number * 16.0))
-        .or_else(|| number("em").map(|number| number * 16.0))
-        .or_else(|| number("%").map(|number| number / 100.0 * 16.0))
-        .or_else(|| first_lower.parse::<f32>().ok())
+    parsed("px")
+        .or_else(|| parsed("rem").map(|number| number * 16.0))
+        .or_else(|| parsed("em").map(|number| number * 16.0))
+        .or_else(|| lower.parse::<f32>().ok())
+}
+
+/// A fraction, from `0.5` or `50%`.
+fn fraction(value: &str) -> Option<f32> {
+    let value = value.trim().trim_end_matches(';').trim();
+    if let Some(percent) = value.strip_suffix('%') {
+        return percent
+            .trim()
+            .parse::<f32>()
+            .ok()
+            .map(|percent| (percent / 100.0).clamp(0.0, 1.0));
+    }
+    value.parse::<f32>().ok().map(|value| value.clamp(0.0, 1.0))
+}
+
+fn text_transform(value: &str) -> Option<TextTransform> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "uppercase" => Some(TextTransform::Uppercase),
+        "lowercase" => Some(TextTransform::Lowercase),
+        "capitalize" => Some(TextTransform::Capitalize),
+        "none" | "initial" | "inherit" | "unset" => Some(TextTransform::None),
+        _ => None,
+    }
+}
+
+/// The first non-`inset` shadow in a `box-shadow` value, in the order CSS
+/// writes it: x, y, blur, spread, colour.
+fn shadow(value: &str, light: bool) -> Option<Shadow> {
+    for part in color::split_top(value, ',') {
+        if part.to_ascii_lowercase().contains("inset") {
+            continue;
+        }
+        let mut lengths = Vec::new();
+        let mut color = None;
+        for token in color::split_top(part, ' ') {
+            if let Some(found) = parse_color(token, light) {
+                color = Some(found);
+            } else if let Some(length) = number(token) {
+                lengths.push(length);
+            }
+        }
+        if lengths.len() >= 2 {
+            return Some(Shadow {
+                color: color.unwrap_or(Rgba::rgba(0, 0, 0, 0x80)),
+                offset_x: lengths[0],
+                offset_y: lengths[1],
+                blur: lengths.get(2).copied().unwrap_or(0.0).max(0.0),
+            });
+        }
+    }
+    None
+}
+
+/// How long a popup takes and how many steps it moves in, from a theme's
+/// `transition` or `animation` on a menu, popout or dialog.
+fn apply_motion(style: &mut NativeStyle, property: &str, value: &str) {
+    let lower = value.to_ascii_lowercase();
+    if let Some(ms) = duration_of(&lower)
+        && ms <= 2000
+    {
+        style.motion_ms = Some(ms);
+    }
+    if let Some(steps) = steps_of(&lower) {
+        style.motion_steps = Some(steps);
+    } else if matches!(property, "transition" | "animation")
+        && (lower.contains("linear") || lower.contains("ease") || lower.contains("cubic-bezier("))
+    {
+        // A continuous curve: the native popup stops moving in ReCord's
+        // discrete steps and follows the time instead.
+        style.motion_steps = Some(0);
+    }
+}
+
+/// The first time in a shorthand, in whole milliseconds.
+fn duration_of(value: &str) -> Option<u32> {
+    for token in color::split_top(value, ',') {
+        for token in color::split_top(token, ' ') {
+            let token = token.trim();
+            if let Some(ms) = token.strip_suffix("ms") {
+                if let Ok(ms) = ms.trim().parse::<f32>() {
+                    return Some(ms.max(0.0).round() as u32);
+                }
+            } else if let Some(seconds) = token.strip_suffix('s') {
+                if let Ok(seconds) = seconds.trim().parse::<f32>() {
+                    return Some((seconds.max(0.0) * 1000.0).round() as u32);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// The `n` in a `steps(n, end)` timing function.
+fn steps_of(value: &str) -> Option<u32> {
+    let start = value.find("steps(")? + "steps(".len();
+    let inside = &value[start..];
+    let end = inside.find(')')?;
+    inside[..end]
+        .split(',')
+        .next()?
+        .trim()
+        .parse::<u32>()
+        .ok()
+        .filter(|steps| *steps > 0 && *steps <= 16)
+}
+
+/// Whether a rule draws a thin bar rather than an overlay over its region.
+fn rule_thin(rule: &Rule) -> bool {
+    rule.declarations.iter().any(|declaration| {
+        matches!(
+            declaration.name.trim().to_ascii_lowercase().as_str(),
+            "height" | "width" | "max-height" | "max-width"
+        ) && length(&declaration.value).is_some_and(|length| length > 0.0 && length <= 3.0)
+    })
+}
+
+/// A pseudo-element's own opacity, which fades what it paints.
+fn rule_opacity(rule: &Rule) -> Option<f32> {
+    rule.declarations
+        .iter()
+        .find(|declaration| declaration.name.trim().eq_ignore_ascii_case("opacity"))
+        .and_then(|declaration| fraction(&declaration.value))
 }
 
 fn family(value: &str) -> Option<String> {
@@ -460,11 +1151,85 @@ fn family(value: &str) -> Option<String> {
 
 /// Whether `selector` matches any native role, and whether it is a hover
 /// rule. Every compound must match the role or one of its ancestors.
-fn match_selector(selector: &str, dark: bool) -> Option<(Role, bool, u32)> {
+/// A pseudo-element a theme names. Only the ones a native window can paint
+/// are kept: text selection, a field's hint, a scrollbar's thumb, and the
+/// decoration a region's `::before` or `::after` draws.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Pseudo {
+    None,
+    Before,
+    After,
+    Selection,
+    Placeholder,
+    Scrollbar,
+    ScrollbarTrack,
+    ScrollbarThumb,
+    ScrollbarThumbHover,
+    Ignored,
+}
+
+/// Splits `selector::pseudo` into the selector and the pseudo-element.
+fn split_pseudo(selector: &str) -> (&str, Pseudo) {
+    let bytes = selector.as_bytes();
+    let mut depth = 0u32;
+    let mut quote = None;
+    let mut index = 0;
+    while index + 1 < bytes.len() {
+        let byte = bytes[index];
+        match byte {
+            b'"' | b'\'' if quote == Some(byte) => quote = None,
+            b'"' | b'\'' if quote.is_none() => quote = Some(byte),
+            b'(' | b'[' if quote.is_none() => depth += 1,
+            b')' | b']' if quote.is_none() => depth = depth.saturating_sub(1),
+            b':' if quote.is_none() && depth == 0 && bytes[index + 1] == b':' => {
+                let base = &selector[..index];
+                let after = &selector[index + 2..];
+                let (name, rest) = take_identifier(after);
+                let name = name.to_ascii_lowercase();
+                let hover = rest.to_ascii_lowercase().contains(":hover");
+                let pseudo = match name.as_str() {
+                    "before" => Pseudo::Before,
+                    "after" => Pseudo::After,
+                    "selection" | "-moz-selection" => Pseudo::Selection,
+                    "placeholder" | "-moz-placeholder" | "-webkit-input-placeholder" => {
+                        Pseudo::Placeholder
+                    }
+                    "-webkit-scrollbar" => Pseudo::Scrollbar,
+                    "-webkit-scrollbar-track" => Pseudo::ScrollbarTrack,
+                    "-webkit-scrollbar-thumb" if hover => Pseudo::ScrollbarThumbHover,
+                    "-webkit-scrollbar-thumb" => Pseudo::ScrollbarThumb,
+                    _ => Pseudo::Ignored,
+                };
+                return (base, pseudo);
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    (selector, Pseudo::None)
+}
+
+fn match_selector(selector: &str, dark: bool) -> Option<(Role, bool, u32, Pseudo)> {
+    let (selector, pseudo) = split_pseudo(selector.trim());
+    if matches!(pseudo, Pseudo::Ignored) {
+        return None;
+    }
     let selector = selector.trim();
-    if selector.is_empty()
-        || selector.contains("::")
-        || selector.starts_with('@')
+    if selector.is_empty() {
+        // `::selection`, `::placeholder` and `::-webkit-scrollbar-*` are
+        // written without a subject; they style the whole window.
+        return matches!(
+            pseudo,
+            Pseudo::Selection
+                | Pseudo::Placeholder
+                | Pseudo::Scrollbar
+                | Pseudo::ScrollbarTrack
+                | Pseudo::ScrollbarThumb
+                | Pseudo::ScrollbarThumbHover
+        )
+        .then_some((Role::Root, false, 0, pseudo));
+    }
+    if selector.starts_with('@')
         || selector.contains(":nth-")
         || selector.contains(":first-")
         || selector.contains(":last-")
@@ -491,6 +1256,19 @@ fn match_selector(selector: &str, dark: bool) -> Option<(Role, bool, u32)> {
             || compound.starts_with(":is(:root")
     });
     if !identified {
+        // A window-wide pseudo-element may name the element it belongs to
+        // with a bare tag: `input::placeholder`, `*::-webkit-scrollbar`.
+        if matches!(
+            pseudo,
+            Pseudo::Selection
+                | Pseudo::Placeholder
+                | Pseudo::Scrollbar
+                | Pseudo::ScrollbarTrack
+                | Pseudo::ScrollbarThumb
+                | Pseudo::ScrollbarThumbHover
+        ) {
+            return Some((Role::Root, false, specificity(selector), pseudo));
+        }
         let last = compounds.last()?;
         let tag = last
             .trim()
@@ -536,7 +1314,7 @@ fn match_selector(selector: &str, dark: bool) -> Option<(Role, bool, u32)> {
             current = Some(index);
         }
         if matched {
-            return Some((node.role, hover, specificity));
+            return Some((node.role, hover, specificity, pseudo));
         }
     }
     None
@@ -775,6 +1553,7 @@ fn attribute_matches(attribute: &str, node: usize, dark: bool) -> bool {
             true,
         ),
         "id" => (NODES[node].id.unwrap_or("").to_owned(), false),
+        "role" => (NODES[node].aria_role.unwrap_or("").to_owned(), false),
         "data-theme" => (
             if NODES[node].role == Role::Root {
                 if dark { "dark" } else { "light" }.to_owned()
@@ -1001,5 +1780,223 @@ mod tests {
         assert_eq!(theme.native.font_family.as_deref(), Some("Pixel Operator"));
         assert_eq!(theme.look.font_size, Some(18.0));
         assert_eq!(theme.look.letter_spacing, Some(1.0));
+    }
+
+    #[test]
+    fn regions_added_since_the_first_mapping_reach_their_surfaces() {
+        let theme = dark(
+            r#"
+            [class*="serverSettings_"] { background: #010101; }
+            [class*="threadSidebar_"] { background: #020202; }
+            [class*="forum_"] { background: #030303; }
+            [class*="forumPost_"] { background: #040404; }
+            [class*="stage_"] { background: #050505; }
+            [class*="inbox_"] { background: #060606; }
+            [class*="profileBanner_"] { background: #070707; }
+            [class*="membersGroup_"] { color: #080808; }
+            [class*="upload_"] { background: #090909; }
+            [class*="searchResults_"] { background: #0a0a0a; }
+            [class*="poll_"] { background: #0b0b0b; }
+            [role="menu"] { background: #0c0c0c; }
+            [role="tooltip"] { background: #0d0d0d; }
+            "#,
+        );
+        assert_eq!(theme.native.raised, Some(Rgba::rgb(0x0c, 0x0c, 0x0c)));
+        assert_eq!(theme.native.panel, Some(Rgba::rgb(2, 2, 2)));
+        assert_eq!(theme.native.chat, Some(Rgba::rgb(0x0a, 0x0a, 0x0a)));
+        assert_eq!(theme.native.stage, Some(Rgba::rgb(5, 5, 5)));
+        assert_eq!(theme.native.muted, Some(Rgba::rgb(8, 8, 8)));
+        assert_eq!(theme.native.field, None, "uploads are raised, not fields");
+        assert_eq!(theme.native.tooltip, Some(Rgba::rgb(13, 13, 13)));
+    }
+
+    #[test]
+    fn a_forum_post_and_a_poll_are_raised_surfaces() {
+        let theme = dark(
+            r#"
+            [class*="forumPost_"] { background: #111111; }
+            "#,
+        );
+        assert_eq!(theme.native.raised, Some(Rgba::rgb(0x11, 0x11, 0x11)));
+        let theme = dark(
+            r#"
+            [class*="poll_"] { background: #222222; }
+            "#,
+        );
+        assert_eq!(theme.native.raised, Some(Rgba::rgb(0x22, 0x22, 0x22)));
+    }
+
+    #[test]
+    fn a_search_result_panel_is_the_chat_ground() {
+        let theme = dark(
+            r#"
+            [class*="searchResults_"] { background: #333333; }
+            "#,
+        );
+        assert_eq!(theme.native.chat, Some(Rgba::rgb(0x33, 0x33, 0x33)));
+    }
+
+    #[test]
+    fn selection_and_placeholder_have_their_own_inks() {
+        let theme = dark(
+            r#"
+            ::selection { background: #112233; }
+            input::placeholder { color: #445566; }
+            "#,
+        );
+        assert_eq!(theme.native.selection, Some(Rgba::rgb(0x11, 0x22, 0x33)));
+        assert_eq!(theme.native.placeholder, Some(Rgba::rgb(0x44, 0x55, 0x66)));
+    }
+
+    #[test]
+    fn a_scrollbars_thumb_and_its_hover_are_kept() {
+        let theme = dark(
+            r#"
+            ::-webkit-scrollbar { width: 8px; }
+            ::-webkit-scrollbar-thumb { background: #111111; border-radius: 4px; }
+            ::-webkit-scrollbar-thumb:hover { background: #222222; }
+            ::-webkit-scrollbar-track { background: #333333; }
+            "#,
+        );
+        assert_eq!(theme.native.scrollbar, Some(Rgba::rgb(0x11, 0x11, 0x11)));
+        assert_eq!(
+            theme.native.scrollbar_hover,
+            Some(Rgba::rgb(0x22, 0x22, 0x22))
+        );
+    }
+
+    #[test]
+    fn a_pseudo_elements_overlay_or_thin_bar_becomes_a_native_surface() {
+        let theme = dark(
+            r#"
+            [class*="chat_"]::after {
+                content: "";
+                position: absolute;
+                inset: 0;
+                background: #102030;
+            }
+            [class*="channelTextArea_"]::before {
+                content: "";
+                height: 2px;
+                background: #405060;
+            }
+            "#,
+        );
+        assert_eq!(theme.native.chat, Some(Rgba::rgb(0x10, 0x20, 0x30)));
+        assert_eq!(theme.native.line, Some(Rgba::rgb(0x40, 0x50, 0x60)));
+    }
+
+    #[test]
+    fn a_pseudo_elements_opacity_fades_its_own_paint() {
+        let theme = dark(
+            r#"
+            [class*="chat_"]::before {
+                content: "";
+                inset: 0;
+                background: #ffffff;
+                opacity: 0.25;
+            }
+            "#,
+        );
+        let chat = theme.native.chat.expect("the pseudo-element's ground");
+        assert_eq!((chat.r, chat.g, chat.b), (0xff, 0xff, 0xff));
+        assert!((f32::from(chat.a) / 255.0 - 0.25).abs() < 0.01);
+    }
+
+    #[test]
+    fn a_regions_opacity_fades_its_ground() {
+        let theme = dark(
+            r#"
+            [class*="sidebar_"] { opacity: 0.5; }
+            [class*="membersWrap_"] { opacity: 0.75; }
+            "#,
+        );
+        assert_eq!(theme.native.sidebar_opacity, Some(0.5));
+        assert_eq!(theme.native.panel_opacity, Some(0.75));
+    }
+
+    #[test]
+    fn a_box_shadow_keeps_its_offset_blur_and_colour() {
+        let theme = dark(
+            r#"
+            [class*="menu_"] {
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+            }
+            [class*="userPopout_"] {
+                box-shadow: 0 8px 30px #00000080;
+            }
+            "#,
+        );
+        let raised = theme.native.raised_shadow.expect("the menu's shadow");
+        assert_eq!(raised.offset_y, 4.0);
+        assert_eq!(raised.blur, 12.0);
+        let card = theme.native.card_shadow.expect("the popout's shadow");
+        assert_eq!(card.offset_y, 8.0);
+        assert_eq!(card.blur, 30.0);
+        assert_eq!(card.color.a, 0x80);
+    }
+
+    #[test]
+    fn a_popups_transition_sets_the_native_motions_pace() {
+        let theme = dark(
+            r#"
+            [class*="menu_"] { transition: opacity 240ms ease; }
+            "#,
+        );
+        assert_eq!(theme.native.motion_ms, Some(240));
+        assert_eq!(theme.native.motion_steps, Some(0), "a continuous curve");
+
+        let theme = dark(
+            r#"
+            [class*="modal_"] { animation: pop 0.3s steps(6); }
+            "#,
+        );
+        assert_eq!(theme.native.motion_ms, Some(300));
+        assert_eq!(theme.native.motion_steps, Some(6));
+    }
+
+    #[test]
+    fn a_headings_size_and_case_are_kept_for_its_own_line() {
+        let theme = dark(
+            r#"
+            [class*="sidebarList_"] [class*="category_"] {
+                font-size: 11px;
+                text-transform: uppercase;
+            }
+            [class*="membersGroup_"] {
+                font-size: 12px;
+                text-transform: lowercase;
+            }
+            [class*="header_"] {
+                font-size: 15px;
+                text-transform: capitalize;
+            }
+            "#,
+        );
+        assert_eq!(theme.native.category_size, Some(11.0));
+        assert_eq!(
+            theme.native.category_transform,
+            Some(TextTransform::Uppercase)
+        );
+        assert_eq!(theme.native.member_heading_size, Some(12.0));
+        assert_eq!(
+            theme.native.member_heading_transform,
+            Some(TextTransform::Lowercase)
+        );
+        assert_eq!(theme.native.header_size, Some(15.0));
+        assert_eq!(
+            theme.native.header_transform,
+            Some(TextTransform::Capitalize)
+        );
+    }
+
+    #[test]
+    fn capitalize_changes_only_the_first_letter_of_each_word() {
+        assert_eq!(
+            TextTransform::Capitalize.apply("general chat"),
+            "General Chat"
+        );
+        assert_eq!(TextTransform::Uppercase.apply("Gen"), "GEN");
+        assert_eq!(TextTransform::None.apply("Gen"), "Gen");
     }
 }

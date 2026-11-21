@@ -384,7 +384,7 @@ pub fn view<'a>(cx: Ctx<'a>) -> Element<'a, Message> {
     .style({
         let chat = theme.chat;
         move |_| container::Style {
-            shadow: card_shadow(),
+            shadow: card_shadow(theme),
             ..rounded(chat, 12)
         }
     });

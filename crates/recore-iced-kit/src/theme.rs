@@ -2,7 +2,44 @@
 //! with the colours worked out from them. The app fills one from a theme of
 //! its own ([`Theme::new`], then [`Theme::worked_out`]). See docs/themes.md.
 
+use std::borrow::Cow;
+
 use iced::Color;
+
+/// How a line of the window's own text changes case, as a CSS theme's
+/// `text-transform` asks for the region it names.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Transform {
+    #[default]
+    None,
+    Uppercase,
+    Lowercase,
+    Capitalize,
+}
+
+impl Transform {
+    /// `text` with this transformation applied.
+    pub fn apply(self, text: &str) -> Cow<'_, str> {
+        match self {
+            Self::None => Cow::Borrowed(text),
+            Self::Uppercase => Cow::Owned(text.to_uppercase()),
+            Self::Lowercase => Cow::Owned(text.to_lowercase()),
+            Self::Capitalize => {
+                let mut capital = true;
+                let mut result = String::with_capacity(text.len());
+                for character in text.chars() {
+                    if capital {
+                        result.extend(character.to_uppercase());
+                    } else {
+                        result.push(character);
+                    }
+                    capital = character.is_whitespace();
+                }
+                Cow::Owned(result)
+            }
+        }
+    }
+}
 
 /// Calls `$then!` with the names of [`Theme`]'s own colours, so the app
 /// that fills them names each once too.
@@ -90,6 +127,24 @@ macro_rules! declare_theme {
             /// Whether panels, menus and buttons use square corners, as
             /// ReCord's terminal theme does.
             pub square: bool,
+            /// A channel list's category heading, a member list's group
+            /// heading and the conversation's title: their size and case, as
+            /// a CSS theme's rules on those regions name them.
+            pub category_size: f32,
+            pub category_transform: Transform,
+            pub member_heading_size: f32,
+            pub member_heading_transform: Transform,
+            pub header_size: f32,
+            pub header_transform: Transform,
+            /// The shadows a CSS theme's `box-shadow` gives raised panels
+            /// (menus, popouts, tooltips) and cards (dialogs, profile
+            /// popouts). Other themes keep ReCore's own.
+            pub raised_shadow: iced::Shadow,
+            pub card_shadow: iced::Shadow,
+            /// A scrollbar's thumb at rest and under the pointer. Transparent
+            /// keeps ReCore's own shades.
+            pub scrollbar_rest: Color,
+            pub scrollbar_pointed: Color,
             /// What iced's own styles read: the theme's ground, text and
             /// accent.
             iced: iced::Theme,
@@ -116,6 +171,16 @@ macro_rules! declare_theme {
                     selection: Color::TRANSPARENT,
                     mention: Color::TRANSPARENT,
                     square: false,
+                    category_size: 14.0,
+                    category_transform: Transform::None,
+                    member_heading_size: 14.0,
+                    member_heading_transform: Transform::None,
+                    header_size: 16.0,
+                    header_transform: Transform::None,
+                    raised_shadow: crate::style::default_raised_shadow(),
+                    card_shadow: crate::style::default_card_shadow(),
+                    scrollbar_rest: Color::TRANSPARENT,
+                    scrollbar_pointed: Color::TRANSPARENT,
                     iced: iced::Theme::Dark,
                 }
             }

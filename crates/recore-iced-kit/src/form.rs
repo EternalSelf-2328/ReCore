@@ -745,13 +745,14 @@ pub fn colour_card<'a, M: Clone + 'a>(
 ) -> Element<'a, M> {
     let (raised, edge) = (theme.raised, theme.edge);
     let square = theme.square;
+    let shadow = crate::style::card_shadow(theme);
     iced::widget::opaque(
         container(column![pad, code.size(14).padding([12, 12])].spacing(14))
             .padding(10)
             .width(Length::Fill)
             .style(move |_| container::Style {
                 border: crate::style::edge(edge, if square { 0.0 } else { 12.0 }),
-                shadow: crate::style::card_shadow(),
+                shadow,
                 ..rounded(raised, if square { 0.0 } else { 12.0 })
             }),
     )

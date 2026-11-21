@@ -29,6 +29,11 @@ impl App {
         // Whatever this returns, what it no longer shows goes at its end.
         let _viewing = self.win.pictures.view();
         crate::widgets::motion::set_moving(self.themes.motion() != crate::themes::Motion::Off);
+        let pace = self
+            .themes
+            .motion_pace()
+            .unwrap_or((crate::widgets::motion::DURATION, 4));
+        crate::widgets::motion::set_pace(pace.0, pace.1);
         if !crate::signin::workspace(self) {
             return self.frame_layers(crate::signin::view(self.ctx()));
         }
@@ -599,7 +604,7 @@ impl App {
         .height(36)
         .align_y(iced::Alignment::Center)
         .style(move |_| iced::widget::container::Style {
-            shadow: crate::style::raised_shadow(),
+            shadow: crate::style::raised_shadow(&self.theme),
             ..crate::style::rounded(tip, 18.0)
         });
         Some(

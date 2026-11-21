@@ -583,7 +583,7 @@ impl<'a> View<'a> {
             })
             .clip(true)
             .style(move |_| container::Style {
-                shadow: raised_shadow(),
+                shadow: raised_shadow(theme),
                 ..crate::style::rounded(ground, RADIUS)
             });
         iced::widget::opaque(controls::edged(panel, edge, RADIUS))

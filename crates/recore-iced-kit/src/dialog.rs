@@ -120,13 +120,14 @@ pub fn dialog<'a, M: Clone + 'a>(
 ) -> Element<'a, M> {
     let (ground, edge) = (theme.raised, theme.edge);
     let square = theme.square;
+    let shadow = card_shadow(theme);
     let card = opaque(
         container(body)
             .width(width)
             .style(move |_| container::Style {
                 background: Some(ground.into()),
                 border: crate::style::edge(edge, if square { 0.0 } else { 12.0 }),
-                shadow: card_shadow(),
+                shadow,
                 ..Default::default()
             }),
     );

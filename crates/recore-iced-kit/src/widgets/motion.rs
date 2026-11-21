@@ -33,6 +33,9 @@ thread_local! {
     static SHOWN: Cell<f32> = const { Cell::new(1.0) };
     /// Whether popups move at all, as ReCord's motion setting says.
     static MOVING: Cell<bool> = const { Cell::new(true) };
+    /// The duration and step count a CSS theme's transition asks for;
+    /// ReCore's own are 190 ms in four steps.
+    static PACE: Cell<(Duration, u32)> = const { Cell::new((DURATION, 4)) };
 }
 
 /// Turns popup motion on or off, as ReCord's `--rl-motion` does.
@@ -40,29 +43,52 @@ pub fn set_moving(moving: bool) {
     MOVING.set(moving);
 }
 
+/// Sets how long a popup opens for and how many steps it moves in, as a CSS
+/// theme's transition on a menu, popout or dialog does. Zero steps follows
+/// the curve continuously, as CSS's `ease` and `linear` do; ReCore's own
+/// motion is four steps.
+pub fn set_pace(duration: Duration, steps: u32) {
+    PACE.set((duration, steps.min(16)));
+}
+
 fn moving() -> bool {
     MOVING.get()
+}
+
+fn pace() -> (Duration, u32) {
+    PACE.get()
 }
 
 /// How far open a layer is that opened at `start`, at `now`, eased out
 /// on a quadratic curve.
 pub fn shown(start: Instant, now: Instant) -> f32 {
-    let t = (now.saturating_duration_since(start).as_secs_f32() / DURATION.as_secs_f32()).min(1.0);
-    // ReCord moves menus in four discrete steps, not continuously.
-    let t = (t * 4.0).floor() / 4.0;
+    let (duration, steps) = pace();
+    let t = (now.saturating_duration_since(start).as_secs_f32() / duration.as_secs_f32()).min(1.0);
+    // ReCord moves menus in four discrete steps, not continuously; a theme
+    // that names `ease` or `linear` gets the continuous curve.
+    let t = if steps > 0 {
+        (t * steps as f32).floor() / steps as f32
+    } else {
+        t
+    };
     1.0 - (1.0 - t) * (1.0 - t)
 }
 
-/// For a layer closing since `start`, when it would have started opening
-/// to be as far open at `now` as it is: a popup opened again as it closes
+/// For a layer closing since `start`, when it would have started opening to
+/// be as far open at `now` as it is: a popup opened again as it closes
 /// grows on from there.
 pub fn reopened(start: Instant, now: Instant) -> Instant {
+    let (duration, steps) = pace();
     let open = 1.0 - shown(start, now);
     // `shown` backwards, on its stepped grid: the time at which it's
     // nearest to `open`.
     let t = 1.0 - (1.0 - open).sqrt();
-    let t = (t * 4.0).floor() / 4.0;
-    now - DURATION.mul_f32(t)
+    let t = if steps > 0 {
+        (t * steps as f32).floor() / steps as f32
+    } else {
+        t
+    };
+    now - duration.mul_f32(t)
 }
 
 /// A layer opening or closing: `start` is when it was first drawn so,
@@ -369,5 +395,15 @@ mod tests {
         // Closed all the way, it opens from the start.
         let gone = closing + DURATION;
         assert!(shown(reopened(closing, gone), gone) < 1e-3);
+    }
+
+    #[test]
+    fn a_css_themes_transition_sets_the_pace() {
+        let start = Instant::now();
+        set_pace(Duration::from_millis(240), 0);
+        assert_eq!(shown(start, start + Duration::from_millis(120)), 0.75);
+        assert_eq!(shown(start, start + Duration::from_millis(240)), 1.0);
+        assert_eq!(shown(start, start + Duration::from_millis(60)), 28.0 / 64.0);
+        set_pace(DURATION, 4);
     }
 }

@@ -601,14 +601,15 @@ impl<'a> View<'a> {
 
     /// A group's heading: 14 px medium in the channel grey, 20 px above,
     /// its role's icon before it.
-    fn heading_row(self, heading: &str, icon: Option<&str>) -> Element<'a, Message> {
+    fn heading_row(self, heading: &'a str, icon: Option<&str>) -> Element<'a, Message> {
+        let theme = self.cx.look.theme;
         let mut line = row![].spacing(8).align_y(Alignment::Center);
         if let Some(icon) = icon.and_then(|icon| self.cx.picture(icon, 20, 20, false)) {
             line = line.push(Pic::square(icon, 20.0));
         }
         line = line.push(
-            text(heading.to_owned())
-                .size(14)
+            text(theme.member_heading_transform.apply(heading))
+                .size(theme.member_heading_size)
                 .font(MEDIUM())
                 .color(hex(HEADING)),
         );

@@ -5,7 +5,7 @@
 //! and the tooltip. A screen builds with these instead of styling its own.
 
 use iced::{
-    Alignment, Border, Color, Element, Length, Shadow, Vector,
+    Alignment, Border, Color, Element, Length,
     widget::{Id, Space, button, column, container, mouse_area, opaque, row, text, text_input},
 };
 
@@ -359,16 +359,10 @@ pub fn tip<'a, M: Clone + 'a>(theme: &Theme, label: impl text::IntoFragment<'a>)
 /// than a label (a reaction's).
 pub fn tip_style(theme: &Theme) -> impl Fn(&iced::Theme) -> container::Style + use<> {
     let ground = theme.tooltip;
+    let shadow = theme.raised_shadow;
     let square = theme.square;
     move |_| container::Style {
-        shadow: Shadow {
-            color: Color {
-                a: 0.5,
-                ..Color::BLACK
-            },
-            offset: Vector::new(0.0, 3.0),
-            blur_radius: 12.0,
-        },
+        shadow,
         ..rounded(ground, if square { 0.0 } else { 6.0 })
     }
 }
@@ -470,7 +464,8 @@ pub fn menu_panel(theme: &Theme) -> impl Fn(&iced::Theme) -> container::Style + 
         theme.menu_line
     };
     let radius = if theme.square { 0.0 } else { 8.0 };
-    move |_| crate::style::panel(ground, edge, radius)
+    let shadow = theme.raised_shadow;
+    move |_| crate::style::panel_with_shadow(ground, edge, radius, shadow)
 }
 
 /// A box of one colour: a line between parts of the window, a bar, a dot.

@@ -656,6 +656,46 @@ fn a_custom_theme_in_the_layout_shows_from_the_start() {
 }
 
 #[test]
+fn a_css_themes_regions_and_decorations_show_from_the_start() {
+    let folder = tempfile::tempdir_in(local()).expect("test folder");
+    std::fs::create_dir_all(folder.path().join("themes")).expect("the themes folder");
+    std::fs::write(
+        folder.path().join("themes/ornate.theme.css"),
+        r#"/** @name Ornate */
+        [class*="stage_"] { background: #0a0b0c; }
+        [class*="membersWrap_"] { background: #070809; }
+        ::selection { background: #112233; }
+        input::placeholder { color: #445566; }
+        [class*="menu_"] { transition: opacity 240ms ease; }
+        [class*="sidebarList_"] [class*="category_"] {
+            font-size: 11px;
+            text-transform: uppercase;
+        }"#,
+    )
+    .expect("the theme");
+    std::fs::write(
+        folder.path().join("layout.json"),
+        r#"{"theme": "css:ornate"}"#,
+    )
+    .expect("the layout");
+    let app = start(&folder, true);
+    assert_eq!(app.theme.id, "css:ornate");
+    assert_eq!(app.theme.stage, crate::style::hex(0x0a0b0c));
+    assert_eq!(app.theme.panel, crate::style::hex(0x070809));
+    assert_eq!(app.theme.selection, crate::style::hex(0x112233));
+    assert_eq!(app.theme.placeholder, crate::style::hex(0x445566));
+    assert_eq!(app.theme.category_size, 11.0);
+    assert_eq!(
+        app.theme.category_transform,
+        crate::theme::Transform::Uppercase
+    );
+    assert_eq!(
+        app.themes.motion_pace(),
+        Some((std::time::Duration::from_millis(240), 0))
+    );
+}
+
+#[test]
 fn a_layout_key_of_the_wrong_kind_loses_only_itself() {
     let folder = tempfile::tempdir_in(local()).expect("test folder");
     std::fs::write(

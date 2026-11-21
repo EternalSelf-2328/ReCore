@@ -5,13 +5,17 @@
 //! The interpreter reads the theme's palette, accent, fonts, radius,
 //! background picture and ReCord's CRT options into [`ThemeFile`], which the
 //! window turns into its own colours. It also matches the theme's selectors
-//! against ReCore's native regions (sidebar, chat, member list, composer) and
-//! applies the colours and shape values that win the cascade there. CSS for
-//! Discord's web DOM has no exact nodes in a native window; layout,
-//! pseudo-elements and element-level animations are read without error but
-//! are not painted. A root/body colour or opacity animation is painted as a
-//! moving ground, and CSS gradients become background pictures. Local
-//! `@import`s are read beside the theme; [`load_with_imports`]
+//! against ReCore's native regions (sidebar, chat, member list, composer,
+//! settings pages, threads, forums, calls, the inbox, profiles, search and
+//! polls) and applies the colours, opacity, shape, typography, shadows and
+//! popup pacing that win the cascade there. The pseudo-elements a native
+//! window can paint are read too: a region's `::before` or `::after`
+//! decoration, `::selection`, `::placeholder` and a scrollbar's thumb. CSS
+//! for Discord's web DOM has no exact nodes in a native window; layout,
+//! `:nth-child` structure, masks and per-element keyframe animations are read
+//! without error but are not painted. A root/body colour or opacity animation
+//! is painted as a moving ground, and CSS gradients become background
+//! pictures. Local `@import`s are read beside the theme; [`load_with_imports`]
 //! and [`scan_with_imports`] take a callback for `http:` and `https:` ones
 //! and their remote fonts. A remote picture stays [`Image::Url`] for the
 //! caller to fetch. [`theme_folders`] lists the places the common clients
@@ -34,7 +38,7 @@ mod theme;
 
 pub use color::Rgba;
 pub use css::{Keyframe, Keyframes, Meta, MetaVar, Note, ParseError, PropertySpec, Stylesheet};
-pub use native::NativeStyle;
+pub use native::{NativeStyle, Shadow, TextTransform};
 pub use options::{OptionKind, ThemeOption};
 pub use theme::{
     Animation, AnimationDirection, AnimationFrame, BackgroundFit, Effects, Font, Gradient,

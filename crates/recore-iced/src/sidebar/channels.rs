@@ -303,7 +303,10 @@ impl<'a> super::View<'a> {
             ink
         };
         let face = row![
-            elide(name).size(14).font(SEMIBOLD()).color(ink),
+            elide(theme.category_transform.apply(name))
+                .size(theme.category_size)
+                .font(SEMIBOLD())
+                .color(ink),
             self.cx.look.glyph(
                 if collapsed {
                     Icon::ChevronRight

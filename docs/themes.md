@@ -228,37 +228,98 @@ Discord themes often style a region directly, not only its variables:
 [class*="membersWrap_"] { border-radius: 0; }
 ```
 
-ReCore gives its native sidebar, guild rail, chat, message area, member list,
-composer, header and cards a synthetic node with the class fragments Discord
-themes commonly target, then matches the theme's rules against them. It
-understands class, id and tag selectors, attribute fragments such as
-`[class*="..."]`, descendant selectors, `:is()`, `:not()`, `:where()`, simple
-`:has()` descendant checks, the `.theme-dark`/`.theme-light` roots and
-`:hover`/`:focus` states. Specificity,
-`!important` and source order are applied, and `var()` values are resolved
-before they reach the window. A bare tag selector or `*` never styles a
-region on its own: it needs a class, an id or an attribute, so a theme's
-`div { ... }` reset cannot paint the rail. Fully transparent backgrounds are
-left to the region's own colour instead of erasing it, and a radius on a
-button, a card or a hover state does not redefine the whole window's shape.
-The mapped properties are `background`, `background-color` and
-`background-image`, `color`, `border-radius`, `font-family`, `font-size` and
-`letter-spacing`. A gradient's first opaque stop is used as the region's
-colour where the native window cannot paint the full gradient.
+ReCore gives every part of its window that Discord themes commonly name a
+synthetic node with the class fragments they target, then matches the theme's
+rules against those nodes. The nodes are the page and its theme roots; the
+guild rail; the channel sidebar and its category headings; the chat, message
+list, a message row and the composer with its uploads; the member list, a
+member and its group headings; the conversation header; cards, dialogs and
+popouts; menus; tooltips; threads; forums and their posts; server and channel
+settings pages; stage and call panels; the inbox; profile cards; search
+results; and polls. A node also carries the `role` attribute Discord puts on
+it, so `[role="dialog"]`, `[role="menu"]` and `[role="tooltip"]` reach the
+same regions as `[class*="modal_"]`, `[class*="menu_"]` and
+`[class*="tooltip_"]`.
+
+ReCore understands class, id, tag and attribute selectors, attribute
+fragments such as `[class*="..."]`, descendant selectors, `:is()`, `:not()`,
+`:where()`, simple `:has()` descendant checks, the `.theme-dark`/`.theme-light`
+roots and `:hover`/`:focus` states. Specificity, `!important` and source order
+are applied, and `var()` values are resolved before they reach the window. A
+bare tag selector or `*` never styles a region on its own: it needs a class, an
+id or an attribute, so a theme's `div { ... }` reset cannot paint the rail.
+Fully transparent backgrounds are left to the region's own colour instead of
+erasing it, and a radius on a button, a card or a hover state does not redefine
+the whole window's shape.
+
+The mapped properties are:
+
+- `background`, `background-color` and `background-image` as the region's
+  ground. A gradient's first opaque stop is used where the native window
+  cannot paint the full gradient.
+- `color` as its text: the sidebar's is its secondary ink, the member list's
+  and a category's its muted ink, and every other region's the window's text.
+- `border-radius` on the page, rail, sidebar, chat or member list as the
+  window's shape.
+- `font-family` on the page, which picks the window's font, and `font-size` on
+  a category heading, a member-list group heading or the conversation's title,
+  each of which keeps its own line's size.
+- `text-transform` on those three headings: `uppercase`, `lowercase` and
+  `capitalize` change only the heading's words, not the messages below them.
+- `border`, `border-*-color` and `outline` as the window's line colour.
+  `border-width` and `border-style` are read but not painted: a native line is
+  one pixel and has no dash or dot.
+- `opacity` on a region, which fades that region's ground to the given alpha.
+  The window's text keeps its own ink; see the limit below.
+- `box-shadow` on a menu, popout or tooltip as the raised panels' shadow, and
+  on a card, dialog or profile popout as cards' shadow. Its colour, x and y
+  offsets and blur are kept; a spread or `inset` is not.
+- `transition` or `animation` on a menu, popout, dialog, card, settings page or
+  profile: its duration (up to two seconds) and `steps(n)` timing set how long
+  native popups take to open and how many steps they move in. `ease`, `linear`
+  and `cubic-bezier()` make the motion continuous instead of ReCord's four
+  steps. A rule on any other region is left in the file.
+
+### Pseudo-elements
+
+A native window has no generated box for a pseudo-element, but a few of them
+name something ReCore already paints:
+
+- A region's `::before` or `::after` is a decoration on that region. A full
+  overlay's background becomes the region's ground; a box whose `height` or
+  `width` is at most 3 px becomes one of the window's lines; its border colour
+  and `box-shadow` are kept, and its own `opacity` fades what it paints.
+  `body::before` and `body::after` stay the background picture and texture
+  paths described above, not a region.
+- `::selection`'s `background` is the colour text is selected in, in the
+  timeline and every field.
+- `::placeholder`'s `color` is a field's hint text.
+- `::-webkit-scrollbar-thumb`'s `background` is the scrollbar's thumb, and
+  `::-webkit-scrollbar-thumb:hover` its colour under the pointer. Scrollbar
+  width, track and corner rules are kept in the file but not painted.
+
+Generated content, icon masks and a pseudo-element's text (`content: "..."`)
+are not painted: ReCore colours the box it would draw, not the glyph in it.
 
 ### What CSS cannot do here
 
 A Discord CSS theme is still written for Discord's web window. ReCore matches
 the selectors that name its regions, but it cannot reproduce arbitrary DOM
-structure, flexbox or grid layout, pseudo-elements, generated class hashes
-without a usable substring, or element-level CSS animations. Those rules stay
-in the file without being painted. A root/body animation of the ground is the
-exception: its colour and opacity keyframes become a quiet native wash, and a
-gradient background is painted at the background size. ReCord's scanlines,
-grain, vignette and corner frame are drawn natively over the window, including
-the rolling scan beam and flicker, which rest while the window is not focused.
-The note under **Appearance → Theme** says how many files were read and how
-many could not be.
+structure, flexbox or grid layout, generated class hashes without a usable
+substring, element-level keyframe animations, or filters such as `blur()`,
+`brightness()` and `backdrop-filter()`. `letter-spacing` is read into the
+theme's look, but iced's text widget has no tracking setting, so it is not
+painted; a root `font-size` is read the same way while every native widget
+keeps its own size. `text-transform` outside the three headings, masks and
+generated content, `:nth-child` and sibling structure, and `@media` queries
+other than dark and light are kept in the file without being painted. A
+root/body animation of the ground is the exception: its colour and opacity
+keyframes become a quiet native wash, and a gradient background is painted at
+the background size.
+ReCord's scanlines, grain, vignette and corner frame are drawn natively over
+the window, including the rolling scan beam and flicker, which rest while the
+window is not focused. The note under **Appearance → Theme** says how many
+files were read and how many could not be.
 
 ## Custom themes
 
