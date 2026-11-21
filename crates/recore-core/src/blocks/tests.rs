@@ -155,7 +155,9 @@ fn a_block_in_a_quote_knows_where_its_text_was() {
 }
 
 #[test]
-fn code_is_fenced_anywhere_and_drops_its_language() {
+fn code_is_fenced_anywhere_and_keeps_its_language() {
+    let blocks = split("see ```rust\nfn main() {}\n``` there").unwrap();
+    assert_eq!(blocks[1].language.as_deref(), Some("rust"));
     assert_eq!(
         shown("see ```rust\nfn main() {}\n``` there"),
         [

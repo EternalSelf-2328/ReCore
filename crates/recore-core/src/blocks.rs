@@ -25,6 +25,8 @@ pub enum Kind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Block {
     pub kind: Kind,
+    /// A fenced code block's language, as written after the first fence.
+    pub language: Option<String>,
     /// Inside a quote, behind its bar.
     pub quoted: bool,
     /// Where its text is in the message, without its markers: one run, or one
@@ -77,8 +79,13 @@ pub fn split(markdown: &str) -> Option<Vec<Block>> {
     let mut blocks = Vec::new();
     for part in scan(markdown, true) {
         match part {
-            Part::Block(kind, range) => blocks.push(Block {
+            Part::Block {
                 kind,
+                range,
+                language,
+            } => blocks.push(Block {
+                kind,
+                language: language.map(|language| markdown[language].to_owned()),
                 quoted: false,
                 runs: vec![range],
             }),
@@ -107,7 +114,7 @@ fn quote(markdown: &str, lines: &[Range<usize>], blocks: &mut Vec<Block>) {
     }
     let first = blocks.len();
     for part in scan(&text, false) {
-        if let Part::Block(kind, range) = part {
+        if let Part::Block { kind, range, .. } = part {
             let runs = lines
                 .iter()
                 .zip(&starts)
@@ -121,6 +128,7 @@ fn quote(markdown: &str, lines: &[Range<usize>], blocks: &mut Vec<Block>) {
                 .collect();
             blocks.push(Block {
                 kind,
+                language: None,
                 quoted: true,
                 runs,
             });
@@ -129,6 +137,7 @@ fn quote(markdown: &str, lines: &[Range<usize>], blocks: &mut Vec<Block>) {
     if blocks.len() == first {
         blocks.push(Block {
             kind: Kind::Text,
+            language: None,
             quoted: true,
             runs: Vec::new(),
         });
@@ -136,7 +145,12 @@ fn quote(markdown: &str, lines: &[Range<usize>], blocks: &mut Vec<Block>) {
 }
 
 enum Part {
-    Block(Kind, Range<usize>),
+    Block {
+        kind: Kind,
+        range: Range<usize>,
+        /// A code block's language.
+        language: Option<Range<usize>>,
+    },
     /// A quote's lines, each without its `> `; `>>> ` makes one of the rest.
     Quote(Vec<Range<usize>>),
 }
@@ -161,7 +175,11 @@ fn scan(text: &str, quotes: bool) -> Vec<Part> {
             } else {
                 end
             };
-            parts.push(Part::Block(Kind::Text, start..end));
+            parts.push(Part::Block {
+                kind: Kind::Text,
+                range: start..end,
+                language: None,
+            });
         }
     };
     while at < text.len() {
@@ -184,7 +202,11 @@ fn scan(text: &str, quotes: bool) -> Vec<Part> {
             }
             if let Some((kind, content, end)) = heading(text, at, fresh) {
                 flush(&mut parts, start, at);
-                parts.push(Part::Block(kind, content));
+                parts.push(Part::Block {
+                    kind,
+                    range: content,
+                    language: None,
+                });
                 (start, at, fresh) = (end, end, true);
                 continue;
             }
@@ -206,9 +228,13 @@ fn scan(text: &str, quotes: bool) -> Vec<Part> {
                 }
             }
             b'`' => {
-                if let Some((content, end)) = code(text, at) {
+                if let Some((content, end, language)) = code(text, at) {
                     flush(&mut parts, start, at);
-                    parts.push(Part::Block(Kind::Code, content));
+                    parts.push(Part::Block {
+                        kind: Kind::Code,
+                        range: content,
+                        language,
+                    });
                     // The line break after the fence ends the block.
                     at = if bytes.get(end) == Some(&b'\n') {
                         end + 1
@@ -316,8 +342,9 @@ fn quoted(text: &str, at: usize) -> Option<(Vec<Range<usize>>, usize)> {
 }
 
 /// Fenced code at `at`: its content's range, without the language or the
-/// line breaks at either end, and where the closing fence ends.
-fn code(text: &str, at: usize) -> Option<(Range<usize>, usize)> {
+/// line breaks at either end, where the closing fence ends, and the
+/// language's range when it has one.
+fn code(text: &str, at: usize) -> Option<(Range<usize>, usize, Option<Range<usize>>)> {
     let open = at + 3;
     if !text[at..].starts_with("```") {
         return None;
@@ -326,12 +353,13 @@ fn code(text: &str, at: usize) -> Option<(Range<usize>, usize)> {
         .bytes()
         .take_while(|&byte| byte.is_ascii_alphanumeric() || b"_+-.#".contains(&byte))
         .count();
-    let with_language = (language > 0 && text.as_bytes().get(open + language) == Some(&b'\n'))
-        .then_some(open + language + 1);
-    with_language
+    let named = language > 0 && text.as_bytes().get(open + language) == Some(&b'\n');
+    let with_language = named.then_some(open + language + 1);
+    let (content, end) = with_language
         .into_iter()
         .chain([open])
-        .find_map(|start| fenced(text, start))
+        .find_map(|start| fenced(text, start))?;
+    Some((content, end, named.then(|| open..open + language)))
 }
 
 /// Code from `start` to the next fence, at least a character of it, less

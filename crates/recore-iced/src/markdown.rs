@@ -245,6 +245,7 @@ pub fn parse(
     let split = blocks::split(markdown).unwrap_or_else(|| {
         vec![Block {
             kind: Kind::Text,
+            language: None,
             quoted: false,
             runs: std::iter::once(0..markdown.len()).collect(),
         }]
@@ -254,11 +255,7 @@ pub fn parse(
     for (index, block) in split.iter().enumerate() {
         let typed = block.text(markdown);
         let runs = if block.kind == Kind::Code {
-            vec![Run {
-                text: typed.into_owned(),
-                code: true,
-                ..Run::default()
-            }]
+            code_runs(&typed, block.language.as_deref())
         } else {
             // The mentions in this block, at their places in its text.
             let here: Vec<Mentioned> = mentions
@@ -304,6 +301,323 @@ pub fn parse(
         jumbo: only_emoji(&body.plain()),
         ..body
     }
+}
+
+/// The inks of a code block's tokens: Discord's dark-theme syntax colours,
+/// which stay legible on ReCore's panels.
+const CODE_KEYWORD: u32 = 0xc678dd;
+const CODE_STRING: u32 = 0x98c379;
+const CODE_COMMENT: u32 = 0x7f848e;
+const CODE_NUMBER: u32 = 0xd19a66;
+
+/// A code block's text in runs: its keywords, strings, numbers and comments
+/// in their colours, and the rest as one. A language ReCore doesn't know
+/// leaves the block as one run.
+fn code_runs(text: &str, language: Option<&str>) -> Vec<Run> {
+    let language = language
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let language = match language.as_str() {
+        "rs" => "rust",
+        "js" | "jsx" | "mjs" | "cjs" => "javascript",
+        "ts" | "tsx" => "typescript",
+        "py" => "python",
+        "sh" | "bash" | "zsh" | "console" => "shell",
+        "yml" => "yaml",
+        "c++" | "cc" | "hpp" => "cpp",
+        "c#" | "cs" => "csharp",
+        "htm" => "html",
+        other => other,
+    };
+    let keywords: &[&str] = match language {
+        "rust" => &[
+            "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum",
+            "extern", "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod",
+            "move", "mut", "pub", "ref", "return", "self", "Self", "static", "struct", "super",
+            "trait", "true", "type", "unsafe", "use", "where", "while",
+        ],
+        "javascript" | "typescript" => &[
+            "async",
+            "await",
+            "break",
+            "case",
+            "catch",
+            "class",
+            "const",
+            "continue",
+            "default",
+            "delete",
+            "do",
+            "else",
+            "export",
+            "extends",
+            "false",
+            "finally",
+            "for",
+            "from",
+            "function",
+            "if",
+            "import",
+            "in",
+            "instanceof",
+            "let",
+            "new",
+            "null",
+            "of",
+            "return",
+            "static",
+            "super",
+            "switch",
+            "this",
+            "throw",
+            "true",
+            "try",
+            "typeof",
+            "undefined",
+            "var",
+            "void",
+            "while",
+            "yield",
+        ],
+        "python" => &[
+            "and", "as", "assert", "async", "await", "break", "class", "continue", "def", "del",
+            "elif", "else", "except", "False", "finally", "for", "from", "global", "if", "import",
+            "in", "is", "lambda", "None", "nonlocal", "not", "or", "pass", "raise", "return",
+            "True", "try", "while", "with", "yield",
+        ],
+        "go" => &[
+            "break",
+            "case",
+            "chan",
+            "const",
+            "continue",
+            "default",
+            "defer",
+            "else",
+            "fallthrough",
+            "for",
+            "func",
+            "go",
+            "goto",
+            "if",
+            "import",
+            "interface",
+            "map",
+            "package",
+            "range",
+            "return",
+            "select",
+            "struct",
+            "switch",
+            "type",
+            "var",
+        ],
+        "c" | "cpp" | "csharp" | "java" => &[
+            "auto",
+            "bool",
+            "break",
+            "case",
+            "catch",
+            "char",
+            "class",
+            "const",
+            "continue",
+            "default",
+            "delete",
+            "do",
+            "double",
+            "else",
+            "enum",
+            "extern",
+            "false",
+            "final",
+            "float",
+            "for",
+            "if",
+            "implements",
+            "import",
+            "int",
+            "interface",
+            "long",
+            "namespace",
+            "new",
+            "null",
+            "nullptr",
+            "private",
+            "protected",
+            "public",
+            "return",
+            "short",
+            "signed",
+            "sizeof",
+            "static",
+            "struct",
+            "switch",
+            "template",
+            "this",
+            "throw",
+            "true",
+            "try",
+            "typedef",
+            "typename",
+            "union",
+            "unsigned",
+            "using",
+            "virtual",
+            "void",
+            "volatile",
+            "while",
+        ],
+        "shell" => &[
+            "case", "do", "done", "elif", "else", "esac", "fi", "for", "function", "if", "in",
+            "select", "then", "until", "while",
+        ],
+        "sql" => &[
+            "and", "as", "asc", "by", "create", "delete", "desc", "distinct", "drop", "from",
+            "group", "having", "in", "insert", "into", "is", "join", "left", "like", "limit",
+            "not", "null", "on", "or", "order", "outer", "select", "set", "table", "union",
+            "update", "values", "where",
+        ],
+        _ => &[],
+    };
+    if keywords.is_empty() {
+        return vec![Run {
+            text: text.to_owned(),
+            code: true,
+            ..Run::default()
+        }];
+    }
+    let line_comment = match language {
+        "python" | "shell" | "yaml" | "toml" => Some("#"),
+        "sql" | "lua" => Some("--"),
+        "rust" | "c" | "cpp" | "csharp" | "java" | "javascript" | "typescript" | "go" | "css" => {
+            Some("//")
+        }
+        _ => None,
+    };
+    let block_comment = matches!(
+        language,
+        "rust" | "c" | "cpp" | "csharp" | "java" | "javascript" | "typescript" | "go" | "css"
+    );
+    let mut runs = Vec::new();
+    let mut plain = 0;
+    let mut at = 0;
+    let flush = |runs: &mut Vec<Run>, from: usize, to: usize| {
+        if from < to {
+            runs.push(Run {
+                text: text[from..to].to_owned(),
+                code: true,
+                ..Run::default()
+            });
+        }
+    };
+    while at < text.len() {
+        let rest = &text[at..];
+        let comment_end = line_comment
+            .filter(|marker| rest.starts_with(marker))
+            .map(|_| rest.find('\n').map_or(text.len(), |end| at + end))
+            .or_else(|| {
+                (block_comment && rest.starts_with("/*"))
+                    .then(|| rest.find("*/").map_or(text.len(), |end| at + end + 2))
+            });
+        if let Some(end) = comment_end {
+            flush(&mut runs, plain, at);
+            runs.push(Run {
+                text: text[at..end].to_owned(),
+                code: true,
+                color: Some(CODE_COMMENT),
+                ..Run::default()
+            });
+            at = end;
+            plain = at;
+            continue;
+        }
+        let quote = rest
+            .chars()
+            .next()
+            .filter(|quote| matches!(*quote, '"' | '\'' | '`'));
+        if let Some(quote) = quote {
+            let mut end = at + quote.len_utf8();
+            while end < text.len() {
+                let next = text[end..].chars().next().unwrap_or_default();
+                end += next.len_utf8();
+                if next == '\\' {
+                    end += text[end..].chars().next().map_or(0, char::len_utf8);
+                } else if next == quote {
+                    break;
+                } else if next == '\n' && quote != '`' {
+                    break;
+                }
+            }
+            flush(&mut runs, plain, at);
+            runs.push(Run {
+                text: text[at..end.min(text.len())].to_owned(),
+                code: true,
+                color: Some(CODE_STRING),
+                ..Run::default()
+            });
+            at = end.min(text.len());
+            plain = at;
+            continue;
+        }
+        let first = rest.chars().next().unwrap_or_default();
+        if first.is_ascii_digit() {
+            let mut end = at;
+            while end < text.len() {
+                let next = text[end..].chars().next().unwrap_or_default();
+                if next.is_ascii_alphanumeric() || matches!(next, '.' | '_') {
+                    end += next.len_utf8();
+                } else {
+                    break;
+                }
+            }
+            flush(&mut runs, plain, at);
+            runs.push(Run {
+                text: text[at..end].to_owned(),
+                code: true,
+                color: Some(CODE_NUMBER),
+                ..Run::default()
+            });
+            at = end;
+            plain = at;
+            continue;
+        }
+        if first.is_ascii_alphabetic() || first == '_' {
+            let mut end = at;
+            while end < text.len() {
+                let next = text[end..].chars().next().unwrap_or_default();
+                if next.is_ascii_alphanumeric() || next == '_' {
+                    end += next.len_utf8();
+                } else {
+                    break;
+                }
+            }
+            let word = &text[at..end];
+            if keywords.contains(&word) {
+                flush(&mut runs, plain, at);
+                runs.push(Run {
+                    text: word.to_owned(),
+                    code: true,
+                    color: Some(CODE_KEYWORD),
+                    ..Run::default()
+                });
+                plain = end;
+            }
+            at = end;
+            continue;
+        }
+        at += first.len_utf8();
+    }
+    flush(&mut runs, plain, text.len());
+    if runs.is_empty() {
+        runs.push(Run {
+            text: text.to_owned(),
+            code: true,
+            ..Run::default()
+        });
+    }
+    runs
 }
 
 /// Each of `emoji` (custom emoji, by their `:name:`) in `body`'s text, out
@@ -1110,6 +1424,40 @@ mod tests {
             ]
         );
         assert_eq!(body.parts[2].plain(), "let x;");
+    }
+
+    #[test]
+    fn a_code_blocks_language_colours_its_tokens() {
+        let body = parse(
+            "```rust\nfn main() { let x = 1; } // note\n```",
+            &[],
+            0,
+            "m",
+            |_| false,
+        );
+        let code = &body.parts[0];
+        assert_eq!(code.plain(), "fn main() { let x = 1; } // note");
+        assert!(
+            code.runs
+                .iter()
+                .any(|run| run.color == Some(CODE_KEYWORD) && run.text == "fn"),
+            "the keyword"
+        );
+        assert!(
+            code.runs
+                .iter()
+                .any(|run| run.color == Some(CODE_NUMBER) && run.text == "1"),
+            "the number"
+        );
+        assert!(
+            code.runs
+                .iter()
+                .any(|run| run.color == Some(CODE_COMMENT) && run.text == "// note"),
+            "the comment"
+        );
+        // Without a language, the block stays as one plain run.
+        let plain = parse("```\nfn main\n```", &[], 0, "m", |_| false);
+        assert!(plain.parts[0].runs.iter().all(|run| run.color.is_none()));
     }
 
     #[test]

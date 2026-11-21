@@ -408,7 +408,10 @@ ReCore is back, rather than showing an error.
   by Discord's rules, read from its web client, before anything else changes
   the text. Each is then drawn apart, spaced as Discord's client spaces them,
   with its mentions, emoji and spoilers. Code shows as typed, in the system's
-  monospace font, without highlighting. Discord shows headings and lists only
+  monospace font, its keywords, strings, numbers and comments in Discord's
+  dark-theme syntax colours when the fence names a language ReCore knows
+  (Rust, JavaScript/TypeScript, Python, Go, C and its kin, Java, shell and
+  SQL); another language shows plain. Discord shows headings and lists only
   in messages from 22 March 2023; ReCore shows them in older ones too. Rules
   (`---`) and lines under a line (`===`), which Discord doesn't have, show as
   typed. Embeds' descriptions and field values, pinned messages and search
