@@ -41,23 +41,27 @@ impl App {
         // The rail and the sidebar on the rail's ground, the account's card
         // across the foot of both.
         let rail = self.theme.rail;
+        let sidebar = self.theme.sidebar;
         let navigation_gradient = self.theme.navigation_gradient;
         let mut foot = column![];
         if let Some(dock) = crate::call::dock::view(self.ctx()) {
             foot = foot.push(dock);
         }
+        // The server rail keeps its own ground; the channel list and the
+        // account panel keep the sidebar's, which is where a theme's
+        // navigation gradient belongs.
+        let rail = container(crate::rail::view(&self.rail, self.ctx()))
+            .width(crate::rail::WIDTH)
+            .height(Length::Fill)
+            .style(move |_| crate::style::fill(rail));
         let navigation = container(column![
-            row![
-                crate::rail::view(&self.rail, self.ctx()),
-                crate::sidebar::view(&self.sidebar, self.ctx())
-            ]
-            .height(Length::Fill),
+            row![rail, crate::sidebar::view(&self.sidebar, self.ctx())].height(Length::Fill),
             foot.push(crate::account::view(self.ctx())),
         ])
         .width(crate::conversation::navigation(&self.layout))
         .height(Length::Fill)
         .style(move |_| {
-            let mut ground = crate::style::fill(rail);
+            let mut ground = crate::style::fill(sidebar);
             if let Some(gradient) = navigation_gradient {
                 ground.background = Some(gradient.into());
             }
