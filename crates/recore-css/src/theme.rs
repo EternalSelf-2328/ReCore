@@ -21,7 +21,10 @@
 //! A remote picture is returned as [`Image::Url`] for the caller to fetch
 //! when it shows the theme.
 
-use crate::{base64, color, css};
+use crate::{
+    base64, color,
+    css::{self, Variables},
+};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
@@ -600,16 +603,22 @@ pub fn load_str_with_imports(
             .first_color(&["--rl-tint"], !dark)
             .unwrap_or(accent.ink())
             .hex();
-        vars.insert(&css::Declaration {
-            name: "--rl-signal-hot".into(),
-            value: format!("color-mix(in srgb, {hex} 80%, {tint})"),
-            important: true,
-        });
-        vars.insert(&css::Declaration {
-            name: "--rl-signal-soft".into(),
-            value: format!("color-mix(in srgb, {hex} 58%, {tint})"),
-            important: true,
-        });
+        for (name, value) in [
+            (
+                "--rl-signal-hot",
+                format!("color-mix(in srgb, {hex} 80%, {tint})"),
+            ),
+            (
+                "--rl-signal-soft",
+                format!("color-mix(in srgb, {hex} 58%, {tint})"),
+            ),
+        ] {
+            vars.insert(&css::Declaration {
+                name: name.into(),
+                value,
+                important: true,
+            });
+        }
     }
     for (name, value) in &options.overrides {
         vars.insert(&css::Declaration {
@@ -619,14 +628,27 @@ pub fn load_str_with_imports(
         });
     }
     if vars.contains("--rl-accent") && !vars.contains("--rl-signal") {
+        let value = vars
+            .get("--rl-accent")
+            .map(str::to_owned)
+            .unwrap_or_else(|| "var(--rl-accent)".into());
         vars.insert(&css::Declaration {
             name: "--rl-signal".into(),
-            value: "var(--rl-accent)".into(),
+            value,
             important: false,
         });
     }
-    let palette = palette(&vars, dark);
-    let native = crate::NativeStyle::compute(&sheet.rules, &vars, dark);
+    let semantic = crate::semantic::compute(&sheet, &vars, dark);
+    let (palette, native, page_gap) = match semantic {
+        Some(computed) => (computed.palette, computed.native, computed.gap),
+        // A theme the engine cannot settle still gets the lightweight
+        // reader's colours, never a blank window.
+        None => (
+            palette(&vars, dark),
+            crate::NativeStyle::compute(&sheet.rules, &vars, dark),
+            None,
+        ),
+    };
     let animations = animations(&sheet, &collected, dark, &vars);
     let direct_background = direct_background(&sheet, &vars, directory, dark);
     warnings.extend(sheet.warnings);
@@ -641,6 +663,7 @@ pub fn load_str_with_imports(
         &mut warnings,
     );
     look.radius = native.radius.or(look.radius);
+    look.panel_gap = look.panel_gap.or(page_gap);
     look.font_family = native.font_family.clone().or(look.font_family);
     look.font_size = native.font_size.or(look.font_size);
     look.letter_spacing = native.letter_spacing.or(look.letter_spacing);
@@ -996,14 +1019,25 @@ fn choose_dark(collected: &Collected, mode: Mode, warnings: &mut Vec<String>) ->
 
 /// Reads a colour in `names`, with the fallback chain `then` and finally
 /// `fallback`.
-fn pick(vars: &css::Vars, names: &[&str], light: bool, then: &[&str], fallback: Rgba) -> Rgba {
+fn pick<V: Variables + ?Sized>(
+    vars: &V,
+    names: &[&str],
+    light: bool,
+    then: &[&str],
+    fallback: Rgba,
+) -> Rgba {
     vars.first_color(names, light)
         .or_else(|| vars.first_color(then, light))
         .unwrap_or(fallback)
 }
 
 /// A translucent token laid over `ground`, as the browser paints it.
-fn over(vars: &css::Vars, names: &[&str], light: bool, ground: Rgba) -> Option<Rgba> {
+fn over<V: Variables + ?Sized>(
+    vars: &V,
+    names: &[&str],
+    light: bool,
+    ground: Rgba,
+) -> Option<Rgba> {
     vars.first_color(names, light)
         .map(|color| color.over(ground))
 }
@@ -1387,7 +1421,7 @@ fn percent_decode(text: &str) -> Vec<u8> {
 }
 
 /// Maps a theme's custom properties onto ReCore's colours.
-pub fn palette(vars: &css::Vars, dark: bool) -> Palette {
+pub fn palette<V: Variables + ?Sized>(vars: &V, dark: bool) -> Palette {
     let light = !dark;
     // The modern Discord tokens, then the ones before Discord's 2024 redesign.
     let ground = pick(
@@ -1772,7 +1806,7 @@ pub fn palette(vars: &css::Vars, dark: bool) -> Palette {
 }
 
 /// ReCord's `--rl-*` tokens, which name every part it paints.
-fn record_palette(vars: &css::Vars, dark: bool) -> Palette {
+fn record_palette<V: Variables + ?Sized>(vars: &V, dark: bool) -> Palette {
     let light = !dark;
     let color = |name: &str, fallback: Rgba| vars.first_color(&[name], light).unwrap_or(fallback);
     let ink = color(
@@ -3429,6 +3463,51 @@ html.theme-light:not([data-rl-mode="dark"]) {
         .unwrap();
         assert_eq!(theme.look.panel_opacity, Some(0.72));
         assert_eq!(theme.look.background_fit, BackgroundFit::Contain);
+    }
+
+    #[test]
+    fn a_palette_token_no_rule_names_still_reaches_the_palette() {
+        let theme = load_str(
+            ":root { --button-secondary-background: #123456; }",
+            None,
+            &Options::with_mode(Mode::Dark),
+        )
+        .unwrap();
+        assert_eq!(theme.palette.button_default, Rgba::rgb(0x12, 0x34, 0x56));
+    }
+
+    #[test]
+    fn a_flex_page_gap_reaches_the_panel_layout() {
+        let theme = load_str(
+            "#app-mount { display: flex; flex-direction: row; gap: 9px; }",
+            None,
+            &Options::with_mode(Mode::Dark),
+        )
+        .unwrap();
+        assert_eq!(theme.look.panel_gap, Some(9.0));
+    }
+
+    #[test]
+    fn a_heading_size_inherits_the_pages_font_size() {
+        let theme = load_str(
+            ":root { font-size: 20px; } \
+             [class*=\"sidebarList_\"] [class*=\"category_\"] { font-size: 1.5em; }",
+            None,
+            &Options::with_mode(Mode::Dark),
+        )
+        .unwrap();
+        assert_eq!(theme.native.category_size, Some(30.0));
+    }
+
+    #[test]
+    fn a_color_mix_background_reaches_the_native_region() {
+        let theme = load_str(
+            "[class*=\"sidebar_\"] { background: color-mix(in srgb, #112233 50%, #445566); }",
+            None,
+            &Options::with_mode(Mode::Dark),
+        )
+        .unwrap();
+        assert_eq!(theme.native.sidebar, Some(Rgba::rgb(0x2b, 0x3c, 0x4d)));
     }
 
     #[test]

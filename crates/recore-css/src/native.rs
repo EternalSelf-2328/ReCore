@@ -66,8 +66,8 @@ pub struct Shadow {
 
 /// The parts of a Discord window a theme can address. A node may match more
 /// than one selector fragment (for example `sidebar` and `sidebarList_`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Role {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) enum Role {
     Root,
     Rail,
     Sidebar,
@@ -96,15 +96,15 @@ enum Role {
 }
 
 /// One synthetic node in the native window.
-struct Node {
-    role: Role,
-    tags: &'static [&'static str],
-    id: Option<&'static str>,
-    classes: &'static [&'static str],
-    parent: Option<usize>,
+pub(crate) struct Node {
+    pub(crate) role: Role,
+    pub(crate) tags: &'static [&'static str],
+    pub(crate) id: Option<&'static str>,
+    pub(crate) classes: &'static [&'static str],
+    pub(crate) parent: Option<usize>,
     /// The `role` attribute Discord puts on this part, which a theme may
     /// name instead of a class (`[role="tooltip"]`).
-    aria_role: Option<&'static str>,
+    pub(crate) aria_role: Option<&'static str>,
 }
 
 const ROOT: usize = 0;
@@ -114,7 +114,7 @@ const MESSAGES: usize = 6;
 
 /// The tree ReCore shows, with the class names themes tend to mention. The
 /// class fragments end in `_` because Discord's generated class names do.
-const NODES: [Node; 25] = [
+pub(crate) const NODES: [Node; 25] = [
     Node {
         role: Role::Root,
         tags: &["html", "body"],
@@ -915,7 +915,7 @@ fn apply_pseudo(
     }
 }
 
-fn opacity_slot(style: &mut NativeStyle, role: Role) -> Option<&mut Option<f32>> {
+pub(crate) fn opacity_slot(style: &mut NativeStyle, role: Role) -> Option<&mut Option<f32>> {
     match role {
         Role::Root | Role::Chat | Role::Messages | Role::SearchResults => {
             Some(&mut style.chat_opacity)
@@ -943,7 +943,7 @@ fn opacity_slot(style: &mut NativeStyle, role: Role) -> Option<&mut Option<f32>>
     }
 }
 
-fn set_shadow(style: &mut NativeStyle, role: Role, shadow: Shadow) {
+pub(crate) fn set_shadow(style: &mut NativeStyle, role: Role, shadow: Shadow) {
     match role {
         Role::Menu | Role::Tooltip => style.raised_shadow = Some(shadow),
         Role::Card | Role::Profile | Role::ServerSettings => style.card_shadow = Some(shadow),
@@ -951,14 +951,14 @@ fn set_shadow(style: &mut NativeStyle, role: Role, shadow: Shadow) {
     }
 }
 
-fn fade(color: Rgba, opacity: Option<f32>) -> Rgba {
+pub(crate) fn fade(color: Rgba, opacity: Option<f32>) -> Rgba {
     match opacity {
         Some(opacity) => color.with_alpha((f32::from(color.a) * opacity.clamp(0.0, 1.0)) as u8),
         None => color,
     }
 }
 
-fn set_background(style: &mut NativeStyle, role: Role, hover: bool, color: Rgba) {
+pub(crate) fn set_background(style: &mut NativeStyle, role: Role, hover: bool, color: Rgba) {
     let slot = if hover {
         match role {
             Role::Message | Role::Messages => &mut style.row_hover,
@@ -993,7 +993,12 @@ fn set_background(style: &mut NativeStyle, role: Role, hover: bool, color: Rgba)
 
 /// Keeps a linear gradient for the region whose ground the window paints as
 /// one. Other regions and hover washes keep their solid colour.
-fn set_gradient(style: &mut NativeStyle, role: Role, hover: bool, gradient: crate::Gradient) {
+pub(crate) fn set_gradient(
+    style: &mut NativeStyle,
+    role: Role,
+    hover: bool,
+    gradient: crate::Gradient,
+) {
     if hover || !matches!(gradient.kind, crate::GradientKind::Linear(_)) {
         return;
     }
@@ -1009,7 +1014,7 @@ fn set_gradient(style: &mut NativeStyle, role: Role, hover: bool, gradient: crat
     }
 }
 
-fn clear_gradient(style: &mut NativeStyle, role: Role, hover: bool) {
+pub(crate) fn clear_gradient(style: &mut NativeStyle, role: Role, hover: bool) {
     if hover {
         return;
     }
@@ -1023,7 +1028,7 @@ fn clear_gradient(style: &mut NativeStyle, role: Role, hover: bool) {
     }
 }
 
-fn set_text(style: &mut NativeStyle, role: Role, color: Rgba) {
+pub(crate) fn set_text(style: &mut NativeStyle, role: Role, color: Rgba) {
     match role {
         Role::Sidebar => {
             style.secondary = Some(color);
@@ -1035,7 +1040,7 @@ fn set_text(style: &mut NativeStyle, role: Role, color: Rgba) {
     }
 }
 
-fn background_color(value: &str, light: bool) -> Option<Rgba> {
+pub(crate) fn background_color(value: &str, light: bool) -> Option<Rgba> {
     // A gradient is a real backdrop in the browser. The native window has
     // no gradient painter for every region, so it keeps the first opaque
     // stop as that region's colour rather than dropping the rule entirely.
@@ -1081,7 +1086,7 @@ fn background_color(value: &str, light: bool) -> Option<Rgba> {
     color_in(value, light)
 }
 
-fn color_in(value: &str, light: bool) -> Option<Rgba> {
+pub(crate) fn color_in(value: &str, light: bool) -> Option<Rgba> {
     if let Some(color) = parse_color(value, light) {
         return Some(color);
     }
@@ -1137,7 +1142,7 @@ fn fraction(value: &str) -> Option<f32> {
     value.parse::<f32>().ok().map(|value| value.clamp(0.0, 1.0))
 }
 
-fn text_transform(value: &str) -> Option<TextTransform> {
+pub(crate) fn text_transform(value: &str) -> Option<TextTransform> {
     match value.trim().to_ascii_lowercase().as_str() {
         "uppercase" => Some(TextTransform::Uppercase),
         "lowercase" => Some(TextTransform::Lowercase),
@@ -1149,7 +1154,7 @@ fn text_transform(value: &str) -> Option<TextTransform> {
 
 /// The first non-`inset` shadow in a `box-shadow` value, in the order CSS
 /// writes it: x, y, blur, spread, colour.
-fn shadow(value: &str, light: bool) -> Option<Shadow> {
+pub(crate) fn shadow(value: &str, light: bool) -> Option<Shadow> {
     for part in color::split_top(value, ',') {
         if part.to_ascii_lowercase().contains("inset") {
             continue;
@@ -1328,6 +1333,21 @@ fn split_pseudo(selector: &str) -> (&str, Pseudo) {
         index += 1;
     }
     (selector, Pseudo::None)
+}
+
+/// The role a selector names when it also asks for a pointer or focus
+/// state. The semantic pass creates hover/focus variants only for roles a
+/// theme actually names, instead of doubling every region.
+pub(crate) fn state_role(selector: &str, dark: bool) -> Option<Role> {
+    let (base, pseudo) = split_pseudo(selector.trim());
+    if !matches!(pseudo, Pseudo::None) {
+        return None;
+    }
+    let lower = base.to_ascii_lowercase();
+    if !(lower.contains(":hover") || lower.contains(":focus") || lower.contains(":active")) {
+        return None;
+    }
+    match_selector(selector, dark).map(|(role, _, _, _)| role)
 }
 
 fn match_selector(selector: &str, dark: bool) -> Option<(Role, bool, u32, Pseudo)> {

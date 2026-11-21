@@ -14,3 +14,9 @@ workspace = true
 doctest = false
 
 [dependencies]
+# The CSS engine: parsing, selectors, cascade, inheritance and custom
+# properties for a theme's synthetic regions. Its optional taffy/parley
+# features can be enabled when the window paints a CSS layout; the semantic
+# layer reads the L1 style algebra and leaves painting to iced. See
+# docs/themes.md.
+style-engine = { version = "1.0.0", default-features = false }

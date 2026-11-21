@@ -2,7 +2,11 @@
 //! BetterDiscord, Legcord and any other client that loads a `.theme.css`
 //! file of custom properties.
 //!
-//! The interpreter reads the theme's palette, accent, fonts, radius,
+//! The loader keeps the theme's files, fonts, pictures and Appearance
+//! metadata; `style-engine` settles the selectors, cascade, inheritance and
+//! custom properties against ReCore's synthetic regions, and `semantic`
+//! maps the computed values to the window. The interpreter reads the
+//! theme's palette, accent, fonts, radius,
 //! background picture and ReCord's CRT options into [`ThemeFile`], which the
 //! window turns into its own colours. It also matches the theme's selectors
 //! against ReCore's native regions (sidebar, chat, member list, composer,
@@ -34,6 +38,7 @@ pub mod color;
 pub mod css;
 mod native;
 mod options;
+mod semantic;
 mod theme;
 
 pub use color::Rgba;

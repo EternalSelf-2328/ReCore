@@ -118,10 +118,11 @@ The **Theme URL** field downloads a theme into ReCore's folder, and the tile
 turns up ready to choose. Each theme appears as a tile with the CSS badge. A
 theme carries:
 
-- The window's panel layout: a theme that names `--gap` or `--spacing` gets
-  that space between its panels, `--roundness` or `--radius-lg` rounds their
-  corners, and `--app-frame-background` colours the ground between them.
-  Ryoku and Midnight are read this way. A `body { background: transparent }`
+- The window's panel layout: a theme that names `--gap` or `--spacing`, or a
+  `gap` on the page's flex/grid container, gets that space between its
+  panels; `--roundness` or `--radius-lg` rounds their corners, and
+  `--app-frame-background` colours the ground between them. Ryoku and
+  Midnight are read this way. A `body { background: transparent }`
   means the panels show through, not that the chat has no ground.
 - The colours of Discord's tokens: `--background-primary`, `--background-secondary`,
   `--background-floating`, `--channeltextarea-background`, `--text-normal`,
@@ -251,11 +252,12 @@ same regions as `[class*="modal_"]`, `[class*="menu_"]` and
 
 ReCore understands class, id, tag and attribute selectors, attribute
 fragments such as `[class*="..."]`, descendant selectors, `:is()`, `:not()`,
-`:where()`, simple `:has()` descendant checks, the `.theme-dark`/`.theme-light`
-roots and `:hover`/`:focus` states. Specificity, `!important` and source order
-are applied, and `var()` values are resolved before they reach the window. A
-bare tag selector or `*` never styles a region on its own: it needs a class, an
-id or an attribute, so a theme's `div { ... }` reset cannot paint the rail.
+`:where()`, `:has()` relative selectors, the `.theme-dark`/`.theme-light`
+roots and `:hover`/`:focus` states. Inheritance, specificity, `!important` and
+source order are applied, and `var()` values are resolved before they reach
+the window. A bare tag selector or `*` never styles a region on its own: it
+needs a class, an id or an attribute, so a theme's `div { ... }` reset cannot
+paint the rail.
 Fully transparent backgrounds are left to the region's own colour instead of
 erasing it, and a radius on a button, a card or a hover state does not redefine
 the whole window's shape.
@@ -435,16 +437,31 @@ warnings and the metadata from the theme's `/** @name ... */` header.
 theme's remote files, and `scan_with_imports` does so while walking folders;
 `scan` and `load` are the same without remote access. `theme_folders` names
 the common clients' folders. `Options` chooses the dark or light set, forces
-an accent, or overrides a custom property. The crate has no dependencies, so its parser can be tested
-on its own.
+an accent, or overrides a custom property.
+
+The reader keeps its own tolerant loader for files, fonts, pictures and the
+comments Appearance turns into controls. The semantic pass in
+`crates/recore-css/src/semantic.rs` then hands the settled rules to
+[`style-engine`](https://crates.io/crates/style-engine): its CSS parser,
+selector matcher and cascade settle inheritance, custom properties, `:is()`,
+`:where()`, `:has()`, `@layer`, `color-mix()` and the rest against the
+synthetic regions. The computed values become the window's `Palette`,
+`NativeStyle`, selection, placeholder and scrollbar inks and the `::before` /
+`::after` decorations. Root variables are seeded from the reader's winning
+values because style-engine 1.0.0 does not carry `!important` on custom
+properties; colour functions it does not evaluate are reduced to sRGB first.
+This runs once per theme, not per frame. The window still paints with iced;
+style-engine's taffy/parley features will be enabled when the window paints a
+CSS layout, and are not on the theme-load path yet.
 
 `scan` reads every local file once, hashes it to skip copies, and parses up
 to four at once; the parsed themes are kept by path and content, so the
 second read a start makes for the window reuses them instead of parsing the
-folder again. Twenty 437 KB themes take about 0.5 s the first time and 15 ms
-from that cache here. A chosen theme with no changed options and no remote
-files is not read again; one naming remote imports, fonts or pictures is,
-to fetch them. `NativeStyle` filters the declarations to the properties a
+folder again. The semantic pass reads only the custom properties a rule or a
+palette role names, and only creates hover/focus variants for regions a theme
+styles under those states. A chosen theme with no changed options and no
+remote files is not read again; one naming remote imports, fonts or pictures
+is, to fetch them. `NativeStyle` filters the declarations to the properties a
 native region actually paints before resolving values or sorting the
 cascade, and `Vars::resolve` borrows a value that names no `var()`.
 
