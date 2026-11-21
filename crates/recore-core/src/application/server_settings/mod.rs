@@ -30,6 +30,7 @@ mod role_input;
 mod roles;
 mod safety;
 mod soundboard;
+mod webhooks;
 
 use audit_log::Known;
 pub use audit_log::{
@@ -59,6 +60,7 @@ pub use safety::{FILTER_ALL, HIGHEST_VERIFICATION, MfaRule, SafetyChoice, Safety
 pub use soundboard::{
     SOUND_FILE_LIMIT, SOUND_NAME_LIMIT, SoundDraft, SoundboardInput, SoundboardPage,
 };
+pub use webhooks::{WEBHOOK_NAME_LIMIT, WebhookDraft, WebhookInput, WebhooksPage};
 
 /// The settings of a Discord server, while they're open.
 #[derive(Clone, Debug)]
@@ -95,6 +97,7 @@ pub enum Page {
     AuditLog(Box<AuditLogPage>),
     Bans(Box<BansPage>),
     Soundboard(Box<SoundboardPage>),
+    Webhooks(Box<WebhooksPage>),
 }
 
 /// A switch of a settings page: one of Engagement's system messages, by
@@ -146,7 +149,8 @@ impl ServerSettings {
             | Page::Safety(_)
             | Page::AuditLog(_)
             | Page::Bans(_)
-            | Page::Soundboard(_) => None,
+            | Page::Soundboard(_)
+            | Page::Webhooks(_) => None,
         }
     }
 
@@ -162,6 +166,7 @@ impl ServerSettings {
                 | SettingsSection::AuditLog
                 | SettingsSection::Bans
                 | SettingsSection::Soundboard
+                | SettingsSection::Webhooks
         )
     }
 
@@ -179,7 +184,8 @@ impl ServerSettings {
             | Page::Safety(_)
             | Page::AuditLog(_)
             | Page::Bans(_)
-            | Page::Soundboard(_) => None,
+            | Page::Soundboard(_)
+            | Page::Webhooks(_) => None,
         }
     }
 
@@ -232,6 +238,9 @@ impl Application {
         }
         if self.may(server, Permission::ManageServer) {
             sections.push(SettingsSection::Invites);
+        }
+        if self.may(server, Permission::ManageWebhooks) {
+            sections.push(SettingsSection::Webhooks);
         }
         // Discord's Moderation.
         if self.may(server, Permission::ManageServer) {
@@ -549,8 +558,15 @@ impl Application {
                 };
                 self.soundboard_changed(server, done, result, sounds);
             }
-            ServerSettingsAction::Webhooks(_)
-            | ServerSettingsAction::Integrations(_)
+            ServerSettingsAction::Webhooks(done) => {
+                let (result, webhooks) = match result {
+                    Ok(ServerSettingsPage::Webhooks(webhooks)) => (Ok(()), Some(webhooks)),
+                    Ok(_) => (Ok(()), None),
+                    Err(error) => (Err(error), None),
+                };
+                self.webhooks_changed(server, done, result, webhooks);
+            }
+            ServerSettingsAction::Integrations(_)
             | ServerSettingsAction::AutoMod(_)
             | ServerSettingsAction::Privacy(_)
             | ServerSettingsAction::Discovery(_) => {
@@ -927,7 +943,8 @@ impl Application {
                 | Page::Safety(_)
                 | Page::AuditLog(_)
                 | Page::Bans(_)
-                | Page::Soundboard(_),
+                | Page::Soundboard(_)
+                | Page::Webhooks(_),
             )
             | None => {}
         }
@@ -1015,7 +1032,8 @@ impl Application {
                 | Page::Roles(_)
                 | Page::AuditLog(_)
                 | Page::Bans(_)
-                | Page::Soundboard(_),
+                | Page::Soundboard(_)
+                | Page::Webhooks(_),
             )
             | None => {}
         }
@@ -1100,6 +1118,9 @@ impl Page {
             }
             (SettingsSection::Soundboard, ServerSettingsPage::Soundboard { sounds, settings }) => {
                 Self::Soundboard(Box::new(SoundboardPage::new(sounds, settings)))
+            }
+            (SettingsSection::Webhooks, ServerSettingsPage::Webhooks(webhooks)) => {
+                Self::Webhooks(Box::new(WebhooksPage::new(webhooks)))
             }
             (SettingsSection::Roles, ServerSettingsPage::Roles(roles)) => {
                 Self::Roles(Box::new(RolesPage::new(roles)))

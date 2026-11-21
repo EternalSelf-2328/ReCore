@@ -7,7 +7,7 @@ use recore_discord::{
     mfa,
     server_settings::{
         Ban as DiscordBan, GuildSettings as DiscordSettings, ServerProfile as DiscordProfile,
-        Sound as DiscordSound,
+        Sound as DiscordSound, Webhook as DiscordWebhook,
     },
 };
 use serde_json::{Map, Value};
@@ -20,7 +20,7 @@ use super::{
 use crate::chat::{
     Ban, BansAction, GuildSettings, MfaMethod, PickedSound, RoleMember, ServerPicture,
     ServerProfile, ServerSettingsAction, ServerSettingsChange, ServerSettingsPage, ServerSound,
-    SettingsSection,
+    ServerWebhook, SettingsSection,
 };
 
 /// A server icon as Discord's client crops it, and its preview at the
@@ -189,8 +189,14 @@ pub(super) fn command(
                             })
                         })
                     }
-                    SettingsSection::Webhooks
-                    | SettingsSection::Integrations
+                    SettingsSection::Webhooks => {
+                        discord.guild_webhooks(&guild).await.map(|webhooks| {
+                            ServerSettingsPage::Webhooks(
+                                webhooks.into_iter().map(webhook).collect(),
+                            )
+                        })
+                    }
+                    SettingsSection::Integrations
                     | SettingsSection::AutoMod
                     | SettingsSection::Privacy
                     | SettingsSection::Discovery => {
@@ -375,6 +381,23 @@ async fn settings_action(
                 settings: guild_settings(settings?),
             })
         }
+        ServerSettingsAction::Webhooks(action) => {
+            use crate::chat::WebhookAction;
+            match action {
+                WebhookAction::Create { channel, name } => {
+                    discord
+                        .stepping_up(|| discord.create_webhook(&channel, &name))
+                        .await?;
+                }
+                WebhookAction::Delete(id) => {
+                    discord.stepping_up(|| discord.delete_webhook(&id)).await?;
+                }
+            }
+            let webhooks = discord.guild_webhooks(guild).await?;
+            Ok(ServerSettingsPage::Webhooks(
+                webhooks.into_iter().map(webhook).collect(),
+            ))
+        }
         _ => anyhow::bail!("ReCore can't change that yet"),
     }
 }
@@ -389,6 +412,21 @@ fn sound(sound: DiscordSound) -> ServerSound {
         available: sound.available,
         user_id: sound.user_id,
         uploader: sound.uploader,
+    }
+}
+
+/// A webhook as Webhooks shows it.
+fn webhook(webhook: DiscordWebhook) -> ServerWebhook {
+    ServerWebhook {
+        id: webhook.id,
+        name: webhook.name,
+        kind: webhook.kind,
+        channel_id: webhook.channel_id,
+        channel: String::new(),
+        token: webhook.token,
+        url: webhook.url,
+        creator: webhook.creator,
+        application: webhook.application,
     }
 }
 

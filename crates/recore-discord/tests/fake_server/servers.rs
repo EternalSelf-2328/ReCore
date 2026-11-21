@@ -1398,3 +1398,43 @@ async fn keeps_soundboard_sounds_as_discords_client_does() {
         ])
     );
 }
+
+/// Webhooks in Server Settings: listing "Server"'s webhooks and their
+/// URLs, creating one with Manage Webhooks, and deleting it; part of
+/// [`talks_to_the_fake_server`], whose session it shares.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "starts testing/fake_discord.ts with bun; run scripts/test-fake-discord"]
+async fn keeps_webhooks_as_discords_client_does() {
+    let fixture = Fixture::start("keeps_webhooks_as_discords_client_does").await;
+    let discord = &fixture.discord;
+    let server = fixture.server;
+    let guild = fixture.guild.as_str();
+    let hooks = discord.guild_webhooks(guild).await.unwrap();
+    assert_eq!(hooks.len(), 2);
+    assert_eq!(hooks[0].name, "Bob's bot");
+    assert_eq!(hooks[0].creator.as_deref(), Some("Bob"));
+    assert!(hooks[0].url.as_deref().unwrap().contains(&hooks[0].id));
+    assert_eq!(hooks[1].kind, 2);
+    assert!(hooks[1].url.is_none());
+
+    let created = discord
+        .create_webhook("1400000000000000102", "Deploys")
+        .await
+        .unwrap();
+    assert_eq!(created.name, "Deploys");
+    assert_eq!(created.channel_id.as_deref(), Some("1400000000000000102"));
+    assert!(created.token.is_some() && created.url.is_some());
+    assert_eq!(discord.guild_webhooks(guild).await.unwrap().len(), 3);
+
+    discord.delete_webhook(&created.id).await.unwrap();
+    assert_eq!(discord.guild_webhooks(guild).await.unwrap().len(), 2);
+    let changes: serde_json::Value =
+        serde_json::from_str(&control(server, "GET", "/_control/webhook-changes", "")).unwrap();
+    assert_eq!(
+        changes,
+        serde_json::json!([
+            {"action": "create", "name": "Deploys", "channel": "1400000000000000102"},
+            {"action": "delete", "id": created.id},
+        ])
+    );
+}

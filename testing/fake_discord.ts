@@ -2747,6 +2747,8 @@ function resetGuild() {
   expressions.pictures.clear();
   serverSounds.splice(0, serverSounds.length, ...SERVER_SOUNDS());
   soundboardChanges.length = 0;
+  serverWebhooks.splice(0, serverWebhooks.length, ...SERVER_WEBHOOKS());
+  webhookChanges.length = 0;
   revokedInvites.clear();
   Object.assign(mfa, { on: false, methods: ["totp"], code: "123456" });
   mfa.tickets.clear();
@@ -4088,6 +4090,24 @@ const SERVER_SOUNDS = (): SoundboardSound[] => [
   { sound_id: SOUND_APPLAUSE, name: "Applause", volume: 1, emoji_id: null, emoji_name: "👏", guild_id: GUILD, user_id: users.carol.id, available: true },
 ];
 const serverSounds: SoundboardSound[] = SERVER_SOUNDS();
+
+// --- Webhooks ----------------------------------------------------------------
+
+type ServerWebhook = {
+  id: string; type: number; guild_id: string | null; channel_id: string | null;
+  name: string; token?: string; url?: string; user_id: string | null; application_id: string | null;
+};
+const WEBHOOK_BOT = "1400000000000000600";
+const WEBHOOK_FOLLOWER = "1400000000000000601";
+/** "Server"'s webhooks: Bob's incoming one in #general, and a channel
+ *  follower, which has no URL. */
+const SERVER_WEBHOOKS = (): ServerWebhook[] => [
+  { id: WEBHOOK_BOT, type: 1, guild_id: GUILD, channel_id: "1400000000000000102", name: "Bob's bot", token: "webhook-token", url: `https://discord.com/api/webhooks/${WEBHOOK_BOT}/webhook-token`, user_id: users.bob.id, application_id: null },
+  { id: WEBHOOK_FOLLOWER, type: 2, guild_id: GUILD, channel_id: "1400000000000000103", name: "Announcements", user_id: users.bob.id, application_id: null },
+];
+const serverWebhooks = SERVER_WEBHOOKS();
+/** What Alice asked of "Server"'s webhooks, as she sent it. */
+const webhookChanges: unknown[] = [];
 /** What the CDN serves for a sound: Discord's as MP3, the server's as Ogg. */
 const soundFiles = {
   mp3: readFileSync(new URL("soundboard-tone.mp3", fixtures)),
@@ -6345,6 +6365,51 @@ async function api(req: Request, path: string, origin: string): Promise<Response
       return json(wireSticker(sticker, true), 201);
     }
     return json({ message: "405: Method Not Allowed", code: 0 }, 405);
+  }
+
+  // Webhooks in Server Settings. GET /guilds/{id}/webhooks lists "Server"'s
+  // webhooks, Bob's incoming one and a channel follower; POST
+  // /channels/{id}/webhooks adds an incoming one from `{name}`, and DELETE
+  // /webhooks/{id} removes one, both with Manage Webhooks, sending
+  // WEBHOOKS_UPDATE. GET /_control/webhook-changes lists what Alice asked.
+  if (method === "GET" && (m = path.match(/^\/guilds\/(\d+)\/webhooks$/))) {
+    if (m[1] !== GUILD) return notFound("Unknown Guild", 10004);
+    if (!aliceMay(29)) return json({ message: "Missing Permissions", code: 50013 }, 403);
+    return json(serverWebhooks.map((webhook) => ({
+      ...webhook,
+      user: webhook.user_id ? wireUser(userById.get(webhook.user_id)!) : null,
+    })));
+  }
+  if (method === "POST" && (m = path.match(/^\/channels\/(\d+)\/webhooks$/))) {
+    const channel = m[1]!;
+    if (!guildChannels().some((known) => known.id === channel)) return notFound("Unknown Channel", 10003);
+    if (!aliceMay(29)) return json({ message: "Missing Permissions", code: 50013 }, 403);
+    const body: any = await req.json().catch(() => ({}));
+    const name = body.name;
+    if (typeof name !== "string" || name.length < 1 || name.length > 80) {
+      return json({ message: "Invalid Form Body", code: 50035, errors: { name: { _errors: [{ code: "BASE_TYPE_BAD_LENGTH", message: "Must be between 1 and 80 in length." }] } } }, 400);
+    }
+    const id = snowflake(Date.now(), 3700 + (webhookChanges.length % 300));
+    const webhook: ServerWebhook = {
+      id, type: 1, guild_id: GUILD, channel_id: channel, name,
+      token: `token-${id}`, url: `https://discord.com/api/webhooks/${id}/token-${id}`,
+      user_id: ALICE, application_id: null,
+    };
+    serverWebhooks.push(webhook);
+    webhookChanges.push({ action: "create", name, channel });
+    logAudit(50, id, { changes: [{ key: "name", new_value: name }] });
+    dispatch("WEBHOOKS_UPDATE", { guild_id: GUILD, channel_id: channel });
+    return json({ ...webhook, user: wireUser(userById.get(ALICE)!) }, 201);
+  }
+  if (method === "DELETE" && (m = path.match(/^\/webhooks\/(\d+)$/))) {
+    if (!aliceMay(29)) return json({ message: "Missing Permissions", code: 50013 }, 403);
+    const found = serverWebhooks.find((webhook) => webhook.id === m[1]);
+    if (!found) return notFound("Unknown Webhook", 10015);
+    serverWebhooks.splice(serverWebhooks.indexOf(found), 1);
+    webhookChanges.push({ action: "delete", id: found.id });
+    logAudit(51, found.id);
+    dispatch("WEBHOOKS_UPDATE", { guild_id: GUILD, channel_id: found.channel_id });
+    return new Response(null, { status: 204 });
   }
 
   // Soundboard in Server Settings. GET /guilds/{id}/soundboard-sounds lists
@@ -9593,6 +9658,7 @@ const server = Bun.serve<SocketData>({
     }
     if (path === "/_control/soundboard-sends") return Response.json(soundboardSends);
     if (path === "/_control/soundboard-changes") return Response.json(soundboardChanges);
+    if (path === "/_control/webhook-changes") return Response.json(webhookChanges);
     if (path === "/_control/custom-call-sounds") return Response.json(customCallSounds);
     if (req.method === "POST" && path === "/_control/soundboard-play") {
       const who = url.searchParams.get("user") ?? "bob";

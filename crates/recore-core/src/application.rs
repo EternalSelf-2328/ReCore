@@ -107,8 +107,9 @@ pub use server_settings::{
     RoleLock, RoleRules, RoleTab, RolesPage, SETUP_TIPS, SOUND_FILE_LIMIT, SOUND_NAME_LIMIT,
     STICKER_DESCRIPTION_LIMIT, STICKER_NAME_LIMIT, SafetyChoice, SafetyPage, SecurityDraft,
     ServerSettings, SettingsChoice, SettingsText, SettingsToggle, SoundDraft, SoundboardInput,
-    SoundboardPage, StickerCard, StickerDraft, StickerInput, StickersPage, TransferAsk, WELCOME,
-    WELCOME_STICKER, emoji_name,
+    SoundboardPage, StickerCard, StickerDraft, StickerInput, StickersPage, TransferAsk,
+    WEBHOOK_NAME_LIMIT, WELCOME, WELCOME_STICKER, WebhookDraft, WebhookInput, WebhooksPage,
+    emoji_name,
 };
 pub use slash::{CommandDraft, CommandRow, OptionDraft};
 pub use stickers::{FREQUENT_STICKERS, ServerStickers, StickerPicker, StickerPicture, StickerUse};
@@ -2399,6 +2400,8 @@ pub enum Action {
     AuditLog(AuditInput),
     /// Something done on Soundboard in a server's settings.
     Soundboard(SoundboardInput),
+    /// Something done on Webhooks in a server's settings.
+    Webhooks(WebhookInput),
     /// Something done on Soundboard or another page of a server's settings
     /// that acts at once.
     ServerSettingsAction(chat::ServerSettingsAction),
@@ -2914,7 +2917,8 @@ fn pictures_on_screen<'a>(
                     | server_settings::Page::Safety(_)
                     | server_settings::Page::AuditLog(_)
                     | server_settings::Page::Bans(_)
-                    | server_settings::Page::Soundboard(_),
+                    | server_settings::Page::Soundboard(_)
+                    | server_settings::Page::Webhooks(_),
                 )
                 | None => (None, None),
             };
@@ -4162,6 +4166,7 @@ impl Application {
             Action::Bans(input) => self.ban_input(input),
             Action::AuditLog(input) => self.audit_log_input(input),
             Action::Soundboard(input) => self.soundboard_input(input),
+            Action::Webhooks(input) => self.webhook_input(input),
             Action::ServerSettingsAction(action) => self.settings_action_input(action),
             Action::PickSoundFile(path) => {
                 vec![Effect::Backend(Command::Discord(

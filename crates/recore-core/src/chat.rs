@@ -645,6 +645,8 @@ pub enum Permission {
     CreateEvents,
     /// Set a voice channel's status.
     SetVoiceChannelStatus,
+    /// List a server's webhooks, add one and delete one.
+    ManageWebhooks,
 }
 
 /// Which messages notify, in a Discord server or channel.

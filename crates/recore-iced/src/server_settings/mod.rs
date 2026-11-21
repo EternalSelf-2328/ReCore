@@ -19,6 +19,7 @@ pub(crate) mod people;
 mod profile;
 pub(crate) mod roles;
 mod soundboard;
+mod webhooks;
 
 use std::path::PathBuf;
 
@@ -30,7 +31,7 @@ use recore_core::{
     application::{
         Action, AppState, AuditInput, BanInput, EmojiInput, InviteInput, MemberInput,
         OwnershipInput, RoleInput, ServerSettings, SettingsChoice, SettingsPage, SettingsText,
-        SettingsToggle, SoundboardInput, StickerInput,
+        SettingsToggle, SoundboardInput, StickerInput, WebhookInput,
     },
     chat::{ServerPicture, SettingsSection},
 };
@@ -61,6 +62,7 @@ pub enum Drop {
     InviteAge,
     InviteUses,
     PauseHours,
+    WebhookChannel,
 }
 
 /// The settings' own state while they're open.
@@ -117,6 +119,9 @@ pub enum Event {
     /// A sound file's chooser, then what was chosen.
     PickSound,
     SoundFile(PathBuf),
+    Webhooks(WebhookInput),
+    /// Copy a webhook's URL.
+    CopyWebhook(String),
     Ownership(OwnershipInput),
 }
 
@@ -152,6 +157,7 @@ impl Screen {
             .or(match &core.page {
                 Some(SettingsPage::Emoji(page)) => expressions::dialog_field(page),
                 Some(SettingsPage::Soundboard(page)) => soundboard::dialog_field(page),
+                Some(SettingsPage::Webhooks(page)) => webhooks::dialog_field(page),
                 _ => None,
             });
         let mut tasks = vec![];
@@ -272,6 +278,11 @@ impl Screen {
             Event::Soundboard(input) => Action::Soundboard(input),
             Event::PickSound => return pick_sound(),
             Event::SoundFile(path) => Action::PickSoundFile(path),
+            Event::Webhooks(input) => {
+                self.open = None;
+                Action::Webhooks(input)
+            }
+            Event::CopyWebhook(url) => return iced::clipboard::write(url),
             Event::Ownership(input) => Action::Ownership(input),
         };
         cx.dispatch(action);
@@ -346,6 +357,9 @@ fn dialog_cancel(core: Option<&ServerSettings>) -> Option<Event> {
         SettingsPage::Soundboard(page) if page.draft.is_some() => {
             Some(Event::Soundboard(SoundboardInput::Cancel))
         }
+        SettingsPage::Webhooks(page) if page.draft.is_some() => {
+            Some(Event::Webhooks(WebhookInput::Cancel))
+        }
         _ => None,
     }
 }
@@ -389,6 +403,7 @@ impl<'a> View<'a> {
                 SettingsPage::Emoji(page) => (self.emoji_page(core, page, screen), true),
                 SettingsPage::Stickers(page) => (self.stickers_page(core, page), false),
                 SettingsPage::Soundboard(page) => (self.soundboard_page(core, page, screen), false),
+                SettingsPage::Webhooks(page) => (self.webhooks_page(core, page, screen), false),
             };
             fill = fills;
             page = page.push(view);
@@ -444,6 +459,7 @@ impl<'a> View<'a> {
             Some(SettingsPage::Soundboard(page)) => {
                 dialogs.extend(self.soundboard_dialog(page, screen))
             }
+            Some(SettingsPage::Webhooks(page)) => dialogs.extend(self.webhook_dialog(page, screen)),
             _ => {}
         }
         if let Some(ownership) = &core.ownership {
@@ -476,6 +492,7 @@ impl<'a> View<'a> {
                 SettingsSection::Members | SettingsSection::Roles | SettingsSection::Invites => {
                     "PEOPLE"
                 }
+                SettingsSection::Webhooks => "APPS",
                 SettingsSection::Safety | SettingsSection::AuditLog | SettingsSection::Bans => {
                     "MODERATION"
                 }
