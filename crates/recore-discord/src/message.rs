@@ -560,9 +560,11 @@ pub struct Reaction {
     pub emoji: String,
     pub count: usize,
     /// How many of `count` are super reactions.
+    #[serde(default)]
     pub burst: usize,
     pub me: bool,
     /// Whether this account's is a super reaction.
+    #[serde(default)]
     pub me_burst: bool,
 }
 
@@ -2987,6 +2989,17 @@ mod tests {
             .find(|one| one.key == "🎉")
             .unwrap();
         assert_eq!((party.count, party.burst, party.me_burst), (1, 1, false));
+    }
+
+    #[test]
+    fn reads_a_reaction_saved_before_super_reactions() {
+        // A cached message from before `burst` and `me_burst` keeps loading.
+        let saved = json!({
+            "key": "🔥", "emoji": "🔥", "count": 2, "me": false
+        });
+        let reaction: Reaction = serde_json::from_value(saved).unwrap();
+        assert_eq!((reaction.count, reaction.burst), (2, 0));
+        assert!(!reaction.me && !reaction.me_burst);
     }
 
     #[test]
