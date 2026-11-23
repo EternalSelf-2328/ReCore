@@ -115,7 +115,14 @@ subfolders, leaves hidden folders and dependency trees alone, and reads the
 same theme once when it is copied into several client folders. While
 Settings is open, a theme saved by an editor outside ReCore reloads itself.
 The **Theme URL** field downloads a theme into ReCore's folder, and the tile
-turns up ready to choose. Each theme appears as a tile with the CSS badge. A
+turns up ready to choose. **New CSS theme** opens a starter file in
+ReCore's own editor, and the pencil on any CSS tile opens that theme's file
+whole: its colours, imports, fonts, background pictures, gradients, shapes
+and textures are editable as CSS, and **Save CSS** writes it back and shows
+it at once. Escape or **Back to themes** leaves the editor without writing.
+The editor's **Choose background...** adds `--rl-background-image` with a
+dim and panel opacity, and its texture buttons add ReCord's scanlines,
+grain or vignette. Each theme appears as a tile with the CSS badge. A
 theme carries:
 
 - The window's panel layout: a theme that names `--gap` or `--spacing`, or a
@@ -318,10 +325,14 @@ are not painted: ReCore colours the box it would draw, not the glyph in it.
 
 A Discord CSS theme is still written for Discord's web window. ReCore matches
 the selectors that name its regions and can use a page-level flex or grid to
-name the panel widths, but it cannot reproduce arbitrary DOM structure, the
-flex or grid layout inside a region, generated class hashes without a usable
-substring, element-level keyframe animations, or filters such as `blur()`,
-`brightness()` and `backdrop-filter()`. `letter-spacing` is read into the
+name the panel widths, but it cannot reproduce arbitrary DOM structure or the
+flex or grid layout inside a region, and generated class hashes without a
+usable substring have no node to reach. A page's display list is drawn whole
+by style-engine's tiny-skia sink, so its background images, linear, radial
+and conic gradients, shadows, filters, clips, transforms, opacity and blend
+modes all reach the window; the native region widgets above it take their
+ground, line, ink and linear gradient directly and do not take element-level
+filters. `letter-spacing` is read into the
 theme's look, but iced's text widget has no tracking setting, so it is not
 painted; a root `font-size` is read the same way while every native widget
 keeps its own size. `text-transform` outside the three headings, masks and
@@ -337,15 +348,18 @@ files were read and how many could not be.
 
 ## Custom themes
 
-New theme opens an editor on a copy of the theme shown; START FROM swaps it
-for a copy of any other. The editor lists every colour by its name
+New theme opens a palette editor on a copy of the theme shown; START FROM
+swaps it for a copy of any other. The editor lists every colour by its name
 (`Theme::NAMES`, with `-` for `_`), with a swatch and its hex, which takes
 `#rgb`, `#rrggbb` or `#rrggbbaa` and marks anything else. Each change shows at
 once, so the whole window is the preview. Save keeps the theme and chooses
-it; Cancel, leaving Appearance or closing settings shows the theme from
-before. A saved theme's card has a pencil that opens it again to rename,
-change or delete it; deleting the chosen one shows ReCore. Closing the window
-to the [tray](tray.md) closes Settings, so it drops the unsaved edit too.
+it; Cancel, Escape, leaving Appearance or closing settings shows the theme
+from before. A saved theme's card has a pencil that opens it again to rename,
+change or delete it; deleting the chosen one shows ReCore. A CSS tile's
+pencil opens the full source editor above, which carries pictures and
+textures no palette-only theme has. Escape leaves either editor before it
+closes Settings. Closing the window to the [tray](tray.md) closes Settings,
+so it drops the unsaved edit too.
 
 `layout.json` keeps them in `custom_themes`, in the order Appearance shows
 them after the built-in ones:

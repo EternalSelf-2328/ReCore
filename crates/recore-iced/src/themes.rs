@@ -1765,6 +1765,25 @@ mod tests {
     }
 
     #[test]
+    fn a_chosen_css_page_is_painted_with_its_operations() {
+        let folder = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(folder.path().join("themes")).unwrap();
+        std::fs::write(
+            folder.path().join("themes/paint.theme.css"),
+            r#"/** @name Paint */
+            :root { --background-primary: #101010; }
+            html { border: 12px solid #40a0c0; }"#,
+        )
+        .unwrap();
+        let layout = Layout {
+            theme: Some("css:paint".into()),
+            ..Layout::default()
+        };
+        let themes = Themes::read(folder.path(), &layout);
+        assert!(themes.paint.is_some(), "the page's paint image is made");
+    }
+
+    #[test]
     fn a_css_themes_gradients_reach_the_rail_and_chat() {
         let folder = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(folder.path().join("themes")).unwrap();

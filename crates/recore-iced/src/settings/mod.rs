@@ -6,8 +6,8 @@
 //!
 //! It's a screen on the contract `docs/client/structure.md` describes: its
 //! state ([`Settings`]) lives in the app's slot only while it's open, and
-//! closing it lets go of the theme editor, the camera being tried, the
-//! microphone's gate meter and whatever the pages made. Its updates work
+//! closing it lets go of the palette and CSS theme editors, the camera being
+//! tried, the microphone's gate meter and whatever the pages made. Its updates work
 //! through a [`Cx`]: what the pages change is kept at once in
 //! `layout.json` and handed to the core; what others show of it is told
 //! with [`Request::Changed`]. Its view reads a [`Ctx`]. The window's theme
@@ -46,9 +46,9 @@ use crate::{
     theme::Theme,
 };
 
-use appearance::Editor;
+use appearance::{CssEditor, Editor};
 #[cfg(test)]
-pub use appearance::Event as ThemeEvent;
+pub use appearance::{Event as ThemeEvent, Texture as ThemeTexture};
 
 /// What a theme editor's change sends.
 #[cfg(test)]
@@ -183,9 +183,11 @@ pub struct Settings {
     pub open: Option<Drop>,
     /// The version was copied a moment ago, which the stamp and About say.
     pub copied: bool,
-    /// Appearance's theme editor while it's open, and the theme as edited,
+    /// Appearance's palette editor while it's open, and the theme as edited,
     /// which the window shows meanwhile.
     pub editor: Option<Editor>,
+    /// Appearance's CSS source editor while it's open.
+    pub css_editor: Option<CssEditor>,
     /// ReCore's accent as it is being typed, before it's a colour.
     pub accent: Option<String>,
     /// The colour picker under a row, by its target (`accent`, `css:NAME`
@@ -303,6 +305,7 @@ impl Settings {
         }
         if before == Some(Section::Appearance) && section != Section::Appearance {
             self.cancel_theme(cx);
+            self.cancel_css_theme(cx);
         }
         if before == Some(Section::Voice) && section != Section::Voice {
             self.end_mic_test(cx);
@@ -358,13 +361,21 @@ impl Settings {
         Task::none()
     }
 
-    /// Escape closes an open dropdown, stops recording a key, then closes
-    /// Settings.
+    /// Escape closes an open dropdown, stops recording a key, leaves a theme
+    /// editor, then closes Settings.
     pub fn escape(&mut self, cx: &mut Cx<'_>) {
         if self.open.take().is_some() {
             return;
         }
         if self.record.take().is_some() {
+            return;
+        }
+        if self.editor.is_some() {
+            self.cancel_theme(cx);
+            return;
+        }
+        if self.css_editor.is_some() {
+            self.cancel_css_theme(cx);
             return;
         }
         cx.request(Request::Close(Screen::Settings));

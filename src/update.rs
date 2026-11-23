@@ -565,11 +565,12 @@ mod tests {
 
     #[test]
     fn the_bundled_changelog_reads_the_running_versions_section() {
-        let notes = changelog("0.5.5");
+        let notes = changelog("0.5.6");
         assert!(notes.contains("style-engine"));
-        assert!(notes.contains("Discovery"));
-        assert!(!notes.contains("0.5.4"));
-        assert_eq!(changelog("0.5.5-nightly.20261121.1"), notes);
+        assert!(notes.contains("CSS theme"));
+        assert!(notes.contains("speaking ring"));
+        assert!(!notes.contains("0.5.5"));
+        assert_eq!(changelog("0.5.6-nightly.20261123.1"), notes);
         assert_eq!(changelog("99.0.0"), "");
     }
 

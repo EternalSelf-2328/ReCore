@@ -14,7 +14,10 @@ The call's views and what they do are in `call/`.
   again. The tiles scroll when there are more than fit. Each tile is a
   `tile::Tile`: a camera, a stream or the avatar (a camera shows the
   avatar until its first frame, and keeps its last if frames stop), a green ring while the
-  person speaks, their name and marks, LIVE and how many watch. A stream
+  person speaks, their name and marks, LIVE and how many watch. This
+  account's own ring follows the processed microphone's voice and goes 220 ms
+  after it stops, rather than staying lit while push to talk holds a silent
+  key. A stream
   not watched offers Watch stream; a watched one shows large with Stop
   watching and the full-screen button under the pointer, and a double click
   goes full screen too, the stage over the whole window and the window

@@ -513,6 +513,18 @@ fn the_account_cards_avatar_rings_while_its_microphone_carries_voice() {
         (green[1] as f32 / 255.0 - live.g).abs() < 0.1,
         "in the live colour: {green:?}"
     );
+    // Silence takes the ring away again; a muted microphone never shows it.
+    change(&mut app, |state| {
+        state.voice.participants[0].speaking = false;
+    });
+    let quiet_again = super::drawn(&mut account_card(&app));
+    assert_eq!(ring(&quiet_again.2), ring(&quiet.2), "the ring goes");
+    change(&mut app, |state| {
+        state.voice.participants[0].speaking = true;
+        state.voice.participants[0].muted = true;
+    });
+    let muted = super::drawn(&mut account_card(&app));
+    assert_eq!(ring(&muted.2), ring(&quiet.2), "a mute hides it");
 }
 
 #[test]

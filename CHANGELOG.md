@@ -4,6 +4,38 @@ ReCore's current release is shown in Settings > About. The release workflow
 uses the same section for the release page, and publishes this file with the
 release.
 
+## 0.5.6 - 2026-11-23
+
+### Themes
+
+- CSS pages are painted with `style-engine`'s complete tiny-skia sink, so
+  radial and conic gradients, shadows, borders, clips, transforms, opacity,
+  filters and blend modes reach the window instead of being discarded.
+- Appearance can create a CSS theme from a complete starter file and edit any
+  CSS theme's source. Background pictures and ReCord's scanlines, grain and
+  vignette can be added from the editor, and **Save CSS** shows the result at
+  once.
+- Escape and **Back to themes** leave the theme editor before they close
+  Settings, so entering and leaving the menu no longer loses the page under
+  the editor.
+- Reading a CSS theme's source keeps its comments, imports, fonts and effects;
+  a file the reader rejects stays in the editor with its error instead of being
+  written.
+
+### Calls
+
+- This account's speaking ring follows the processed microphone's voice rather
+  than the transmit gate: it lights when speech is heard, stays through short
+  pauses and turns off 220 ms after the voice stops. Push to talk no longer
+  keeps it lit during a silent key press, and muting hides it.
+
+### Fixes
+
+- The page paint image now covers every operation the CSS engine produces,
+  including groups and clips that used to disappear.
+- Theme errors and unreadable files are reported without closing the editor or
+  the settings page.
+
 ## 0.5.5 - 2026-11-21
 
 ### Themes

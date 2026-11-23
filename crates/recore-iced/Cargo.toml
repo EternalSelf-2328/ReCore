@@ -24,6 +24,10 @@ anyhow.workspace = true
 recore-iced-kit = { path = "../recore-iced-kit" }
 # Reads the CSS themes Vencord, Vesktop and their kin load.
 recore-css = { path = "../recore-css" }
+# Draws a CSS theme's whole display list, not only the operations the window
+# once knew: images, radial and conic gradients, clips, transforms, opacity,
+# filters and blend modes.
+style-engine-tiny = "1.0.0"
 # Decodes the background pictures a CSS theme names.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 # Discord's names, activities and stream worker, which the window shows.

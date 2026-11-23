@@ -1,10 +1,15 @@
 //! Appearance: the themes as small windows drawn in their own colours (a
-//! click shows one at once and keeps it), New theme and each custom theme's
-//! pencil opening the editor, whose changes show at once (Save keeps them
+//! click shows one at once and keeps it), New theme and each palette theme's
+//! pencil opening that editor, whose changes show at once (Save keeps them
 //! among the person's own themes, Cancel puts the theme from before back),
-//! and the profile switches. See docs/themes.md.
+//! New CSS theme and each CSS tile's pencil opening the whole `.theme.css`
+//! file, and the profile switches. See docs/themes.md.
 
-use std::{collections::BTreeSet, fmt::Write as _};
+use std::{
+    collections::BTreeSet,
+    fmt::Write as _,
+    path::{Path, PathBuf},
+};
 
 use iced::{
     Alignment, Border, Color, Element, Length,
@@ -21,7 +26,8 @@ use super::{Drop, Event as SettingsEvent, Page, Settings};
 use crate::{
     app::Message,
     controls::{Kind, action, lights, placed, slider},
-    ctx::{Cx, Pref as Shown, Request},
+    ctx::{Cx, Focus, Pref as Shown, Request},
+    field,
     fonts::{BOLD, MEDIUM},
     form::{self, switch},
     pictures::Icon,
@@ -36,8 +42,12 @@ const TILE_GAP: f32 = 12.0;
 /// The editor's colours: two columns from this width, each row this tall.
 const TWO_COLUMNS: f32 = 520.0;
 const COLOUR_GAP: f32 = 24.0;
-/// The name field.
+/// The name field, and the CSS source's field.
 const NAME: &str = "theme-name";
+const CSS_NAME: &str = "css-theme-name";
+const CSS_SOURCE: &str = "css-theme-source";
+/// The lines of a CSS theme's source shown at once.
+const CSS_LINES: u16 = 20;
 
 /// The theme editor while it's open: the theme as edited, each colour's
 /// text and whether it's wrong, its name, and what it started from.
@@ -113,11 +123,74 @@ impl Editor {
     }
 }
 
+/// A CSS theme's source while it's edited. The whole file is kept, so the
+/// person can change colours, fonts, background pictures, gradients and
+/// textures exactly as the original CSS does.
+pub struct CssEditor {
+    /// The theme edited, by id; none for a new file.
+    pub editing: Option<String>,
+    pub name: String,
+    pub draft: field::Draft,
+    /// The file edited; none for a new theme, which is named as saved.
+    pub path: Option<PathBuf>,
+    pub error: Option<String>,
+}
+
+impl CssEditor {
+    fn new(editing: Option<String>, name: String, path: Option<PathBuf>, source: &str) -> Self {
+        let draft = field::Draft::default();
+        draft.replace(source, source.len());
+        Self {
+            editing,
+            name,
+            draft,
+            path,
+            error: None,
+        }
+    }
+
+    fn source(&self) -> String {
+        self.draft.text()
+    }
+
+    /// Adds a declaration block at the end, where it wins over the theme's
+    /// own values, and keeps the caret after it.
+    fn append(&mut self, css: &str) {
+        let mut source = self.source();
+        if !source.ends_with('\n') {
+            source.push('\n');
+        }
+        source.push('\n');
+        source.push_str(css.trim());
+        source.push('\n');
+        self.draft.replace(&source, source.len());
+        self.error = None;
+    }
+}
+
+/// A texture the CSS editor can add to the file: ReCord's own surfaces, which
+/// any CSS theme can name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Texture {
+    Scanlines,
+    Grain,
+    Vignette,
+}
+
 #[derive(Clone, Debug)]
 pub enum Event {
     Choose(String),
     New,
+    NewCss,
     Edit(String),
+    EditCss(String),
+    CssName(String),
+    CssSource(field::Event),
+    CssSourceText(String),
+    CssBackground,
+    CssTexture(Texture),
+    SaveCss,
+    CancelCss,
     Start(usize),
     Colour(usize, String),
     Dark(bool),
@@ -214,6 +287,31 @@ impl Settings {
                 choose(cx, &id);
             }
             Event::New => self.new_theme(cx),
+            Event::NewCss => self.new_css_theme(cx),
+            Event::EditCss(id) => self.edit_css_theme(cx, &id),
+            Event::CssName(name) => {
+                if let Some(editor) = self.css_editor.as_mut() {
+                    editor.name = name;
+                }
+            }
+            Event::CssSource(event) => {
+                if let Some(editor) = self.css_editor.as_mut() {
+                    editor.error = None;
+                }
+                if matches!(event, field::Event::Escape) {
+                    self.cancel_css_theme(cx);
+                }
+            }
+            Event::CssSourceText(text) => {
+                if let Some(editor) = self.css_editor.as_mut() {
+                    editor.error = None;
+                    editor.draft.replace(&text, text.len());
+                }
+            }
+            Event::CssBackground => self.css_background(),
+            Event::CssTexture(texture) => self.css_texture(texture),
+            Event::SaveCss => self.save_css_theme(cx),
+            Event::CancelCss => self.cancel_css_theme(cx),
             Event::Edit(id) => {
                 if let Some(custom) = cx.themes.custom.iter().find(|custom| custom.id == id) {
                     let editor = Editor::new(
@@ -683,6 +781,142 @@ impl Settings {
         self.open_editor(editor, cx);
     }
 
+    /// Opens a new CSS theme on a commented starter file: colours, panel
+    /// shape, type, textures and a place for a background picture.
+    fn new_css_theme(&mut self, cx: &mut Cx<'_>) {
+        self.open = None;
+        self.theme_url_note = None;
+        self.css_editor = Some(CssEditor::new(None, "My theme".into(), None, CSS_TEMPLATE));
+        cx.request(Request::Focus(Focus::Id(CSS_SOURCE)));
+    }
+
+    /// Opens a CSS theme's own file, as written, for editing. Everything in
+    /// the file is kept, including its comments, imports, pictures and
+    /// effects.
+    fn edit_css_theme(&mut self, cx: &mut Cx<'_>, id: &str) {
+        let Some(css) = cx.themes.css.iter().find(|css| css.id == id) else {
+            return;
+        };
+        let Some(path) = css.path.clone() else {
+            return;
+        };
+        match std::fs::read_to_string(&path) {
+            Ok(source) => {
+                self.open = None;
+                self.theme_url_note = None;
+                self.css_editor = Some(CssEditor::new(
+                    Some(css.id.clone()),
+                    css.name.clone(),
+                    Some(path),
+                    &source,
+                ));
+                cx.request(Request::Focus(Focus::Id(CSS_SOURCE)));
+            }
+            Err(error) => {
+                self.theme_url_note = Some(format!("Could not read {}: {error}", path.display()));
+            }
+        }
+    }
+
+    /// Adds a background picture the person picks to the CSS, with its dim
+    /// and panel opacity so it shows through rather than only changing a
+    /// variable the panels hide.
+    fn css_background(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter(
+                "Picture",
+                &[
+                    "png", "jpg", "jpeg", "gif", "webp", "bmp", "mp4", "webm", "mov", "mkv",
+                ],
+            )
+            .pick_file()
+        else {
+            return;
+        };
+        let Some(editor) = self.css_editor.as_mut() else {
+            return;
+        };
+        let url = css_url(&path);
+        editor.append(&format!(
+            ":root {{
+  --rl-background-image: url(\"{url}\");
+  --rl-background-dim: 0.35;
+  --rl-panel-opacity: 0.82;
+}}"
+        ));
+    }
+
+    /// Adds one of ReCord's textures to the CSS. Appending a later `:root`
+    /// wins over the theme's own value without rewriting its source.
+    fn css_texture(&mut self, texture: Texture) {
+        let Some(editor) = self.css_editor.as_mut() else {
+            return;
+        };
+        let (name, value) = match texture {
+            Texture::Scanlines => ("--rl-scanline-opacity", "0.08"),
+            Texture::Grain => ("--rl-grain-opacity", "0.03"),
+            Texture::Vignette => ("--rl-vignette-opacity", "0.18"),
+        };
+        editor.append(&format!(":root {{\n  {name}: {value};\n}}"));
+    }
+
+    /// Writes the CSS and shows it once the reader has it. A file that cannot
+    /// be parsed stays open with the reader's reason, so nothing is lost.
+    fn save_css_theme(&mut self, cx: &mut Cx<'_>) {
+        let Some(mut editor) = self.css_editor.take() else {
+            return;
+        };
+        let folder = cx.themes.themes_folder().to_path_buf();
+        let path = match &editor.path {
+            Some(path) => path.clone(),
+            None => unique_css_path(&folder, &editor.name),
+        };
+        if let Some(parent) = path.parent()
+            && let Err(error) = std::fs::create_dir_all(parent)
+        {
+            editor.error = Some(format!("Could not make {}: {error}", parent.display()));
+            self.css_editor = Some(editor);
+            return;
+        }
+        let source = editor.source();
+        if let Err(error) = recore_css::load_str(&source, path.parent(), &Default::default()) {
+            editor.error = Some(error);
+            self.css_editor = Some(editor);
+            return;
+        }
+        if let Err(error) = std::fs::write(&path, source) {
+            editor.error = Some(format!("Could not save {}: {error}", path.display()));
+            self.css_editor = Some(editor);
+            return;
+        }
+        cx.themes.reload();
+        let target = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+        let id = cx.themes.css.iter().find_map(|css| {
+            let css_path = css.path.as_ref()?;
+            let css_path = std::fs::canonicalize(css_path).unwrap_or_else(|_| css_path.clone());
+            (css_path == target).then(|| css.id.clone())
+        });
+        self.preview = None;
+        self.theme_url_note = None;
+        match id {
+            Some(id) => choose(cx, &id),
+            None => {
+                self.theme_url_note = Some(format!(
+                    "Saved {}; Reload CSS will show what could not be read.",
+                    path.display()
+                ));
+                cx.request(Request::Changed(Shown::Theme));
+            }
+        }
+    }
+
+    /// Closes the source editor without writing anything.
+    pub(super) fn cancel_css_theme(&mut self, cx: &mut Cx<'_>) {
+        if self.css_editor.take().is_some() {
+            cx.request(Request::Changed(Shown::Theme));
+        }
+    }
+
     fn open_editor(&mut self, editor: Editor, cx: &mut Cx<'_>) {
         self.editor = Some(editor);
         self.show_edited(cx);
@@ -812,6 +1046,9 @@ impl<'a> Page<'a> {
         if let Some(editor) = &settings.editor {
             return self.editor_view(editor, settings.open == Some(Drop::Start));
         }
+        if let Some(editor) = &settings.css_editor {
+            return self.css_editor_view(editor);
+        }
         let tiles = self.theme_tiles();
         let prefs = &self.cx.layout.prefs;
         let cosmetics = prefs.cosmetics();
@@ -847,6 +1084,14 @@ impl<'a> Page<'a> {
                             "New theme",
                             Kind::Plain,
                             Some(theme_message(Event::New))
+                        )
+                        .small()
+                        .icon(self.cx.look.icon(Icon::Plus, 16, crate::theme::rgb(theme.text))),
+                        action(
+                            theme,
+                            "New CSS theme",
+                            Kind::Plain,
+                            Some(theme_message(Event::NewCss))
                         )
                         .small()
                         .icon(self.cx.look.icon(Icon::Plus, 16, crate::theme::rgb(theme.text))),
@@ -1289,17 +1534,15 @@ impl<'a> Page<'a> {
                 ..Default::default()
             }
         });
-        if kind == Tile::Css {
-            return face.into();
-        }
+        let edit = if kind == Tile::Css {
+            Event::EditCss(id.to_owned())
+        } else {
+            Event::Edit(id.to_owned())
+        };
         let pencil = self
             .cx
             .look
-            .icon_button(
-                Icon::Pencil,
-                "Edit",
-                theme_message(Event::Edit(id.to_owned())),
-            )
+            .icon_button(Icon::Pencil, "Edit", theme_message(edit))
             .size(24.0, 14);
         stack![face, placed(pencil, width - 8.0 - 24.0, 8.0 + 78.0 + 6.0)].into()
     }
@@ -1732,6 +1975,129 @@ impl<'a> Page<'a> {
         }
     }
 
+    /// A CSS theme's own source, whole: colours, images, gradients, fonts and
+    /// textures as the file writes them, with buttons that add the kinds of
+    /// asset a native theme can paint.
+    fn css_editor_view(self, editor: &'a CssEditor) -> Element<'a, Message> {
+        let theme = self.cx.look.theme;
+        let name: Element<'a, Message> = if editor.editing.is_some() {
+            text(editor.name.clone())
+                .size(14)
+                .color(theme.secondary)
+                .width(Length::Fill)
+                .into()
+        } else {
+            container(
+                form::field(theme, CSS_NAME, "File name", &editor.name)
+                    .on_input(|name| theme_message(Event::CssName(name)))
+                    .on_submit(theme_message(Event::SaveCss)),
+            )
+            .width(Length::Fill)
+            .into()
+        };
+        let folder = self.cx.themes.themes_folder().display().to_string();
+        let path = editor.path.as_ref().map_or_else(
+            || format!("Will be saved in {folder}."),
+            |path| format!("Editing {}.", path.display()),
+        );
+        let mut heading = row![
+            form::heading(
+                theme,
+                if editor.editing.is_some() {
+                    "EDIT CSS THEME"
+                } else {
+                    "NEW CSS THEME"
+                },
+            ),
+            container(Space::new()).width(Length::Fill),
+            action(
+                theme,
+                "Save CSS",
+                Kind::Primary,
+                Some(theme_message(Event::SaveCss))
+            ),
+            action(
+                theme,
+                "Back to themes",
+                Kind::Plain,
+                Some(theme_message(Event::CancelCss)),
+            ),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center);
+        if editor.editing.is_some() {
+            heading = heading.push(action(
+                theme,
+                "Open folder",
+                Kind::Plain,
+                Some(theme_message(Event::OpenThemes)),
+            ));
+        }
+        let mut parts = vec![
+            form::title(theme, "Appearance"),
+            form::group([
+                heading.into(),
+                row![name].spacing(8).align_y(Alignment::Center).into(),
+                form::note(theme, path),
+            ]),
+        ];
+        if let Some(error) = &editor.error {
+            parts.push(text(error.as_str()).size(13).color(theme.danger).into());
+        }
+        parts.push(form::group([
+            form::heading(theme, "CSS SOURCE"),
+            form::note(
+                theme,
+                "Write standard CSS. ReCore reads colours, fonts, shapes, gradients, background pictures and ReCord's --rl-* textures; save to see the theme at once.",
+            ),
+            form::code_area(
+                theme,
+                &editor.draft,
+                CSS_SOURCE,
+                "/* A ReCore CSS theme */",
+                CSS_LINES,
+                |event| theme_message(Event::CssSource(event)),
+            ),
+            row![
+                action(
+                    theme,
+                    "Choose background...",
+                    Kind::Plain,
+                    Some(theme_message(Event::CssBackground)),
+                )
+                .small(),
+                action(
+                    theme,
+                    "Scanlines",
+                    Kind::Plain,
+                    Some(theme_message(Event::CssTexture(Texture::Scanlines))),
+                )
+                .small(),
+                action(
+                    theme,
+                    "Grain",
+                    Kind::Plain,
+                    Some(theme_message(Event::CssTexture(Texture::Grain))),
+                )
+                .small(),
+                action(
+                    theme,
+                    "Vignette",
+                    Kind::Plain,
+                    Some(theme_message(Event::CssTexture(Texture::Vignette))),
+                )
+                .small(),
+            ]
+            .spacing(8)
+            .into(),
+            form::note(
+                theme,
+                "Choose background adds --rl-background-image with a dim and panel opacity; the texture buttons add --rl-scanline-opacity, --rl-grain-opacity or --rl-vignette-opacity.",
+            ),
+        ]));
+        form::page(parts)
+    }
+
     /// The editor: the name with Save and Cancel, what a new theme starts
     /// from, Dark, each colour's field, and Delete for a saved one.
     fn editor_view(self, editor: &'a Editor, starts_open: bool) -> Element<'a, Message> {
@@ -1853,6 +2219,93 @@ impl<'a> Page<'a> {
         }
         form::page(parts)
     }
+}
+
+/// The starter file a new CSS theme opens on: ReCore's own colours, Discord's
+/// palette names, square panels and ReCord's textures, with the properties a
+/// person is most likely to change called out in comments.
+const CSS_TEMPLATE: &str = r#"/**
+ * @name My theme
+ * @author You
+ * @description Made in ReCore.
+ */
+
+:root {
+  /* Discord's grounds */
+  --background-primary: #080907;
+  --background-secondary: #0e100c;
+  --background-secondary-alt: #0e100c;
+  --background-tertiary: #080907;
+  --background-base-lowest: #080907;
+  --background-base-lower: #0e100c;
+  --background-base-low: #0e100c;
+  --background-base: #080907;
+  --background-base-high: #131511;
+
+  /* Ink and signals */
+  --text-normal: #e4cdb1;
+  --text-muted: #a58979;
+  --text-link: #f28c6d;
+  --interactive-normal: #a58979;
+  --interactive-hover: #e4cdb1;
+  --interactive-active: #e4cdb1;
+  --brand-experiment: #e94221;
+  --red-400: #ff4626;
+  --green-360: #79b59a;
+  --yellow-300: #dda052;
+  --border-subtle: #2c241d;
+
+  /* Panels and type */
+  --app-frame-background: #050605;
+  --gap: 0px;
+  --roundness: 0px;
+  --font-primary: sans-serif;
+
+  /* Textures: scanlines, grain and the vignette */
+  --rl-scanline-opacity: 0.08;
+  --rl-grain-opacity: 0.03;
+  --rl-vignette-opacity: 0.18;
+}
+
+body {
+  background: var(--background-base);
+}
+"#;
+
+/// A path the CSS can name, with the separators CSS URLs use.
+fn css_url(path: &Path) -> String {
+    path.to_string_lossy()
+        .replace('\\', "/")
+        .replace('"', "\\\"")
+        .replace(['\n', '\r'], "")
+}
+
+/// A file name for a new CSS theme, safe on every platform, with a number if
+/// that name is already there.
+fn unique_css_path(folder: &Path, name: &str) -> PathBuf {
+    let mut base: String = name
+        .trim()
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    while base.contains("--") {
+        base = base.replace("--", "-");
+    }
+    let base = base.trim_matches('-');
+    let base = if base.is_empty() { "my-theme" } else { base };
+    let mut path = folder.join(format!("{base}.theme.css"));
+    let mut number = 2;
+    while path.exists() {
+        path = folder.join(format!("{base}-{number}.theme.css"));
+        number += 1;
+    }
+    path
 }
 
 /// What a theme copied from another is called until it's named.
@@ -2090,12 +2543,38 @@ impl<'a> Page<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::preserve_alpha;
+    use super::{CssEditor, preserve_alpha, unique_css_path};
 
     #[test]
     fn the_hsv_picker_keeps_an_existing_alpha() {
         assert_eq!(preserve_alpha("#ff0000", "#ff000080"), "#ff000080");
         assert_eq!(preserve_alpha("#ff0000", "#ff0000"), "#ff0000");
         assert_eq!(preserve_alpha("#ff0000", ""), "#ff0000");
+    }
+
+    #[test]
+    fn a_new_css_theme_gets_a_safe_unique_file() {
+        let folder = tempfile::tempdir().unwrap();
+        let first = unique_css_path(folder.path(), "../My theme");
+        assert_eq!(
+            first.file_name().and_then(|name| name.to_str()),
+            Some("My-theme.theme.css")
+        );
+        std::fs::write(&first, "").unwrap();
+        let second = unique_css_path(folder.path(), "My theme");
+        assert_eq!(
+            second.file_name().and_then(|name| name.to_str()),
+            Some("My-theme-2.theme.css")
+        );
+    }
+
+    #[test]
+    fn a_texture_is_added_after_the_source_so_it_wins() {
+        let mut editor = CssEditor::new(None, "A".into(), None, ":root { --gap: 2px; }");
+        editor.append(":root { --rl-grain-opacity: 0.03; }");
+        let source = editor.source();
+        let gap = source.find("--gap").unwrap();
+        let grain = source.find("--rl-grain-opacity").unwrap();
+        assert!(gap < grain, "the later declaration wins: {source}");
     }
 }

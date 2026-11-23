@@ -33,11 +33,11 @@ fn stored(folder: &tempfile::TempDir) -> serde_json::Value {
 #[test]
 fn about_shows_the_bundled_changelog_for_this_version() {
     let (mut app, _folder) = preview();
-    app.build.version = "0.5.5".into();
-    app.build.changelog = "CSS themes use style-engine".into();
+    app.build.version = "0.5.6".into();
+    app.build.changelog = "CSS themes are painted whole".into();
     open(&mut app, Section::About);
-    assert!(shows(&app, "CHANGELOG · 0.5.5"));
-    assert!(shows(&app, "CSS themes use style-engine"));
+    assert!(shows(&app, "CHANGELOG · 0.5.6"));
+    assert!(shows(&app, "CSS themes are painted whole"));
 }
 
 /// Settings open moving, once: their motion starts as they open, stays
@@ -244,6 +244,77 @@ fn a_custom_theme_is_made_edited_and_deleted_in_appearance() {
     });
     assert_eq!(app.theme.id, "recore");
     assert_eq!(stored(&folder)["custom_themes"], serde_json::json!([]));
+}
+
+#[test]
+fn a_css_theme_is_made_edited_and_left_with_escape() {
+    use crate::settings::{ThemeEvent, ThemeTexture, appearance_event as theme};
+    let (mut app, folder) = preview();
+    open(&mut app, Section::Appearance);
+    interact(&mut app, |ui| {
+        ui.click("New CSS theme").expect("New CSS theme");
+    });
+    assert!(shows(&app, "CSS SOURCE"));
+    let _ = app.update(theme(ThemeEvent::CssName("Coast".into())));
+    let _ = app.update(theme(ThemeEvent::CssSourceText(
+        r#"/** @name Coast */
+:root {
+  --background-primary: #102030;
+  --text-normal: #f0f0f0;
+  --brand-experiment: #40a0c0;
+}"#
+        .into(),
+    )));
+    let _ = app.update(theme(ThemeEvent::CssTexture(ThemeTexture::Scanlines)));
+    interact(&mut app, |ui| {
+        ui.click("Save CSS").expect("Save CSS");
+    });
+    let path = app.themes.themes_folder().join("Coast.theme.css");
+    assert!(path.exists(), "the file is in the themes folder");
+    let saved = std::fs::read_to_string(&path).unwrap();
+    assert!(saved.contains("--rl-scanline-opacity"), "the texture");
+    assert_eq!(app.theme.chat, crate::style::hex(0x102030), "shown at once");
+    let id = app.theme.id.clone();
+    assert!(app.themes.css.iter().any(|css| css.id == id));
+    assert_eq!(
+        stored(&folder)["theme"],
+        id,
+        "the new CSS theme is kept as chosen"
+    );
+    // Editing the source changes the theme in place, without another file.
+    let _ = app.update(theme(ThemeEvent::EditCss(id.clone())));
+    assert!(shows(&app, "EDIT CSS THEME"));
+    let _ = app.update(theme(ThemeEvent::CssSourceText(
+        r#"/** @name Coast */
+:root {
+  --background-primary: #304050;
+  --text-normal: #f0f0f0;
+}"#
+        .into(),
+    )));
+    interact(&mut app, |ui| {
+        ui.click("Save CSS").expect("Save CSS");
+    });
+    assert_eq!(app.theme.chat, crate::style::hex(0x304050));
+    assert_eq!(
+        std::fs::read_dir(app.themes.themes_folder())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "css"))
+            .count(),
+        1,
+        "one CSS theme, edited in place"
+    );
+    // Escape leaves the source editor, not Settings.
+    let _ = app.update(theme(ThemeEvent::EditCss(id)));
+    assert!(shows(&app, "EDIT CSS THEME"));
+    let _ = app.update(Message::Key(
+        Key::Named(key::Named::Escape),
+        Default::default(),
+    ));
+    assert!(app.win.settings.is_open(), "Settings stay open");
+    assert!(!shows(&app, "EDIT CSS THEME"), "the editor closes");
+    assert!(shows(&app, "THEME"), "back among the tiles");
 }
 
 #[test]

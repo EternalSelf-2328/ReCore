@@ -1053,7 +1053,6 @@ impl Shake {
 /// An area's lines: four, 20 px each, in its 96 px with 8 px over and under.
 const AREA_LINE: f32 = 20.0;
 const AREA_LINES: f32 = 4.0;
-const AREA_HEIGHT: f32 = 96.0;
 const AREA_RADIUS: f32 = 6.0;
 
 /// A text of a form several lines high: 96 px of the sunken ground, ringed
@@ -1068,12 +1067,41 @@ pub fn area<'a, M: Clone + 'a>(
     enabled: bool,
     on: fn(crate::field::Event) -> M,
 ) -> Element<'a, M> {
+    area_sized(
+        theme,
+        draft,
+        id,
+        placeholder,
+        left,
+        enabled,
+        AREA_LINES as u16,
+        on,
+    )
+}
+
+/// [`area`] showing `lines` lines: a theme's CSS source needs more room than
+/// a profile's description.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "a form field's inputs, as `area` has them, and its height"
+)]
+pub fn area_sized<'a, M: Clone + 'a>(
+    theme: &Theme,
+    draft: &'a crate::field::Draft,
+    id: &'static str,
+    placeholder: &str,
+    left: i64,
+    enabled: bool,
+    lines: u16,
+    on: fn(crate::field::Event) -> M,
+) -> Element<'a, M> {
     let colors = crate::field::Colors {
         ground: theme.sunken,
         text: if enabled { theme.text } else { theme.muted },
         placeholder: theme.muted,
         selection: theme.selection,
     };
+    let lines = lines.max(1);
     let field = crate::field::Field::new(
         draft,
         iced::widget::Id::new(id),
@@ -1084,7 +1112,7 @@ pub fn area<'a, M: Clone + 'a>(
     .enabled(enabled)
     .size(14.0)
     .line_height(AREA_LINE)
-    .lines(AREA_LINES)
+    .lines(f32::from(lines))
     .padding(iced::Padding::from([8.0, 10.0]))
     .radius(AREA_RADIUS)
     .ring(crate::style::faded(theme.accent, 0.8));
@@ -1098,7 +1126,7 @@ pub fn area<'a, M: Clone + 'a>(
     };
     column![
         container(field)
-            .height(AREA_HEIGHT)
+            .height(AREA_LINE * f32::from(lines) + 16.0)
             .width(Length::Fill)
             .clip(true)
             .style(move |_| rounded(sunken, AREA_RADIUS)),
@@ -1106,6 +1134,45 @@ pub fn area<'a, M: Clone + 'a>(
     ]
     .spacing(4)
     .into()
+}
+
+/// A code or source text several lines high, without the characters-left
+/// line under it: a CSS theme's file rather than a form field.
+pub fn code_area<'a, M: Clone + 'a>(
+    theme: &Theme,
+    draft: &'a crate::field::Draft,
+    id: &'static str,
+    placeholder: &str,
+    lines: u16,
+    on: fn(crate::field::Event) -> M,
+) -> Element<'a, M> {
+    let colors = crate::field::Colors {
+        ground: theme.sunken,
+        text: theme.text,
+        placeholder: theme.muted,
+        selection: theme.selection,
+    };
+    let lines = lines.max(1);
+    let field = crate::field::Field::new(
+        draft,
+        iced::widget::Id::new(id),
+        placeholder.to_owned(),
+        on,
+        colors,
+    )
+    .size(14.0)
+    .line_height(AREA_LINE)
+    .lines(f32::from(lines))
+    .padding(iced::Padding::from([8.0, 10.0]))
+    .radius(AREA_RADIUS)
+    .ring(crate::style::faded(theme.accent, 0.8));
+    let sunken = theme.sunken;
+    container(field)
+        .height(AREA_LINE * f32::from(lines) + 16.0)
+        .width(Length::Fill)
+        .clip(true)
+        .style(move |_| rounded(sunken, AREA_RADIUS))
+        .into()
 }
 
 #[cfg(test)]

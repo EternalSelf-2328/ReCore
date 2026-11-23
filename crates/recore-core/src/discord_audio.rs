@@ -32,6 +32,31 @@ pub const AVAILABLE: bool = crate::audio_io::AVAILABLE;
 const SPEAKING_HOLD: Duration = Duration::from_millis(300);
 /// Frames quieter than this, in RMS dBFS, don't count as speech.
 const SPEAKING_FLOOR: f32 = -50.0;
+/// This account's ring stays lit this long after its own last voice block,
+/// so a gap between words doesn't make it flicker. It is shorter than the
+/// voice gate's hold: the gate delays the end of speech, while the indicator
+/// follows what the microphone hears.
+const OWN_SPEAKING_HOLD: Duration = Duration::from_millis(220);
+
+/// The local speaker's activity: the microphone's level held for a moment
+/// after speech, independent of the gate. Push-to-talk sends even a silent
+/// key press, but the ring follows the voice itself.
+#[derive(Default)]
+struct Speaking {
+    last: Option<Instant>,
+}
+
+impl Speaking {
+    /// Takes one processed pair's level, in RMS dBFS, and says whether the
+    /// account counts as speaking now.
+    fn heard(&mut self, level: f32, threshold: f32, now: Instant) -> bool {
+        if level > threshold {
+            self.last = Some(now);
+        }
+        self.last
+            .is_some_and(|last| now.saturating_duration_since(last) < OWN_SPEAKING_HOLD)
+    }
+}
 
 /// Hears a Discord call: mixes everyone into the speakers, with the
 /// soundboard's sounds, and notes who spoke.
@@ -962,6 +987,7 @@ impl CaptureRequest {
         }
         let mut blocks = [[0i16; BLOCK]; PAIR];
         let mut pace = Pace::default();
+        let mut activity = Speaking::default();
         let mut lightly = false;
         while !self.stop.load(Ordering::Relaxed) {
             // Each block's read, and the time after it until the next read.
@@ -982,7 +1008,6 @@ impl CaptureRequest {
             // The gate sends while it's open.
             let open = !sent.is_empty();
             if open != was_open {
-                self.talking.store(open, Ordering::Relaxed);
                 let _ = if open {
                     self.out.clear();
                     self.track.play()
@@ -992,6 +1017,18 @@ impl CaptureRequest {
             }
             for samples in sent {
                 self.out.push(samples);
+            }
+            // The ring follows the voice, not the gate: push-to-talk holds
+            // the track open even while nothing is said, and a gate's release
+            // is deliberately longer than a natural pause between words.
+            let heard = if processing.gate.is_open() {
+                processing.level
+            } else {
+                f32::NEG_INFINITY
+            };
+            let speaking = activity.heard(heard, crate::noise::sensitivity(), Instant::now());
+            if speaking != self.talking.load(Ordering::Relaxed) {
+                self.talking.store(speaking, Ordering::Relaxed);
             }
             let [(first_read, first), (second_read, second)] = times;
             pace.note(first_read, second - first - second_read);
@@ -1486,6 +1523,25 @@ mod tests {
         let hiss = vec![10i16; FRAME * 2];
         hearing.tick(&[(1, &speech), (2, &hiss)]);
         assert_eq!(hearing.speaking(), vec![1]);
+    }
+
+    #[test]
+    fn own_speaking_lights_on_voice_and_goes_after_its_hold() {
+        let start = Instant::now();
+        let mut speaking = Speaking::default();
+        assert!(!speaking.heard(-80.0, -60.0, start), "no voice yet");
+        assert!(
+            speaking.heard(-20.0, -60.0, start + Duration::from_millis(20)),
+            "the voice lights it"
+        );
+        assert!(
+            speaking.heard(-80.0, -60.0, start + Duration::from_millis(200)),
+            "held through a pause between words"
+        );
+        assert!(
+            !speaking.heard(-80.0, -60.0, start + Duration::from_millis(241)),
+            "off after the hold"
+        );
     }
 
     const MS: Duration = Duration::from_millis(1);
