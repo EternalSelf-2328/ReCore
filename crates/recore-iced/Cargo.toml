@@ -28,6 +28,12 @@ recore-css = { path = "../recore-css" }
 # once knew: images, radial and conic gradients, clips, transforms, opacity,
 # filters and blend modes.
 style-engine-tiny = "1.0.0"
+# style-engine-tiny shapes its text with parley, whose fontique links
+# fontconfig on Linux. This feature makes it open the host's at runtime
+# instead, so the AppImage's binary links only what nix/appimage.nix allows;
+# the Nix packages' wrapper puts fontconfig on the library path. Nothing here
+# uses the crate itself.
+fontique = { version = "0.11", default-features = false, features = ["fontconfig-dlopen"] }
 # Decodes the background pictures a CSS theme names.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 # Discord's names, activities and stream worker, which the window shows.

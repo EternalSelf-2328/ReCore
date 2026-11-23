@@ -7499,6 +7499,7 @@ dependencies = [
  "bytes",
  "chrono",
  "emojis",
+ "fontique",
  "iced",
  "iced_runtime",
  "iced_test",

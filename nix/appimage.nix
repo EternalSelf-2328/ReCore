@@ -5,9 +5,9 @@
 # The binary runs on the host's dynamic loader and glibc rather than Nix's, as
 # an AppImage built on a distribution would, so the host's own GPU driver,
 # Mesa or NVIDIA's, loads into it. Nothing else is bundled: it links only
-# libraries every desktop has, and loads the GPU, display, audio and screen
-# capture ones at runtime. The glibc it was built against sets the oldest
-# distribution it runs on.
+# libraries every desktop has, and loads the GPU, display, audio, screen
+# capture and font libraries at runtime. The glibc it was built against sets
+# the oldest distribution it runs on.
 { pkgs, recore }:
 let
   id = "io.github.leriart.ReCore";

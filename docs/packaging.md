@@ -24,7 +24,8 @@ Mesa or NVIDIA's, load into it: a driver needs the glibc it was built for, and
 NVIDIA's must match the kernel module, so neither can come in the AppImage.
 Nothing else is bundled either. Besides the C and C++ runtimes, the binary
 links only GLib and PulseAudio's client, which every desktop has, and it
-loads EGL, Vulkan, Wayland, X11 and PipeWire at runtime.
+loads EGL, Vulkan, Wayland, X11 and PipeWire at runtime. System fonts come
+from the host's `fc-match`, so it doesn't link fontconfig either.
 
 The derivation fails if the binary links anything else, or asks for a glibc
 newer than 2.39 or a libstdc++ newer than GCC 14's. That covers Ubuntu 24.04,
